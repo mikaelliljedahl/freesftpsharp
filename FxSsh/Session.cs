@@ -420,7 +420,8 @@ namespace FxSsh
         {
             if (_blockedMessages.Count > 0)
             {
-                while (_blockedMessages.TryDequeue(out var message))
+                Message message;
+                while (_blockedMessages.TryDequeue(out message))
                 {
                     SendMessageInternal(message);
                 }

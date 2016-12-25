@@ -56,7 +56,9 @@ namespace FxSsh.Algorithms
                     outputBuffer[outputOffset + i + j] = (byte)(_block[j] ^ inputBuffer[inputOffset + i + j]);
 
                 var k = _iv.Length;
-                while (--k >= 0 && ++_iv[k] == 0) ;
+                while (--k >= 0 && ++_iv[k] == 0)
+                {
+                }
             }
 
             return written;
