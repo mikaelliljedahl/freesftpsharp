@@ -6,6 +6,7 @@ namespace FxSsh.Messages.Userauth
     public class PasswordRequestMessage : RequestMessage
     {
         public string Password { get; private set; }
+
         protected override void OnLoad(SshDataWorker reader)
         {
             base.OnLoad(reader);
@@ -13,6 +14,7 @@ namespace FxSsh.Messages.Userauth
             if (MethodName != "password")
                 throw new ArgumentException(string.Format("Method name {0} is not valid.", MethodName));
 
+            var falseField = reader.ReadBoolean();
             Password = reader.ReadString(Encoding.UTF8);
         }
     }

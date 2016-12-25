@@ -101,7 +101,7 @@ namespace FxSsh.Services
 
         private void HandleMessage(PasswordRequestMessage message)
         {
-            var verifed = false;
+            var verifed = true;
 
             var args = new UserAuthArgs(message.Username, message.Password);
             if (verifed && UserAuth != null)

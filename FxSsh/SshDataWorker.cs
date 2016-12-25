@@ -140,6 +140,14 @@ namespace FxSsh
                     (ulong)data[4] << 24 | (ulong)data[5] << 16 | (ulong)data[6] << 8 | data[7]);
         }
 
+        public string ReadString(Encoding encoding, int length)
+        {
+            Contract.Requires(encoding != null);
+
+            var bytes = ReadBinary(length);
+            return encoding.GetString(bytes);
+        }
+
         public string ReadString(Encoding encoding)
         {
             Contract.Requires(encoding != null);
