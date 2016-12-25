@@ -32,11 +32,18 @@ namespace FxSsh.Services
             switch (message.MethodName)
             {
                 case "publickey":
-                    var msg = Message.LoadFrom<PublicKeyRequestMessage>(message);
-                    HandleMessage(msg);
-                    break;
+                    {
+                        var msg = Message.LoadFrom<PublicKeyRequestMessage>(message);
+                        HandleMessage(msg);
+                        break;
+                    }
 
                 case "password":
+                    {
+                        var msg = Message.LoadFrom<PasswordRequestMessage>(message);
+                        HandleMessage(msg);
+                        break;
+                    }
                 case "hostbased":
                 case "none":
                 default:
@@ -89,6 +96,33 @@ namespace FxSsh.Services
                     throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
                 }
             }
+            _session.SendMessage(new FailureMessage());
+        }
+
+        private void HandleMessage(PasswordRequestMessage message)
+        {
+            var verifed = false;
+
+            var args = new UserAuthArgs(message.Username, message.Password);
+            if (verifed && UserAuth != null)
+            {
+                UserAuth(this, args);
+                verifed = args.Result;
+            }
+
+            if (verifed)
+            {
+                _session.RegisterService(message.ServiceName, args);
+                Succeed?.Invoke(this, message.ServiceName);
+                _session.SendMessage(new SuccessMessage());
+                return;
+            }
+            else
+            {
+                _session.SendMessage(new FailureMessage());
+                throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
+            }
+
             _session.SendMessage(new FailureMessage());
         }
     }

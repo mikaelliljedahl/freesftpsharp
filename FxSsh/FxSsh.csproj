@@ -125,6 +125,7 @@
     <Compile Include="Messages\ServiceRequestMessage.cs" />
     <Compile Include="Messages\UnimplementedMessage.cs" />
     <Compile Include="Messages\Userauth\FailureMessage.cs" />
+    <Compile Include="Messages\Userauth\PasswordRequestMessage.cs" />
     <Compile Include="Messages\Userauth\PublicKeyOkMessage.cs" />
     <Compile Include="Messages\Userauth\PublicKeyRequestMessage.cs" />
     <Compile Include="Messages\Userauth\RequestMessage.cs" />
