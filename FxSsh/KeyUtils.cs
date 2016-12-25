@@ -26,8 +26,10 @@ namespace FxSsh
             {
                 case "ssh-rsa":
                     return new RSACryptoServiceProvider();
+
                 case "ssh-dss":
                     return new DSACryptoServiceProvider();
+
                 default:
                     throw new ArgumentOutOfRangeException("type");
             }

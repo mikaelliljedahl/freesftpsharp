@@ -1,5 +1,4 @@
-﻿
-namespace FxSsh.Services
+﻿namespace FxSsh.Services
 {
     public class SessionChannel : Channel
     {
@@ -8,7 +7,6 @@ namespace FxSsh.Services
             uint serverChannelId)
             : base(connectionService, clientChannelId, clientInitialWindowSize, clientMaxPacketSize, serverChannelId)
         {
-
         }
     }
 }

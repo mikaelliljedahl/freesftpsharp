@@ -10,7 +10,6 @@ namespace FxSsh.Algorithms
         private readonly byte[] _iv;
         private readonly byte[] _block;
 
-
         public CtrModeCryptoTransform(SymmetricAlgorithm algorithm)
         {
             Contract.Requires(algorithm != null);

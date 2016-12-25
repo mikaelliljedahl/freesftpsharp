@@ -1,5 +1,4 @@
-﻿
-namespace FxSsh.Messages.Connection
+﻿namespace FxSsh.Messages.Connection
 {
     [Message("SSH_MSG_CHANNEL_CLOSE", MessageNumber)]
     public class ChannelCloseMessage : ConnectionServiceMessage

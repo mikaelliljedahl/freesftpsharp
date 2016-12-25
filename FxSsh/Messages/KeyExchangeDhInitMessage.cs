@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FxSsh.Messages
+﻿namespace FxSsh.Messages
 {
     [Message("SSH_MSG_KEXDH_INIT", MessageNumber)]
     public class KeyExchangeDhInitMessage : Message

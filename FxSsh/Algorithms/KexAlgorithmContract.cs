@@ -4,7 +4,7 @@ using System.Diagnostics.Contracts;
 namespace FxSsh.Algorithms
 {
     [ContractClassFor(typeof(KexAlgorithm))]
-    abstract class KexAlgorithmContract : KexAlgorithm
+    internal abstract class KexAlgorithmContract : KexAlgorithm
     {
         public override byte[] CreateKeyExchange()
         {

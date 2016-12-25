@@ -4,7 +4,7 @@ using System.Diagnostics.Contracts;
 namespace FxSsh.Algorithms
 {
     [ContractClassFor(typeof(CompressionAlgorithm))]
-    abstract class CompressionAlgorithmContract : CompressionAlgorithm
+    internal abstract class CompressionAlgorithmContract : CompressionAlgorithm
     {
         public override byte[] Compress(byte[] input)
         {

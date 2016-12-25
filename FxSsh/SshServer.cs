@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace FxSsh
@@ -31,6 +30,7 @@ namespace FxSsh
         public StartingInfo StartingInfo { get; private set; }
 
         public event EventHandler<Session> ConnectionAccepted;
+
         public event EventHandler<Exception> ExceptionRasied;
 
         public void Start()
@@ -149,6 +149,7 @@ namespace FxSsh
         }
 
         #region IDisposable
+
         public void Dispose()
         {
             lock (_lock)
@@ -158,6 +159,7 @@ namespace FxSsh
                 Stop();
             }
         }
-        #endregion
+
+        #endregion IDisposable
     }
 }

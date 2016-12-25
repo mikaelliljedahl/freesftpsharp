@@ -13,6 +13,6 @@ namespace FxSsh.Services
             _session = session;
         }
 
-        internal protected abstract void CloseService();
+        protected internal abstract void CloseService();
     }
 }

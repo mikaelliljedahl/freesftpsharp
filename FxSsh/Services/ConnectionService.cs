@@ -50,6 +50,7 @@ namespace FxSsh.Services
                     var msg = Message.LoadFrom<SessionOpenMessage>(message);
                     HandleMessage(msg);
                     break;
+
                 default:
                     _session.SendMessage(new ChannelOpenFailureMessage
                     {
@@ -69,6 +70,7 @@ namespace FxSsh.Services
                     var msg = Message.LoadFrom<CommandRequestMessage>(message);
                     HandleMessage(msg);
                     break;
+
                 default:
                     if (message.WantReply)
                         _session.SendMessage(new ChannelFailureMessage

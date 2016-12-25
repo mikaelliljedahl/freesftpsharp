@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FxSsh.Messages
+﻿namespace FxSsh.Messages
 {
     [Message("SSH_MSG_UNIMPLEMENTED", MessageNumber)]
     public class UnimplementedMessage : Message

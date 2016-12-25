@@ -24,14 +24,19 @@ namespace FxSsh
 
         private static readonly RandomNumberGenerator _rng = new RNGCryptoServiceProvider();
         private static readonly Dictionary<byte, Type> _messagesMetadata;
+
         internal static readonly Dictionary<string, Func<KexAlgorithm>> _keyExchangeAlgorithms =
             new Dictionary<string, Func<KexAlgorithm>>();
+
         internal static readonly Dictionary<string, Func<string, PublicKeyAlgorithm>> _publicKeyAlgorithms =
             new Dictionary<string, Func<string, PublicKeyAlgorithm>>();
+
         internal static readonly Dictionary<string, Func<CipherInfo>> _encryptionAlgorithms =
             new Dictionary<string, Func<CipherInfo>>();
+
         internal static readonly Dictionary<string, Func<HmacInfo>> _hmacAlgorithms =
             new Dictionary<string, Func<HmacInfo>>();
+
         internal static readonly Dictionary<string, Func<CompressionAlgorithm>> _compressionAlgorithms =
             new Dictionary<string, Func<CompressionAlgorithm>>();
 
@@ -57,6 +62,7 @@ namespace FxSsh
         public string ServerVersion { get; private set; }
         public string ClientVersion { get; private set; }
         public byte[] SessionId { get; private set; }
+
         public T GetService<T>() where T : SshService
         {
             return (T)_services.FirstOrDefault(x => x is T);
@@ -160,6 +166,7 @@ namespace FxSsh
         }
 
         #region Socket operations
+
         private void SetSocketOptions()
         {
             const int socketBufferSize = 2 * MaximumSshPacketSize;
@@ -268,9 +275,11 @@ namespace FxSsh
                     _timeout.TotalMilliseconds),
                     DisconnectReason.ConnectionLost);
         }
-        #endregion
+
+        #endregion Socket operations
 
         #region Message operations
+
         private Message ReceiveMessage()
         {
             var useAlg = _algorithms != null;
@@ -452,9 +461,11 @@ namespace FxSsh
             };
             return message;
         }
-        #endregion
+
+        #endregion Message operations
 
         #region Handle messages
+
         private void HandleMessageCore(Message message)
         {
             HandleMessage((dynamic)message);
@@ -575,7 +586,8 @@ namespace FxSsh
             if (service != null)
                 service.HandleMessageCore(message);
         }
-        #endregion
+
+        #endregion Handle messages
 
         private string ChooseAlgorithm(string[] serverAlgorithms, string[] clientAlgorithms)
         {
@@ -662,6 +674,7 @@ namespace FxSsh
                     if (GetService<UserAuthService>() == null)
                         service = new UserAuthService(this);
                     break;
+
                 case "ssh-connection":
                     if (auth != null && GetService<ConnectionService>() == null)
                         service = new ConnectionService(this, auth);

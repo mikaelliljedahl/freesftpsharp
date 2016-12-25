@@ -49,8 +49,10 @@ namespace FxSsh.Algorithms
                     return isEncryption
                         ? _algorithm.CreateEncryptor()
                         : _algorithm.CreateDecryptor();
+
                 case CipherModeEx.CTR:
                     return new CtrModeCryptoTransform(_algorithm);
+
                 default:
                     throw new InvalidEnumArgumentException(string.Format("Invalid mode: {0}", _mode));
             }

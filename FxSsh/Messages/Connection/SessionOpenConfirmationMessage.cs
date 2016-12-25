@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FxSsh.Messages.Connection
+﻿namespace FxSsh.Messages.Connection
 {
     public class SessionOpenConfirmationMessage : ChannelOpenConfirmationMessage
     {

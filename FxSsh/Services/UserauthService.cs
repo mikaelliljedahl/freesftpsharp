@@ -35,6 +35,7 @@ namespace FxSsh.Services
                     var msg = Message.LoadFrom<PublicKeyRequestMessage>(message);
                     HandleMessage(msg);
                     break;
+
                 case "password":
                 case "hostbased":
                 case "none":

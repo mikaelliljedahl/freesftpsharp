@@ -45,7 +45,9 @@ namespace FxSsh.Services
         public bool ServerMarkedEof { get; private set; }
 
         public event EventHandler<byte[]> DataReceived;
+
         public event EventHandler EofReceived;
+
         public event EventHandler CloseReceived;
 
         public void SendData(byte[] data)

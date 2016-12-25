@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FxSsh.Messages.Userauth
+﻿namespace FxSsh.Messages.Userauth
 {
     [Message("SSH_MSG_USERAUTH_SUCCESS", MessageNumber)]
     public class SuccessMessage : UserauthServiceMessage

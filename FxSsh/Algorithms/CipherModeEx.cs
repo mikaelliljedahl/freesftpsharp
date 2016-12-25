@@ -1,5 +1,4 @@
-﻿
-namespace FxSsh.Algorithms
+﻿namespace FxSsh.Algorithms
 {
     public enum CipherModeEx
     {
