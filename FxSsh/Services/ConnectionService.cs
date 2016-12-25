@@ -12,11 +12,11 @@ namespace FxSsh.Services
     {
         private readonly object _locker = new object();
         private readonly List<Channel> _channels = new List<Channel>();
-        private readonly UserauthArgs _auth = null;
+        private readonly UserAuthArgs _auth = null;
 
         private int _serverChannelCounter = -1;
 
-        public ConnectionService(Session session, UserauthArgs auth)
+        public ConnectionService(Session session, UserAuthArgs auth)
             : base(session)
         {
             Contract.Requires(auth != null);
@@ -115,12 +115,13 @@ namespace FxSsh.Services
             lock (_locker)
                 _channels.Add(channel);
 
-            var msg = new SessionOpenConfirmationMessage();
-            msg.RecipientChannel = channel.ClientChannelId;
-            msg.SenderChannel = channel.ServerChannelId;
-            msg.InitialWindowSize = channel.ServerInitialWindowSize;
-            msg.MaximumPacketSize = channel.ServerMaxPacketSize;
-
+            var msg = new SessionOpenConfirmationMessage()
+            {
+                RecipientChannel = channel.ClientChannelId,
+                SenderChannel = channel.ServerChannelId,
+                InitialWindowSize = channel.ServerInitialWindowSize,
+                MaximumPacketSize = channel.ServerMaxPacketSize
+            };
             _session.SendMessage(msg);
         }
 

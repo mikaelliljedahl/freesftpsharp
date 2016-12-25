@@ -156,8 +156,7 @@ namespace FxSsh
             }
             catch { }
 
-            if (Disconnected != null)
-                Disconnected(this, EventArgs.Empty);
+            Disconnected?.Invoke(this, EventArgs.Empty);
         }
 
         #region Socket operations
@@ -412,8 +411,7 @@ namespace FxSsh
         {
             if (_blockedMessages.Count > 0)
             {
-                Message message;
-                while (_blockedMessages.TryDequeue(out message))
+                while (_blockedMessages.TryDequeue(out var message))
                 {
                     SendMessageInternal(message);
                 }
@@ -437,20 +435,21 @@ namespace FxSsh
 
         private Message LoadKexInitMessage()
         {
-            var message = new KeyExchangeInitMessage();
-            message.KeyExchangeAlgorithms = _keyExchangeAlgorithms.Keys.ToArray();
-            message.ServerHostKeyAlgorithms = _publicKeyAlgorithms.Keys.ToArray();
-            message.EncryptionAlgorithmsClientToServer = _encryptionAlgorithms.Keys.ToArray();
-            message.EncryptionAlgorithmsServerToClient = _encryptionAlgorithms.Keys.ToArray();
-            message.MacAlgorithmsClientToServer = _hmacAlgorithms.Keys.ToArray();
-            message.MacAlgorithmsServerToClient = _hmacAlgorithms.Keys.ToArray();
-            message.CompressionAlgorithmsClientToServer = _compressionAlgorithms.Keys.ToArray();
-            message.CompressionAlgorithmsServerToClient = _compressionAlgorithms.Keys.ToArray();
-            message.LanguagesClientToServer = new[] { "" };
-            message.LanguagesServerToClient = new[] { "" };
-            message.FirstKexPacketFollows = false;
-            message.Reserved = 0;
-
+            var message = new KeyExchangeInitMessage()
+            {
+                KeyExchangeAlgorithms = _keyExchangeAlgorithms.Keys.ToArray(),
+                ServerHostKeyAlgorithms = _publicKeyAlgorithms.Keys.ToArray(),
+                EncryptionAlgorithmsClientToServer = _encryptionAlgorithms.Keys.ToArray(),
+                EncryptionAlgorithmsServerToClient = _encryptionAlgorithms.Keys.ToArray(),
+                MacAlgorithmsClientToServer = _hmacAlgorithms.Keys.ToArray(),
+                MacAlgorithmsServerToClient = _hmacAlgorithms.Keys.ToArray(),
+                CompressionAlgorithmsClientToServer = _compressionAlgorithms.Keys.ToArray(),
+                CompressionAlgorithmsServerToClient = _compressionAlgorithms.Keys.ToArray(),
+                LanguagesClientToServer = new[] { "" },
+                LanguagesServerToClient = new[] { "" },
+                FirstKexPacketFollows = false,
+                Reserved = 0
+            };
             return message;
         }
         #endregion
@@ -565,7 +564,7 @@ namespace FxSsh
 
         private void HandleMessage(UserauthServiceMessage message)
         {
-            var service = GetService<UserauthService>();
+            var service = GetService<UserAuthService>();
             if (service != null)
                 service.HandleMessageCore(message);
         }
@@ -652,7 +651,7 @@ namespace FxSsh
             }
         }
 
-        internal SshService RegisterService(string serviceName, UserauthArgs auth = null)
+        internal SshService RegisterService(string serviceName, UserAuthArgs auth = null)
         {
             Contract.Requires(serviceName != null);
 
@@ -660,8 +659,8 @@ namespace FxSsh
             switch (serviceName)
             {
                 case "ssh-userauth":
-                    if (GetService<UserauthService>() == null)
-                        service = new UserauthService(this);
+                    if (GetService<UserAuthService>() == null)
+                        service = new UserAuthService(this);
                     break;
                 case "ssh-connection":
                     if (auth != null && GetService<ConnectionService>() == null)
@@ -670,8 +669,7 @@ namespace FxSsh
             }
             if (service != null)
             {
-                if (ServiceRegistered != null)
-                    ServiceRegistered(this, service);
+                ServiceRegistered?.Invoke(this, service);
 
                 _services.Add(service);
             }

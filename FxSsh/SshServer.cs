@@ -11,8 +11,8 @@ namespace FxSsh
     public class SshServer : IDisposable
     {
         private readonly object _lock = new object();
-        private readonly List<Session> _sessions = new List<Session>();
-        private readonly Dictionary<string, string> _hostKey = new Dictionary<string, string>();
+        private readonly List<Session> sessions = new List<Session>();
+        private readonly Dictionary<string, string> hostKeys = new Dictionary<string, string>();
         private bool _isDisposed;
         private bool _started;
         private TcpListener _listenser = null;
@@ -66,7 +66,7 @@ namespace FxSsh
                 _isDisposed = true;
                 _started = false;
 
-                foreach (var session in _sessions)
+                foreach (var session in sessions)
                 {
                     try
                     {
@@ -84,8 +84,8 @@ namespace FxSsh
             Contract.Requires(type != null);
             Contract.Requires(xml != null);
 
-            if (!_hostKey.ContainsKey(type))
-                _hostKey.Add(type, xml);
+            if (!hostKeys.ContainsKey(type))
+                hostKeys.Add(type, xml);
         }
 
         private void BeginAcceptSocket()
@@ -112,27 +112,24 @@ namespace FxSsh
                 var socket = _listenser.EndAcceptSocket(ar);
                 Task.Run(() =>
                 {
-                    var session = new Session(socket, _hostKey);
-                    session.Disconnected += (ss, ee) => { lock (_lock) _sessions.Remove(session); };
+                    var session = new Session(socket, hostKeys);
+                    session.Disconnected += (ss, ee) => { lock (_lock) sessions.Remove(session); };
                     lock (_lock)
-                        _sessions.Add(session);
+                        sessions.Add(session);
                     try
                     {
-                        if (ConnectionAccepted != null)
-                            ConnectionAccepted(this, session);
+                        ConnectionAccepted?.Invoke(this, session);
                         session.EstablishConnection();
                     }
                     catch (SshConnectionException ex)
                     {
                         session.Disconnect(ex.DisconnectReason, ex.Message);
-                        if (ExceptionRasied != null)
-                            ExceptionRasied(this, ex);
+                        ExceptionRasied?.Invoke(this, ex);
                     }
                     catch (Exception ex)
                     {
                         session.Disconnect();
-                        if (ExceptionRasied != null)
-                            ExceptionRasied(this, ex);
+                        ExceptionRasied?.Invoke(this, ex);
                     }
                 });
             }

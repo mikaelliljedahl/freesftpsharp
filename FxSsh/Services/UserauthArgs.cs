@@ -2,9 +2,9 @@
 
 namespace FxSsh.Services
 {
-    public class UserauthArgs
+    public class UserAuthArgs
     {
-        public UserauthArgs(string keyAlgorithm, string fingerprint, byte[] key)
+        public UserAuthArgs(string keyAlgorithm, string fingerprint, byte[] key)
         {
             Contract.Requires(keyAlgorithm != null);
             Contract.Requires(fingerprint != null);

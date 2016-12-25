@@ -5,14 +5,14 @@ using System.Diagnostics.Contracts;
 
 namespace FxSsh.Services
 {
-    public class UserauthService : SshService
+    public class UserAuthService : SshService
     {
-        public UserauthService(Session session)
+        public UserAuthService(Session session)
             : base(session)
         {
         }
 
-        public event EventHandler<UserauthArgs> Userauth;
+        public event EventHandler<UserAuthArgs> UserAuth;
 
         public event EventHandler<string> Succeed;
 
@@ -68,18 +68,17 @@ namespace FxSsh.Services
                     verifed = keyAlg.VerifyData(worker.ToByteArray(), sig);
                 }
 
-                var args = new UserauthArgs(message.KeyAlgorithmName, keyAlg.GetFingerprint(), message.PublicKey);
-                if (verifed && Userauth != null)
+                var args = new UserAuthArgs(message.KeyAlgorithmName, keyAlg.GetFingerprint(), message.PublicKey);
+                if (verifed && UserAuth != null)
                 {
-                    Userauth(this, args);
+                    UserAuth(this, args);
                     verifed = args.Result;
                 }
 
                 if (verifed)
                 {
                     _session.RegisterService(message.ServiceName, args);
-                    if (Succeed != null)
-                        Succeed(this, message.ServiceName);
+                    Succeed?.Invoke(this, message.ServiceName);
                     _session.SendMessage(new SuccessMessage());
                     return;
                 }

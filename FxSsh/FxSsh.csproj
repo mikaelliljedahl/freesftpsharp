@@ -136,8 +136,8 @@
     <Compile Include="Services\SessionChannel.cs" />
     <Compile Include="Services\SessionRequestedArgs.cs" />
     <Compile Include="Services\SshService.cs" />
-    <Compile Include="Services\UserauthArgs.cs" />
-    <Compile Include="Services\UserauthService.cs" />
+    <Compile Include="Services\UserAuthArgs.cs" />
+    <Compile Include="Services\UserAuthService.cs" />
     <Compile Include="Session.cs" />
     <Compile Include="SshConnectionException.cs" />
     <Compile Include="SshDataWorker.cs" />
