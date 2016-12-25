@@ -14,7 +14,7 @@ namespace FxSsh
         private readonly Dictionary<string, string> hostKeys = new Dictionary<string, string>();
         private bool _isDisposed;
         private bool _started;
-        private TcpListener _listenser = null;
+        private TcpListener _listener = null;
 
         public SshServer()
             : this(new StartingInfo())
@@ -41,12 +41,12 @@ namespace FxSsh
                 if (_started)
                     throw new InvalidOperationException("The server is already started.");
 
-                _listenser = StartingInfo.LocalAddress == IPAddress.IPv6Any
+                _listener = StartingInfo.LocalAddress == IPAddress.IPv6Any
                     ? TcpListener.Create(StartingInfo.Port) // dual stack
                     : new TcpListener(StartingInfo.LocalAddress, StartingInfo.Port);
-                _listenser.ExclusiveAddressUse = false;
-                _listenser.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                _listenser.Start();
+                _listener.ExclusiveAddressUse = false;
+                _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                _listener.Start();
                 BeginAcceptSocket();
 
                 _started = true;
@@ -61,7 +61,7 @@ namespace FxSsh
                 if (!_started)
                     throw new InvalidOperationException("The server is not started.");
 
-                _listenser.Stop();
+                _listener.Stop();
 
                 _isDisposed = true;
                 _started = false;
@@ -92,7 +92,7 @@ namespace FxSsh
         {
             try
             {
-                _listenser.BeginAcceptSocket(AcceptSocket, null);
+                _listener.BeginAcceptSocket(AcceptSocket, null);
             }
             catch (ObjectDisposedException)
             {
@@ -109,7 +109,7 @@ namespace FxSsh
         {
             try
             {
-                var socket = _listenser.EndAcceptSocket(ar);
+                var socket = _listener.EndAcceptSocket(ar);
                 Task.Run(() =>
                 {
                     var session = new Session(socket, hostKeys);
