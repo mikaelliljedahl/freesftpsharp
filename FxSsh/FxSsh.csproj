@@ -143,7 +143,7 @@
     <Compile Include="SshConnectionException.cs" />
     <Compile Include="SshDataWorker.cs" />
     <Compile Include="SshServer.cs" />
-    <Compile Include="StartingInfo.cs" />
+    <Compile Include="SshServerSettings.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

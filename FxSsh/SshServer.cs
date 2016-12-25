@@ -17,17 +17,17 @@ namespace FxSsh
         private TcpListener _listener = null;
 
         public SshServer()
-            : this(new StartingInfo())
+            : this(new SshServerSettings())
         { }
 
-        public SshServer(StartingInfo info)
+        public SshServer(SshServerSettings settings)
         {
-            Contract.Requires(info != null);
+            Contract.Requires(settings != null);
 
-            StartingInfo = info;
+            ServerSetings = settings;
         }
 
-        public StartingInfo StartingInfo { get; private set; }
+        public SshServerSettings ServerSetings { get; private set; }
 
         public event EventHandler<Session> ConnectionAccepted;
 
@@ -41,9 +41,9 @@ namespace FxSsh
                 if (_started)
                     throw new InvalidOperationException("The server is already started.");
 
-                _listener = StartingInfo.LocalAddress == IPAddress.IPv6Any
-                    ? TcpListener.Create(StartingInfo.Port) // dual stack
-                    : new TcpListener(StartingInfo.LocalAddress, StartingInfo.Port);
+                _listener = ServerSetings.LocalAddress == IPAddress.IPv6Any
+                    ? TcpListener.Create(ServerSetings.Port) // dual stack
+                    : new TcpListener(ServerSetings.LocalAddress, ServerSetings.Port);
                 _listener.ExclusiveAddressUse = false;
                 _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                 _listener.Start();
