@@ -6,9 +6,9 @@ using System.Threading.Tasks;
 
 namespace SshServerLoader
 {
-    class Program
+    internal class Program
     {
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             var server = new SshServer();
             server.AddHostKey("ssh-rsa", "<RSAKeyValue><Modulus>xXKzcIH/rzcfv2D7VcvLdxR5S5iw2TTsP65Aa82S4+9ZIqLPTNtuzr76Mz6Cx0yDOhawHlIujtalqaaQzaUvkudCtMcVMnj37OcCYz7XDAYejalCxf/vtJo7U4mnYdCM+nAOQKNIDKLGbLtGuEAGwdi560DOJY2plhnBf1oOI+k=</Modulus><Exponent>AQAB</Exponent><P>37kMr9YiU4cSqHqTJSjBJ/szG2O4n5xSIlPy4MZ4aAN5NALHxfsN0dq1y8NL6GTLMI5qoykvp4Bjrm2ZgU1cDQ==</P><Q>4e84rF+UsFBfQEKJc2pbACWWJjttNW0hccdQZzA3IUxRmd/Z4yEMr1L70TP0XV7dw1RDs1JyU7xnXBIbGy5ETQ==</Q><DP>vP0TbI6VnL3j0xMIrkFJOj8Ho0GQOrTQ5VLJP3wpRqR4hKk8nVBBEl+RZznpK73Jr5D/ICmwqezZSAYpwILbGQ==</DP><DQ>bHdzZtWwRYEgaXJIGL+7lnN1BT/MazTMNJpykEeGgBbqqgvcx/zq4RTezg26SEUuBANlSSbQukCeAoayurbYlQ==</DQ><InverseQ>Irq9vR7CXIVR+r09caYIxIY8BOig+HShN1bXvATERJcjTW2jUgJrUttDGNEx70/hBd7m1NWCZz5YO3RH9Bdf5w==</InverseQ><D>AqxsufxFcW9TDCAmQK4mwVdsoQjRp2jfcULmkM8fl9u40dtxTr6Csv5dz7qfKLWxHTGlDUDabCK2t/DCcZZoA3rsqwLADe4ZerDdg6xiq4MBzNprM8Y0IfNESEdFB9T0T73ONQCsMalUzEvUknC4Ed4Fya34LUHntgQtEhXpDJE=</D></RSAKeyValue>");
@@ -20,14 +20,14 @@ namespace SshServerLoader
             Task.Delay(-1).Wait();
         }
 
-        static void OnConnectionAccepted(object sender, Session e)
+        private static void OnConnectionAccepted(object sender, Session e)
         {
             Console.WriteLine("Accepted a client.");
 
             e.ServiceRegistered += OnServiceRegistered;
         }
 
-        static void OnServiceRegistered(object sender, SshService e)
+        private static void OnServiceRegistered(object sender, SshService e)
         {
             var session = (Session)sender;
             Console.WriteLine("Session {0} requesting {1}.",
@@ -45,14 +45,14 @@ namespace SshServerLoader
             }
         }
 
-        static void OnUserAuth(object sender, UserAuthArgs e)
+        private static void OnUserAuth(object sender, UserAuthArgs e)
         {
             Console.WriteLine("Client {0} fingerprint: {1}.", e.KeyAlgorithm, e.Fingerprint);
 
             e.Result = true;
         }
 
-        static void OnServiceCommandOpened(object sender, SessionRequestedArgs e)
+        private static void OnServiceCommandOpened(object sender, SessionRequestedArgs e)
         {
             Console.WriteLine("Channel {0} runs command: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
 
