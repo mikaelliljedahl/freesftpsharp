@@ -1,3 +1,8 @@
+
+# SSHServer
+
+SSH Server library based heavily on [FxSsh](https://github.com/Aimeast/FxSsh)
+
 ## FxSsh
 FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server side application as SSH reinforcement of [GitCandy](https://github.com/Aimeast/GitCandy). 
 
