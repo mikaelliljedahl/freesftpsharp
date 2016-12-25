@@ -47,7 +47,7 @@ namespace FxSsh
 #else
         private readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
 #endif
-        private readonly Dictionary<string, string> _hostKey;
+        private readonly Dictionary<string, string> _hostKeys;
 
         private uint _outboundPacketSequence;
         private uint _inboundPacketSequence;
@@ -96,13 +96,13 @@ namespace FxSsh
                                  .ToDictionary(x => x.Number, x => x.Type);
         }
 
-        public Session(Socket socket, Dictionary<string, string> hostKey)
+        public Session(Socket socket, Dictionary<string, string> hostKeys)
         {
             Contract.Requires(socket != null);
-            Contract.Requires(hostKey != null);
+            Contract.Requires(hostKeys != null);
 
             _socket = socket;
-            _hostKey = hostKey.ToDictionary(s => s.Key, s => s.Value);
+            _hostKeys = hostKeys.ToDictionary(s => s.Key, s => s.Value);
             ServerVersion = "SSH-2.0-FxSsh";
         }
 
@@ -495,7 +495,7 @@ namespace FxSsh
         private void HandleMessage(KeyExchangeDhInitMessage message)
         {
             var kexAlg = _keyExchangeAlgorithms[_exchangeContext.KeyExchange]();
-            var hostKeyAlg = _publicKeyAlgorithms[_exchangeContext.PublicKey](_hostKey[_exchangeContext.PublicKey].ToString());
+            var hostKeyAlg = _publicKeyAlgorithms[_exchangeContext.PublicKey](_hostKeys[_exchangeContext.PublicKey].ToString());
             var clientCipher = _encryptionAlgorithms[_exchangeContext.ClientEncryption]();
             var serverCipher = _encryptionAlgorithms[_exchangeContext.ServerEncryption]();
             var serverHmac = _hmacAlgorithms[_exchangeContext.ServerHmac]();
