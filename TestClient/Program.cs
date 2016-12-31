@@ -27,10 +27,11 @@ namespace TestClient
                     {
                         sshCmd.Execute();
                         var result = sshCmd.Result;
-                        Console.WriteLine($"exec: {cmd}, result: {result}");
+                        Console.Write($"exec: {cmd}, result: {result}");
                     }
                 }
             }
+            Console.ReadLine();
         }
     }
 }

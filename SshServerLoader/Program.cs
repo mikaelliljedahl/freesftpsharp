@@ -68,6 +68,7 @@ namespace SshServerLoader
         {
             Console.WriteLine("Channel {0} runs command: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
             e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
+            e.Channel.SendClose();
         }
     }
 }
