@@ -1,6 +1,7 @@
 ﻿using FxSsh;
 using FxSsh.Services;
 using System;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace SshServerLoader
@@ -66,6 +67,7 @@ namespace SshServerLoader
         static void OnServiceCommandOpened(object sender, SessionRequestedArgs e)
         {
             Console.WriteLine("Channel {0} runs command: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
+            e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
         }
     }
 }
