@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -43,11 +44,15 @@ namespace FxSsh
 
         private readonly object _locker = new object();
         private readonly Socket _socket;
-#if DEBUG
-        private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
-#else
-        private readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
-#endif
+
+        public EndPoint LocalEndpoint => _socket.LocalEndPoint;
+        public EndPoint RemoteEndpoint => _socket.RemoteEndPoint;
+
+//#if DEBUG
+//        private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
+//#else
+        private readonly TimeSpan _timeout = TimeSpan.FromSeconds(15);
+//#endif
         private readonly Dictionary<string, string> _hostKeys;
 
         private uint _outboundPacketSequence;
@@ -175,6 +180,9 @@ namespace FxSsh
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, socketBufferSize);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBuffer, socketBufferSize);
+
+            _socket.ReceiveTimeout = this._timeout.Milliseconds;
+            _socket.SendTimeout = this._timeout.Milliseconds;
         }
 
         private string SocketReadProtocolVersion()
@@ -221,6 +229,10 @@ namespace FxSsh
                     var ar = _socket.BeginReceive(buffer, pos, length - pos, SocketFlags.None, null, null);
                     WaitHandle(ar);
                     var len = _socket.EndReceive(ar);
+                    if (len == 0)
+                    {
+                        throw new SshConnectionException("Connection lost", DisconnectReason.ConnectionLost);
+                    }
                     if (len == 0 && _socket.Available == 0)
                         Thread.Sleep(50);
 
@@ -253,7 +265,12 @@ namespace FxSsh
                 {
                     var ar = _socket.BeginSend(data, pos, length - pos, SocketFlags.None, null, null);
                     WaitHandle(ar);
-                    pos += _socket.EndSend(ar);
+                    int ret = _socket.EndSend(ar);
+                    if (ret == 0)
+                    {
+                        throw new SshConnectionException("Connection lost", DisconnectReason.ConnectionLost);
+                    }
+                    pos += ret;
                 }
                 catch (SocketException ex)
                 {
