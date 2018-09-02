@@ -123,7 +123,7 @@ namespace FxSsh.Services
             else
             {
                 _session.SendMessage(new FailureMessage());
-                throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
+                //throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
             }
         }
     }
