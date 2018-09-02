@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 using System.Linq;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -469,7 +470,9 @@ namespace FxSsh
 
         private void HandleMessageCore(Message message)
         {
-            HandleMessage((dynamic)message);
+            typeof(Session)
+                            .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
+                            .Invoke(this, new[] { message });
         }
 
         private void HandleMessage(DisconnectMessage message)
