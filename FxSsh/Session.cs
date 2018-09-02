@@ -109,7 +109,7 @@ namespace FxSsh
 
             _socket = socket;
             _hostKeys = hostKeys.ToDictionary(s => s.Key, s => s.Value);
-            ServerVersion = "SSH-2.0-FxSsh";
+            ServerVersion = "SSH-2.0-OpenSSH_7.1";
         }
 
         public event EventHandler<EventArgs> Disconnected;
