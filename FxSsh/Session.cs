@@ -51,7 +51,7 @@ namespace FxSsh
 //#if DEBUG
 //        private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
 //#else
-        private readonly TimeSpan _timeout = TimeSpan.FromSeconds(15);
+        private readonly TimeSpan _timeout = TimeSpan.FromSeconds(60);
 //#endif
         private readonly Dictionary<string, string> _hostKeys;
 
@@ -177,7 +177,14 @@ namespace FxSsh
         {
             const int socketBufferSize = 2 * MaximumSshPacketSize;
             _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
-            _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
+            _socket.LingerState = new LingerOption(false, 0);
+            try
+            {
+                //_socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
+            }
+            catch
+            {
+            }
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, socketBufferSize);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBuffer, socketBufferSize);
 
