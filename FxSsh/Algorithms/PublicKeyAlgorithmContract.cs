@@ -4,7 +4,7 @@ using System.Diagnostics.Contracts;
 namespace FxSsh.Algorithms
 {
     [ContractClassFor(typeof(PublicKeyAlgorithm))]
-    internal abstract class PublicKeyAlgorithmContract : PublicKeyAlgorithm
+    abstract class PublicKeyAlgorithmContract : PublicKeyAlgorithm
     {
         public PublicKeyAlgorithmContract()
             : base(null)
@@ -16,8 +16,10 @@ namespace FxSsh.Algorithms
             get { throw new NotImplementedException(); }
         }
 
-        protected override void ImportKey(string xml)
+        public override void ImportKey(byte[] bytes)
         {
+            Contract.Requires(bytes != null);
+
             throw new NotImplementedException();
         }
 
