@@ -24,10 +24,10 @@ namespace FxSsh
         {
             Contract.Requires(settings != null);
 
-            ServerSetings = settings;
+            ServerSettings = settings;
         }
 
-        public SshServerSettings ServerSetings { get; private set; }
+        public SshServerSettings ServerSettings { get; private set; }
 
         public event EventHandler<Session> ConnectionAccepted;
 
@@ -41,9 +41,9 @@ namespace FxSsh
                 if (_started)
                     throw new InvalidOperationException("The server is already started.");
 
-                _listener = ServerSetings.LocalAddress == IPAddress.IPv6Any
-                    ? TcpListener.Create(ServerSetings.Port) // dual stack
-                    : new TcpListener(ServerSetings.LocalAddress, ServerSetings.Port);
+                _listener = ServerSettings.LocalAddress == IPAddress.IPv6Any
+                    ? TcpListener.Create(ServerSettings.Port) // dual stack
+                    : new TcpListener(ServerSettings.LocalAddress, ServerSettings.Port);
                 _listener.ExclusiveAddressUse = false;
                 _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                 _listener.Start();
@@ -118,7 +118,7 @@ namespace FxSsh
                 var socket = _listener.EndAcceptSocket(ar);
                 Task.Run(() =>
                 {
-                    var session = new Session(socket, hostKeys, ServerSetings.ServerBanner);
+                    var session = new Session(socket, hostKeys);
                     session.Disconnected += (ss, ee) => { lock (_lock) sessions.Remove(session); };
                     lock (_lock)
                         sessions.Add(session);
