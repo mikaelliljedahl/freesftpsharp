@@ -8,5 +8,7 @@ namespace FxSsh
 
         public IPAddress LocalAddress { get; set; } = IPAddress.IPv6Any;
         public int Port { get; set; } = DefaultPort;
+
+        public string ServerBanner { get; set; } = "FxSSHSFTP";
     }
 }

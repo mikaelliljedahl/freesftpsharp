@@ -1,4 +1,5 @@
-﻿namespace FxSsh.Messages.Connection
+﻿
+namespace FxSsh.Messages.Connection
 {
     [Message("SSH_MSG_CHANNEL_DATA", MessageNumber)]
     public class ChannelDataMessage : ConnectionServiceMessage

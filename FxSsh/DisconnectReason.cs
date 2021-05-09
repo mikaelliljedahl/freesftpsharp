@@ -6,7 +6,6 @@ namespace FxSsh
     {
         [EditorBrowsable(EditorBrowsableState.Never)]
         None = 0, // Not used by protocol
-
         HostNotAllowedToConnect = 1,
         ProtocolError = 2,
         KeyExchangeFailed = 3,

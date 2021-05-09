@@ -112,7 +112,7 @@ namespace FxSsh
                 var socket = _listener.EndAcceptSocket(ar);
                 Task.Run(() =>
                 {
-                    var session = new Session(socket, hostKeys);
+                    var session = new Session(socket, hostKeys, ServerSetings.ServerBanner);
                     session.Disconnected += (ss, ee) => { lock (_lock) sessions.Remove(session); };
                     lock (_lock)
                         sessions.Add(session);

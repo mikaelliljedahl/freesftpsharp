@@ -10,7 +10,7 @@ namespace TestClient
         {
             var testUsername = "test_person";
             var testPassword = "1234";
-            var connInfo = new ConnectionInfo(IPAddress.Loopback.ToString(), 4022, testUsername,
+            var connInfo = new ConnectionInfo(IPAddress.Loopback.ToString(), 22, testUsername,
                 new AuthenticationMethod[]
                 {
                     // Password auth

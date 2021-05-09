@@ -2,26 +2,32 @@
 
 namespace FxSsh.Services
 {
-    public class UserAuthArgs
+    
+    public abstract class UserAuthArgs
     {
-        public UserAuthArgs(string keyAlgorithm, string fingerprint, byte[] key) : this(AuthType.PublicKey)
+        public UserAuthArgs(Session session, string username, string keyAlgorithm, string fingerprint, byte[] key) : this(AuthType.PublicKey)
         {
+            Contract.Requires(username != null);
             Contract.Requires(keyAlgorithm != null);
             Contract.Requires(fingerprint != null);
             Contract.Requires(key != null);
 
+
+            Username = username;
             KeyAlgorithm = keyAlgorithm;
             Fingerprint = fingerprint;
             Key = key;
+            Session = session;
         }
 
-        public UserAuthArgs(string username, string password) : this(AuthType.Password)
+        public UserAuthArgs(Session session, string username, string password) : this(AuthType.Password)
         {
             Contract.Requires(username != null);
             Contract.Requires(password != null);
 
             Username = username;
             Password = password;
+            Session = session;
         }
 
         protected UserAuthArgs(AuthType authType)
@@ -36,16 +42,21 @@ namespace FxSsh.Services
         }
 
         // Info
-        public AuthType AuthenticationType { get; private set; }
+        public AuthType AuthenticationType { get; set; }
+
+        public Session Session { get; set; }
+
+        public string Username { get; set; }
 
         // Public Key Auth
-        public string KeyAlgorithm { get; private set; }
-        public string Fingerprint { get; private set; }
-        public byte[] Key { get; private set; }
+        public string KeyAlgorithm { get; set; }
+        public string Fingerprint { get; set; }
+        public byte[] Key { get; set; }
         public bool Result { get; set; }
 
-        // Password Auth
-        public string Username { get; private set; }
-        public string Password { get; private set; }
+
+        // Password Auth        
+        public string Password { get; set; }
     }
 }
+    
