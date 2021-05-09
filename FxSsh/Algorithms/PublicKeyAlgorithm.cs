@@ -58,7 +58,6 @@ namespace FxSsh.Algorithms
         }
 
         public abstract void ImportKey(byte[] bytes);
-
         public abstract byte[] ExportKey();
 
         public abstract void LoadKeyAndCertificatesData(byte[] data);

@@ -1,5 +1,6 @@
 ﻿using FxSsh.Algorithms;
 using System;
+using FxSsh.Algorithms;
 using System.Diagnostics.Contracts;
 using System.Security.Cryptography;
 
@@ -27,8 +28,10 @@ namespace FxSsh
             {
                 case "ssh-rsa":
                     return new RsaKey();
+
                 case "ssh-dss":
                     return new DssKey();
+
                 default:
                     throw new ArgumentOutOfRangeException("type");
             }

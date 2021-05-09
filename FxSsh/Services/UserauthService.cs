@@ -27,10 +27,10 @@ namespace FxSsh.Services
         {
             Contract.Requires(message != null);
 
-            if (this._authenticationSucceeded)
-            {
-                return;
-            }
+            typeof(UserAuthService)
+                            .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
+                            .Invoke(this, new[] { message });
+        }
 
             typeof(UserAuthService)
                 .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
@@ -126,20 +126,17 @@ namespace FxSsh.Services
                     verifed = args.Result;
                 }
 
-                if (verifed)
-                {
-                    _session.RegisterService(message.ServiceName, args);
-                    if (Succeed != null)
-                        Succeed(this, message.ServiceName);
-                    _session.SendMessage(new SuccessMessage());
-                    _authenticationSucceeded = true;
-                    return;
-                }
-                else
-                {
-                    _session.SendMessage(new FailureMessage());
-                    throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
-                }
+            if (verifed)
+            {
+                _session.RegisterService(message.ServiceName, args);
+                Succeed?.Invoke(this, message.ServiceName);
+                _session.SendMessage(new SuccessMessage());
+                return;
+            }
+            else
+            {
+                _session.SendMessage(new FailureMessage());
+                //throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
             }
         }
     }

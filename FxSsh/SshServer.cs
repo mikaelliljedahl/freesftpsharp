@@ -66,15 +66,21 @@ namespace FxSsh
                 _isDisposed = true;
                 _started = false;
 
-                foreach (var session in sessions)
+                try
                 {
-                    try
+                    foreach (var session in sessions)
                     {
-                        session.Disconnect();
+                        try
+                        {
+                            session.Disconnect();
+                        }
+                        catch
+                        {
+                        }
                     }
-                    catch
-                    {
-                    }
+                }
+                catch
+                {
                 }
             }
         }
