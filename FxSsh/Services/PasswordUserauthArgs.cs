@@ -2,18 +2,17 @@
 
 namespace FxSsh.Services
 {
-    public class PasswordUserauthArgs : UserauthArgs
+    public class PasswordUserAuthArgs : UserAuthArgs
     {
-        public PasswordUserauthArgs(string username, string pwd)
+        public PasswordUserAuthArgs(Session session, string username, string password) : base(session, username, password)
         {
             Contract.Requires(username != null);
-            Contract.Requires(pwd != null);
+            Contract.Requires(password != null);
 
             this.Username = username;
-            this.Password = pwd;
+            this.Password = password;
         }
 
-        public string Username { get; private set; }
-        public string Password { get; private set; }
+       
     }
 }

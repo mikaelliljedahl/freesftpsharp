@@ -2,10 +2,11 @@
 
 namespace FxSsh.Services
 {
-    public class PKUserauthArgs : UserauthArgs
+    public class PKUserAuthArgs : UserAuthArgs
     {
-        public PKUserauthArgs(string keyAlgorithm, string fingerprint, byte[] key)
+        public PKUserAuthArgs(Session session, string username, string keyAlgorithm, string fingerprint, byte[] key) : base(session, username, keyAlgorithm, fingerprint, key)
         {
+            Contract.Requires(username != null);
             Contract.Requires(keyAlgorithm != null);
             Contract.Requires(fingerprint != null);
             Contract.Requires(key != null);
@@ -13,10 +14,7 @@ namespace FxSsh.Services
             KeyAlgorithm = keyAlgorithm;
             Fingerprint = fingerprint;
             Key = key;
+            Username = username;
         }
-
-        public string KeyAlgorithm { get; private set; }
-        public string Fingerprint { get; private set; }
-        public byte[] Key { get; private set; }
     }
 }

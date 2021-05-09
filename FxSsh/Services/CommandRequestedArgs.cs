@@ -4,7 +4,7 @@ namespace FxSsh.Services
 {
     public class CommandRequestedArgs
     {
-        public CommandRequestedArgs(SessionChannel channel, string type, string command, UserauthArgs userauthArgs)
+        public CommandRequestedArgs(SessionChannel channel, string type, string command, UserAuthArgs userauthArgs)
         {
             Contract.Requires(channel != null);
             Contract.Requires(command != null);
@@ -12,13 +12,13 @@ namespace FxSsh.Services
 
             Channel = channel;
             CommandText = command;
-            AttachedUserauthArgs = userauthArgs;
+            AttachedUserAuthArgs = userauthArgs;
             SubSystemName = type;
         }
 
         public SessionChannel Channel { get; private set; }
         public string CommandText { get; private set; }
         public string SubSystemName { get; private set; }
-        public UserauthArgs AttachedUserauthArgs { get; private set; }
+        public UserAuthArgs AttachedUserAuthArgs { get; private set; }
     }
 }

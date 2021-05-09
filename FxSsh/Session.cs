@@ -616,7 +616,7 @@ namespace FxSsh
 
         private void HandleMessage(UserauthServiceMessage message)
         {
-            var service = GetService<UserauthService>();
+            var service = GetService<UserAuthService>();
             if (service != null)
                 service.HandleMessageCore(message);
         }
@@ -703,7 +703,7 @@ namespace FxSsh
             }
         }
 
-        internal SshService RegisterService(string serviceName, UserauthArgs auth = null)
+        internal SshService RegisterService(string serviceName, UserAuthArgs auth = null)
         {
             Contract.Requires(serviceName != null);
 
@@ -711,8 +711,8 @@ namespace FxSsh
             switch (serviceName)
             {
                 case "ssh-userauth":
-                    if (GetService<UserauthService>() == null)
-                        service = new UserauthService(this);
+                    if (GetService<UserAuthService>() == null)
+                        service = new UserAuthService(this);
                     break;
                 case "ssh-connection":
                     if (auth != null && GetService<ConnectionService>() == null)

@@ -2,17 +2,18 @@
 using FxSsh.Messages.Userauth;
 using System;
 using System.Diagnostics.Contracts;
+using System.Reflection;
 
 namespace FxSsh.Services
 {
-    public class UserauthService : SshService, IDynamicInvoker
+    public class UserAuthService : SshService, IDynamicInvoker
     {
-        public UserauthService(Session session)
+        public UserAuthService(Session session)
             : base(session)
         {
         }
 
-        public event EventHandler<UserauthArgs> Userauth;
+        public event EventHandler<UserAuthArgs> UserAuth;
 
         public event EventHandler<string> Succeed;
 
@@ -31,7 +32,7 @@ namespace FxSsh.Services
                 return;
             }
 
-            typeof(UserauthService)
+            typeof(UserAuthService)
                 .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
                 .Invoke(this, new[] { message });
         }
@@ -56,37 +57,15 @@ namespace FxSsh.Services
             }
         }
 
-        private void HandleMessage(PasswordRequestMessage message)
-        {
-            if (this.Userauth != null)
-            {
-                var args = new PasswordUserauthArgs(message.Username, message.Password);
-
-                this.Userauth(this, args);
-
-                if (args.Result)
-                {
-                    _session.RegisterService(message.ServiceName, args);
-                    if (Succeed != null)
-                        Succeed(this, message.ServiceName);
-                    _session.SendMessage(new SuccessMessage());
-                    _authenticationSucceeded = true;
-                    return;
-                }
-            }
-
-            _session.SendMessage(new FailureMessage());
-            throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
-        }
-
+      
         private void HandleMessage(PasswordRequestMessage message)
         {
             var verifed = false;
 
-            var args = new UserauthArgs(_session, message.Username, message.Password);
-            if (Userauth != null)
+            var args = new PasswordUserAuthArgs(_session, message.Username, message.Password);
+            if (UserAuth != null)
             {
-                Userauth(this, args);
+                UserAuth(this, args);
                 verifed = args.Result;
             }
 
@@ -102,6 +81,7 @@ namespace FxSsh.Services
             else
             {
                 _session.SendMessage(new FailureMessage());
+                //  throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
             }
         }
 
@@ -114,8 +94,8 @@ namespace FxSsh.Services
                 var keyAlg = Session._publicKeyAlgorithms[message.KeyAlgorithmName](null);
                 keyAlg.LoadKeyAndCertificatesData(message.PublicKey);
 
-                var args = new UserauthArgs(base._session, message.Username, message.KeyAlgorithmName, keyAlg.GetFingerprint(), message.PublicKey);
-                Userauth?.Invoke(this, args);
+                var args = new PKUserAuthArgs(base._session, message.Username, message.KeyAlgorithmName, keyAlg.GetFingerprint(), message.PublicKey);
+                UserAuth?.Invoke(this, args);
                 verifed = args.Result;
 
                 if (!verifed)
@@ -140,10 +120,9 @@ namespace FxSsh.Services
                     verifed = keyAlg.VerifyData(worker.ToByteArray(), sig);
                 }
 
-                var args = new PKUserauthArgs(message.KeyAlgorithmName, keyAlg.GetFingerprint(), message.PublicKey);
-                if (verifed && Userauth != null)
+                if (verifed && UserAuth != null)
                 {
-                    Userauth(this, args);
+                    UserAuth(this, args);
                     verifed = args.Result;
                 }
 

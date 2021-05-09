@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net45;net46</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>Aimeast, Lirunki</Authors>
     <PackageLicenseUrl>https://github.com/Lirunki/FxSsh/blob/master/LICENSE.md</PackageLicenseUrl>
@@ -14,5 +14,9 @@ All credit for this work goes to Aimeast.</Description>
     <Company>Aimeast, Lirunki</Company>
     <Version>1.0.2</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
 
 </Project>

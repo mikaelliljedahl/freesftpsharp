@@ -2,40 +2,61 @@
 
 namespace FxSsh.Services
 {
-    public abstract class UserauthArgs
+    
+    public abstract class UserAuthArgs
     {
-        public UserauthArgs(Session session, string username, string keyAlgorithm, string fingerprint, byte[] key)
+        public UserAuthArgs(Session session, string username, string keyAlgorithm, string fingerprint, byte[] key) : this(AuthType.PublicKey)
         {
+            Contract.Requires(username != null);
             Contract.Requires(keyAlgorithm != null);
             Contract.Requires(fingerprint != null);
             Contract.Requires(key != null);
 
-            AuthMethod = "publickey";
+
+            Username = username;
             KeyAlgorithm = keyAlgorithm;
             Fingerprint = fingerprint;
             Key = key;
             Session = session;
-            Username = username;
         }
 
-        public UserauthArgs(Session session, string username, string password)
+        public UserAuthArgs(Session session, string username, string password) : this(AuthType.Password)
         {
             Contract.Requires(username != null);
             Contract.Requires(password != null);
 
-            AuthMethod = "password";
             Username = username;
             Password = password;
             Session = session;
         }
 
-        public string AuthMethod { get; private set; }
-        public Session Session { get; private set; }
-        public string Username { get; private set; }
-        public string Password { get; private set; }
-        public string KeyAlgorithm { get; private set; }
-        public string Fingerprint { get; private set; }
-        public byte[] Key { get; private set; }
+        protected UserAuthArgs(AuthType authType)
+        {
+            AuthenticationType = authType;
+        }
+
+        public enum AuthType
+        {
+            PublicKey,
+            Password
+        }
+
+        // Info
+        public AuthType AuthenticationType { get; set; }
+
+        public Session Session { get; set; }
+
+        public string Username { get; set; }
+
+        // Public Key Auth
+        public string KeyAlgorithm { get; set; }
+        public string Fingerprint { get; set; }
+        public byte[] Key { get; set; }
         public bool Result { get; set; }
+
+
+        // Password Auth        
+        public string Password { get; set; }
     }
 }
+    
