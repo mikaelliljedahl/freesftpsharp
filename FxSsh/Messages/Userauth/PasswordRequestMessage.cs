@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Text;
 
 namespace FxSsh.Messages.Userauth
@@ -14,8 +15,8 @@ namespace FxSsh.Messages.Userauth
             if (MethodName != "password")
                 throw new ArgumentException(string.Format("Method name {0} is not valid.", MethodName));
 
-            var falseField = reader.ReadBoolean();
-            Password = reader.ReadString(Encoding.UTF8);
+            var isFalse = reader.ReadBoolean();
+            Password = reader.ReadString(Encoding.ASCII);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+﻿using FxSsh.Messages.Connection;
 using System.Text;
 
 namespace FxSsh.Messages.Connection

@@ -1,4 +1,10 @@
-﻿namespace FxSsh.Services
+﻿
+using System;
+using System.Net.Sockets;
+using System.Threading.Tasks;
+using FxSsh.Messages.Connection;
+
+namespace FxSsh.Services
 {
     public class SessionChannel : Channel
     {
@@ -7,6 +13,7 @@
             uint serverChannelId)
             : base(connectionService, clientChannelId, clientInitialWindowSize, clientMaxPacketSize, serverChannelId)
         {
+
         }
     }
 }

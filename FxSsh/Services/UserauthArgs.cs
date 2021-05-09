@@ -2,50 +2,40 @@
 
 namespace FxSsh.Services
 {
-    public class UserAuthArgs
+    public abstract class UserauthArgs
     {
-        public UserAuthArgs(string keyAlgorithm, string fingerprint, byte[] key) : this(AuthType.PublicKey)
+        public UserauthArgs(Session session, string username, string keyAlgorithm, string fingerprint, byte[] key)
         {
             Contract.Requires(keyAlgorithm != null);
             Contract.Requires(fingerprint != null);
             Contract.Requires(key != null);
 
+            AuthMethod = "publickey";
             KeyAlgorithm = keyAlgorithm;
             Fingerprint = fingerprint;
             Key = key;
+            Session = session;
+            Username = username;
         }
 
-        public UserAuthArgs(string username, string password) : this(AuthType.Password)
+        public UserauthArgs(Session session, string username, string password)
         {
             Contract.Requires(username != null);
             Contract.Requires(password != null);
 
+            AuthMethod = "password";
             Username = username;
             Password = password;
+            Session = session;
         }
 
-        protected UserAuthArgs(AuthType authType)
-        {
-            AuthenticationType = authType;
-        }
-
-        public enum AuthType
-        {
-            PublicKey,
-            Password
-        }
-
-        // Info
-        public AuthType AuthenticationType { get; private set; }
-
-        // Public Key Auth
+        public string AuthMethod { get; private set; }
+        public Session Session { get; private set; }
+        public string Username { get; private set; }
+        public string Password { get; private set; }
         public string KeyAlgorithm { get; private set; }
         public string Fingerprint { get; private set; }
         public byte[] Key { get; private set; }
         public bool Result { get; set; }
-
-        // Password Auth
-        public string Username { get; private set; }
-        public string Password { get; private set; }
     }
 }

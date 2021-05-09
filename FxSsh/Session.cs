@@ -14,7 +14,7 @@ using System.Threading;
 
 namespace FxSsh
 {
-    public class Session
+    public class Session : IDynamicInvoker
     {
         private const byte CarriageReturn = 0x0d;
         private const byte LineFeed = 0x0a;
@@ -24,19 +24,14 @@ namespace FxSsh
 
         private static readonly RandomNumberGenerator _rng = new RNGCryptoServiceProvider();
         private static readonly Dictionary<byte, Type> _messagesMetadata;
-
         internal static readonly Dictionary<string, Func<KexAlgorithm>> _keyExchangeAlgorithms =
             new Dictionary<string, Func<KexAlgorithm>>();
-
         internal static readonly Dictionary<string, Func<string, PublicKeyAlgorithm>> _publicKeyAlgorithms =
             new Dictionary<string, Func<string, PublicKeyAlgorithm>>();
-
         internal static readonly Dictionary<string, Func<CipherInfo>> _encryptionAlgorithms =
             new Dictionary<string, Func<CipherInfo>>();
-
         internal static readonly Dictionary<string, Func<HmacInfo>> _hmacAlgorithms =
             new Dictionary<string, Func<HmacInfo>>();
-
         internal static readonly Dictionary<string, Func<CompressionAlgorithm>> _compressionAlgorithms =
             new Dictionary<string, Func<CompressionAlgorithm>>();
 
@@ -47,7 +42,7 @@ namespace FxSsh
 #else
         private readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
 #endif
-        private readonly Dictionary<string, string> _hostKeys;
+        private readonly Dictionary<string, string> _hostKey;
 
         private uint _outboundPacketSequence;
         private uint _inboundPacketSequence;
@@ -62,7 +57,6 @@ namespace FxSsh
         public string ServerVersion { get; private set; }
         public string ClientVersion { get; private set; }
         public byte[] SessionId { get; private set; }
-
         public T GetService<T>() where T : SshService
         {
             return (T)_services.FirstOrDefault(x => x is T);
@@ -96,22 +90,29 @@ namespace FxSsh
                                  .ToDictionary(x => x.Number, x => x.Type);
         }
 
-        public Session(Socket socket, Dictionary<string, string> hostKeys)
+        public Session(Socket socket, Dictionary<string, string> hostKey, string serverBanner)
         {
             Contract.Requires(socket != null);
-            Contract.Requires(hostKeys != null);
+            Contract.Requires(hostKey != null);
 
             _socket = socket;
-            _hostKeys = hostKeys.ToDictionary(s => s.Key, s => s.Value);
-            ServerVersion = "SSH-2.0-FxSsh";
+            _hostKey = hostKey.ToDictionary(s => s.Key, s => s.Value);
+            ServerVersion = serverBanner;
         }
 
         public event EventHandler<EventArgs> Disconnected;
 
         public event EventHandler<SshService> ServiceRegistered;
 
+        public event EventHandler<KeyExchangeArgs> KeysExchanged;
+
         internal void EstablishConnection()
         {
+            if (!_socket.Connected)
+            {
+                return;
+            }
+
             SetSocketOptions();
 
             SocketWriteProtocolVersion();
@@ -145,6 +146,9 @@ namespace FxSsh
         public void Disconnect()
         {
             Disconnect(DisconnectReason.ByApplication, "Connection terminated by the server.");
+
+            if (Disconnected != null)
+                Disconnected(this, EventArgs.Empty);
         }
 
         public void Disconnect(DisconnectReason reason, string description)
@@ -157,23 +161,25 @@ namespace FxSsh
 
             try
             {
-                _socket.Disconnect(true);
+                _socket.Shutdown(SocketShutdown.Both);
+                _socket.Close();
                 _socket.Dispose();
             }
             catch { }
 
-            Disconnected?.Invoke(this, EventArgs.Empty);
+            if (Disconnected != null)
+                Disconnected(this, EventArgs.Empty);
         }
 
         #region Socket operations
-
         private void SetSocketOptions()
         {
             const int socketBufferSize = 2 * MaximumSshPacketSize;
             _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
-            _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
+            _socket.LingerState = new LingerOption(enable: false, seconds: 0);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, socketBufferSize);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBuffer, socketBufferSize);
+            _socket.ReceiveTimeout = (int)_timeout.TotalMilliseconds;
         }
 
         private string SocketReadProtocolVersion()
@@ -189,6 +195,11 @@ namespace FxSsh
                 var ar = _socket.BeginReceive(buffer, pos, buffer.Length - pos, SocketFlags.Peek, null, null);
                 WaitHandle(ar);
                 len = _socket.EndReceive(ar);
+
+                if (len == 0)
+                {
+                    throw new SshConnectionException("Could't read the protocal version", DisconnectReason.ProtocolError);
+                }
 
                 for (var i = 0; i < len; i++, pos++)
                 {
@@ -213,6 +224,8 @@ namespace FxSsh
             var pos = 0;
             var buffer = new byte[length];
 
+            var msSinceLastData = 0;
+
             while (pos < length)
             {
                 try
@@ -220,8 +233,25 @@ namespace FxSsh
                     var ar = _socket.BeginReceive(buffer, pos, length - pos, SocketFlags.None, null, null);
                     WaitHandle(ar);
                     var len = _socket.EndReceive(ar);
+                    if (!_socket.Connected)
+                    {
+                        throw new SshConnectionException("Connection lost", DisconnectReason.ConnectionLost);
+                    }
+
                     if (len == 0 && _socket.Available == 0)
+                    {
+                        if (msSinceLastData >= _timeout.TotalMilliseconds)
+                        {
+                            throw new SshConnectionException("Connection lost", DisconnectReason.ConnectionLost);
+                        }
+
+                        msSinceLastData += 50;
                         Thread.Sleep(50);
+                    }
+                    else
+                    {
+                        msSinceLastData = 0;
+                    }
 
                     pos += len;
                 }
@@ -275,11 +305,9 @@ namespace FxSsh
                     _timeout.TotalMilliseconds),
                     DisconnectReason.ConnectionLost);
         }
-
-        #endregion Socket operations
+        #endregion
 
         #region Message operations
-
         private Message ReceiveMessage()
         {
             var useAlg = _algorithms != null;
@@ -343,7 +371,8 @@ namespace FxSsh
             }
 
             _hasBlockedMessagesWaitHandle.WaitOne();
-            SendMessageInternal(message);
+            lock (_locker)
+                SendMessageInternal(message);
         }
 
         private void SendMessageInternal(Message message)
@@ -445,31 +474,28 @@ namespace FxSsh
 
         private Message LoadKexInitMessage()
         {
-            var message = new KeyExchangeInitMessage()
-            {
-                KeyExchangeAlgorithms = _keyExchangeAlgorithms.Keys.ToArray(),
-                ServerHostKeyAlgorithms = _publicKeyAlgorithms.Keys.ToArray(),
-                EncryptionAlgorithmsClientToServer = _encryptionAlgorithms.Keys.ToArray(),
-                EncryptionAlgorithmsServerToClient = _encryptionAlgorithms.Keys.ToArray(),
-                MacAlgorithmsClientToServer = _hmacAlgorithms.Keys.ToArray(),
-                MacAlgorithmsServerToClient = _hmacAlgorithms.Keys.ToArray(),
-                CompressionAlgorithmsClientToServer = _compressionAlgorithms.Keys.ToArray(),
-                CompressionAlgorithmsServerToClient = _compressionAlgorithms.Keys.ToArray(),
-                LanguagesClientToServer = new[] { "" },
-                LanguagesServerToClient = new[] { "" },
-                FirstKexPacketFollows = false,
-                Reserved = 0
-            };
+            var message = new KeyExchangeInitMessage();
+            message.KeyExchangeAlgorithms = _keyExchangeAlgorithms.Keys.ToArray();
+            message.ServerHostKeyAlgorithms = _publicKeyAlgorithms.Keys.ToArray();
+            message.EncryptionAlgorithmsClientToServer = _encryptionAlgorithms.Keys.ToArray();
+            message.EncryptionAlgorithmsServerToClient = _encryptionAlgorithms.Keys.ToArray();
+            message.MacAlgorithmsClientToServer = _hmacAlgorithms.Keys.ToArray();
+            message.MacAlgorithmsServerToClient = _hmacAlgorithms.Keys.ToArray();
+            message.CompressionAlgorithmsClientToServer = _compressionAlgorithms.Keys.ToArray();
+            message.CompressionAlgorithmsServerToClient = _compressionAlgorithms.Keys.ToArray();
+            message.LanguagesClientToServer = new[] { "" };
+            message.LanguagesServerToClient = new[] { "" };
+            message.FirstKexPacketFollows = false;
+            message.Reserved = 0;
+
             return message;
         }
-
-        #endregion Message operations
+        #endregion
 
         #region Handle messages
-
         private void HandleMessageCore(Message message)
         {
-            HandleMessage((dynamic)message);
+            this.InvokeHandleMessage(message);
         }
 
         private void HandleMessage(DisconnectMessage message)
@@ -480,6 +506,20 @@ namespace FxSsh
         private void HandleMessage(KeyExchangeInitMessage message)
         {
             ConsiderReExchange(true);
+
+            KeysExchanged?.Invoke(this, new KeyExchangeArgs(this)
+            {
+                CompressionAlgorithmsClientToServer = message.CompressionAlgorithmsClientToServer,
+                CompressionAlgorithmsServerToClient = message.CompressionAlgorithmsServerToClient,
+                EncryptionAlgorithmsClientToServer = message.EncryptionAlgorithmsClientToServer,
+                EncryptionAlgorithmsServerToClient = message.EncryptionAlgorithmsServerToClient,
+                KeyExchangeAlgorithms = message.KeyExchangeAlgorithms,
+                LanguagesClientToServer = message.LanguagesClientToServer,
+                LanguagesServerToClient = message.LanguagesServerToClient,
+                MacAlgorithmsClientToServer = message.MacAlgorithmsClientToServer,
+                MacAlgorithmsServerToClient = message.MacAlgorithmsServerToClient,
+                ServerHostKeyAlgorithms = message.ServerHostKeyAlgorithms
+            });
 
             _exchangeContext.KeyExchange = ChooseAlgorithm(_keyExchangeAlgorithms.Keys.ToArray(), message.KeyExchangeAlgorithms);
             _exchangeContext.PublicKey = ChooseAlgorithm(_publicKeyAlgorithms.Keys.ToArray(), message.ServerHostKeyAlgorithms);
@@ -496,7 +536,7 @@ namespace FxSsh
         private void HandleMessage(KeyExchangeDhInitMessage message)
         {
             var kexAlg = _keyExchangeAlgorithms[_exchangeContext.KeyExchange]();
-            var hostKeyAlg = _publicKeyAlgorithms[_exchangeContext.PublicKey](_hostKeys[_exchangeContext.PublicKey].ToString());
+            var hostKeyAlg = _publicKeyAlgorithms[_exchangeContext.PublicKey](_hostKey[_exchangeContext.PublicKey].ToString());
             var clientCipher = _encryptionAlgorithms[_exchangeContext.ClientEncryption]();
             var serverCipher = _encryptionAlgorithms[_exchangeContext.ServerEncryption]();
             var serverHmac = _hmacAlgorithms[_exchangeContext.ServerHmac]();
@@ -559,7 +599,7 @@ namespace FxSsh
 
         private void HandleMessage(UnimplementedMessage message)
         {
-            SendMessage(message);
+            // ignore. SendMessage(message);
         }
 
         private void HandleMessage(ServiceRequestMessage message)
@@ -576,7 +616,7 @@ namespace FxSsh
 
         private void HandleMessage(UserauthServiceMessage message)
         {
-            var service = GetService<UserAuthService>();
+            var service = GetService<UserauthService>();
             if (service != null)
                 service.HandleMessageCore(message);
         }
@@ -587,8 +627,7 @@ namespace FxSsh
             if (service != null)
                 service.HandleMessageCore(message);
         }
-
-        #endregion Handle messages
+        #endregion
 
         private string ChooseAlgorithm(string[] serverAlgorithms, string[] clientAlgorithms)
         {
@@ -664,7 +703,7 @@ namespace FxSsh
             }
         }
 
-        internal SshService RegisterService(string serviceName, UserAuthArgs auth = null)
+        internal SshService RegisterService(string serviceName, UserauthArgs auth = null)
         {
             Contract.Requires(serviceName != null);
 
@@ -672,10 +711,9 @@ namespace FxSsh
             switch (serviceName)
             {
                 case "ssh-userauth":
-                    if (GetService<UserAuthService>() == null)
-                        service = new UserAuthService(this);
+                    if (GetService<UserauthService>() == null)
+                        service = new UserauthService(this);
                     break;
-
                 case "ssh-connection":
                     if (auth != null && GetService<ConnectionService>() == null)
                         service = new ConnectionService(this, auth);
@@ -683,7 +721,8 @@ namespace FxSsh
             }
             if (service != null)
             {
-                ServiceRegistered?.Invoke(this, service);
+                if (ServiceRegistered != null)
+                    ServiceRegistered(this, service);
 
                 _services.Add(service);
             }
