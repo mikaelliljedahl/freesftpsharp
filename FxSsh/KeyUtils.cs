@@ -1,6 +1,5 @@
 ﻿using FxSsh.Algorithms;
 using System;
-using FxSsh.Algorithms;
 using System.Diagnostics.Contracts;
 using System.Security.Cryptography;
 

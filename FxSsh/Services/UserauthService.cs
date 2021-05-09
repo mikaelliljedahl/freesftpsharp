@@ -32,11 +32,6 @@ namespace FxSsh.Services
                             .Invoke(this, new[] { message });
         }
 
-            typeof(UserAuthService)
-                .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
-                .Invoke(this, new[] { message });
-        }
-
         private void HandleMessage(RequestMessage message)
         {
             switch (message.MethodName)
@@ -57,7 +52,7 @@ namespace FxSsh.Services
             }
         }
 
-      
+
         private void HandleMessage(PasswordRequestMessage message)
         {
             var verifed = false;
@@ -74,6 +69,8 @@ namespace FxSsh.Services
                 _session.RegisterService(message.ServiceName, args);
 
                 Succeed?.Invoke(this, message.ServiceName);
+
+                _authenticationSucceeded = true;
 
                 _session.SendMessage(new SuccessMessage());
                 return;
@@ -126,17 +123,18 @@ namespace FxSsh.Services
                     verifed = args.Result;
                 }
 
-            if (verifed)
-            {
-                _session.RegisterService(message.ServiceName, args);
-                Succeed?.Invoke(this, message.ServiceName);
-                _session.SendMessage(new SuccessMessage());
-                return;
-            }
-            else
-            {
-                _session.SendMessage(new FailureMessage());
-                //throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
+                if (verifed)
+                {
+                    _session.RegisterService(message.ServiceName, args);
+                    Succeed?.Invoke(this, message.ServiceName);
+                    _session.SendMessage(new SuccessMessage());
+                    return;
+                }
+                else
+                {
+                    _session.SendMessage(new FailureMessage());
+                    //throw new SshConnectionException("Authentication fail.", DisconnectReason.NoMoreAuthMethodsAvailable);
+                }
             }
         }
     }

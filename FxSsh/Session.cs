@@ -96,10 +96,10 @@ namespace FxSsh
                                  .ToDictionary(x => x.Number, x => x.Type);
         }
 
-        public Session(Socket socket, Dictionary<string, string> hostKey, string serverBanner)
+        public Session(Socket socket, Dictionary<string, string> hostKeys, string serverBanner)
         {
             Contract.Requires(socket != null);
-            Contract.Requires(hostKey != null);
+            Contract.Requires(hostKeys != null);
 
             _socket = socket;
             _hostKeys = hostKeys.ToDictionary(s => s.Key, s => s.Value);
@@ -192,7 +192,7 @@ namespace FxSsh
             }
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, socketBufferSize);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBuffer, socketBufferSize);
-        }
+        
             _socket.ReceiveTimeout = this._timeout.Milliseconds;
             _socket.SendTimeout = this._timeout.Milliseconds;
         }
@@ -239,8 +239,6 @@ namespace FxSsh
             var pos = 0;
             var buffer = new byte[length];
 
-            var msSinceLastData = 0;
-
             while (pos < length)
             {
                 try
@@ -248,13 +246,13 @@ namespace FxSsh
                     var ar = _socket.BeginReceive(buffer, pos, length - pos, SocketFlags.None, null, null);
                     WaitHandle(ar);
                     var len = _socket.EndReceive(ar);
-                    if (len == 0 && _socket.Available == 0)
+                    if (len == 0)
                     {
                         throw new SshConnectionException("Connection lost", DisconnectReason.ConnectionLost);
                     }
                     if (len == 0 && _socket.Available == 0)
-                    {
-                    }
+                        Thread.Sleep(50);
+
                     pos += len;
                 }
                 catch (SocketException exp)
@@ -502,7 +500,7 @@ namespace FxSsh
         #region Handle messages
         private void HandleMessageCore(Message message)
         {
-            HandleMessage((dynamic)message);
+            typeof(Session)
                             .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
                             .Invoke(this, new[] { message });
         }
@@ -545,7 +543,7 @@ namespace FxSsh
         private void HandleMessage(KeyExchangeDhInitMessage message)
         {
             var kexAlg = _keyExchangeAlgorithms[_exchangeContext.KeyExchange]();
-            var hostKeyAlg = _publicKeyAlgorithms[_exchangeContext.PublicKey](_hostKey[_exchangeContext.PublicKey].ToString());
+            var hostKeyAlg = _publicKeyAlgorithms[_exchangeContext.PublicKey](_hostKeys[_exchangeContext.PublicKey].ToString());
             var clientCipher = _encryptionAlgorithms[_exchangeContext.ClientEncryption]();
             var serverCipher = _encryptionAlgorithms[_exchangeContext.ServerEncryption]();
             var serverHmac = _hmacAlgorithms[_exchangeContext.ServerHmac]();
