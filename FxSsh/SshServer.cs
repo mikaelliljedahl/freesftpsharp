@@ -85,13 +85,13 @@ namespace FxSsh
             }
         }
 
-        public void AddHostKey(string type, string xml)
+        public void AddHostKey(string type, string key)
         {
             Contract.Requires(type != null);
-            Contract.Requires(xml != null);
+            Contract.Requires(key != null);
 
             if (!hostKeys.ContainsKey(type))
-                hostKeys.Add(type, xml);
+                hostKeys.Add(type, key);
         }
 
         private void BeginAcceptSocket()

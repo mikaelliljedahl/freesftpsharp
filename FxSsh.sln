@@ -1,13 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31205.134
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FxSsh", "FxSsh\FxSsh.csproj", "{E6C351AE-02D6-4145-931D-FCBCA37986C4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSsh", "FxSsh\FxSsh.csproj", "{E6C351AE-02D6-4145-931D-FCBCA37986C4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServerLoader", "SshServerLoader\SshServerLoader.csproj", "{B04031B6-8B5D-4774-8839-466933EBEDBE}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SshServerLoader", "SshServerLoader\SshServerLoader.csproj", "{B04031B6-8B5D-4774-8839-466933EBEDBE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestClient", "TestClient\TestClient.csproj", "{1EC2331C-7AFA-450F-BC7D-5DD07BFC566A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FxSshSftpServer", "FxSshSftpServer\FxSshSftpServer.csproj", "{ACF087F2-C2BF-4F55-BBB4-A7E69FE8539C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -27,8 +29,15 @@ Global
 		{1EC2331C-7AFA-450F-BC7D-5DD07BFC566A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1EC2331C-7AFA-450F-BC7D-5DD07BFC566A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1EC2331C-7AFA-450F-BC7D-5DD07BFC566A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ACF087F2-C2BF-4F55-BBB4-A7E69FE8539C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ACF087F2-C2BF-4F55-BBB4-A7E69FE8539C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ACF087F2-C2BF-4F55-BBB4-A7E69FE8539C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ACF087F2-C2BF-4F55-BBB4-A7E69FE8539C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BC80F45C-E623-4F1E-AE8E-CF6B9C296BC6}
 	EndGlobalSection
 EndGlobal
