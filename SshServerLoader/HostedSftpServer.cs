@@ -4,6 +4,7 @@ using FxSsh.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -82,8 +83,9 @@ namespace FxSsh.SshServerLoader
             {
                 var service = (ConnectionService)e;
                 service.CommandOpened += OnServiceCommandOpened;
-                
-                
+                service.SessionRequest += OnSessionRequestOpened;
+
+
                 //service.TcpForwardRequest += OnDirectTcpIpReceived
                 //service.DirectTcpIpReceived += OnDirectTcpIpReceived;
 
@@ -95,24 +97,83 @@ namespace FxSsh.SshServerLoader
             if (e is PKUserAuthArgs)
             {
                 var pk = e as PKUserAuthArgs;
+                // verify key against user data
+
+                e.Result = true;
+
                 _logger.LogInformation("Client {0} fingerprint: {1}.", pk.KeyAlgorithm, pk.Fingerprint);
             }
             else if (e is PasswordUserAuthArgs)
             {
                 var pw = e as PasswordUserAuthArgs;
-                _logger.LogInformation("Client {0} password length: {1}.", pw.Username, pw.Password?.Length);
+
+                // verify password against user data
+                var sha256 = new SHA256CryptoServiceProvider();
+                var pwhashed = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(pw.Password));
+                var base64encoded = Convert.ToBase64String(pwhashed);
+
+                
+                var testpw = "A6xnQhbz4Vx2HuGl4lXwZ5U2I8iziLRFnhP5eNfIRvQ=";
+
+                if (base64encoded == testpw)
+                    e.Result = true;
+                else
+                    e.Result = false;
+                //e.Password 
+                _logger.LogInformation("Client {0} password length: {1}. Successful: {2}", pw.Username, pw.Password?.Length, e.Result);
             }
 
-            e.Result = true;
         }
 
 
+        void OnSessionRequestOpened(object sender, SessionRequestedArgs e)
+        {
 
-     
+            _logger.LogInformation("Channel {0} requested session: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
+            e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
+            e.Channel.SendClose();
+        }
+
+
         void OnServiceCommandOpened(object sender, CommandRequestedArgs e)
         {
 
-            _logger.LogInformation("Channel {0} runs command: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
+            Console.WriteLine($"Channel {e.Channel.ServerChannelId} runs {e.SubSystemName}: \"{e.CommandText}\".");
+
+            var allow = true;  // func(e.ShellType, e.CommandText, e.AttachedUserauthArgs);
+
+            if (!allow)
+                return;
+
+            if (e.SubSystemName == "shell")
+            {
+                // requirements: Windows 10 RedStone 5, 1809
+                // also, you can call powershell.exe
+                //var terminal = new Terminal("cmd.exe", windowWidth, windowHeight);
+
+                //e.Channel.DataReceived += (ss, ee) => terminal.OnInput(ee);
+                //e.Channel.CloseReceived += (ss, ee) => terminal.OnClose();
+                //terminal.DataReceived += (ss, ee) => e.Channel.SendData(ee);
+                //terminal.CloseReceived += (ss, ee) => e.Channel.SendClose(ee);
+
+                //terminal.Run();
+            }
+            else if (e.SubSystemName == "exec")
+            {
+                //var parser = new Regex(@"(?<cmd>git-receive-pack|git-upload-pack|git-upload-archive) \'/?(?<proj>.+)\.git\'");
+                //var match = parser.Match(e.CommandText);
+                //var command = match.Groups["cmd"].Value;
+                //var project = match.Groups["proj"].Value;
+
+            }
+            else if (e.SubSystemName == "subsystem")
+            {
+                // do something more
+            }
+
+
+            _logger.LogInformation($"Channel {e.Channel.ServerChannelId} runs command: \"{e.CommandText}\". on subsystem: {e.SubSystemName}"  );
+            
             e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
             e.Channel.SendClose();
         }

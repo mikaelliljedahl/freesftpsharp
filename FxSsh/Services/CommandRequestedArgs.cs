@@ -21,4 +21,5 @@ namespace FxSsh.Services
         public string SubSystemName { get; private set; }
         public UserAuthArgs AttachedUserAuthArgs { get; private set; }
     }
+
 }

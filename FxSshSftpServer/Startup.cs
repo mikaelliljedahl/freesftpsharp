@@ -29,7 +29,7 @@ namespace FxSshSftpServer
         {
             services.AddRazorPages();
             services.AddServerSideBlazor();
-            Log.Information("Starting Sftp service");
+            Log.Information("Starting host service");
 
             services.AddHostedService<HostedSftpServer>( );
 

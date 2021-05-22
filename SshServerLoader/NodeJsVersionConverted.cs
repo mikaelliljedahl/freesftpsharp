@@ -1,0 +1,500 @@
+﻿//using System;
+//using System.Collections.Generic;
+//using System.Linq;
+//using System.Text;
+//using System.Threading.Tasks;
+//using System.Collections;
+
+//namespace SshServerLoader
+//{
+//    public class NodeJsVersionConverted
+//    {
+   
+
+//Responder.Statuses = {
+//    "denied": "PERMISSION_DENIED",
+//    "nofile": "NO_SUCH_FILE",
+//    "end": "EOF",
+//    "ok": "OK",
+//    "fail": "FAILURE",
+//    "bad_message": "BAD_MESSAGE",
+//    "unsupported": "OP_UNSUPPORTED"
+//  };
+
+//void Responder(sftpStream1, req1)
+//{
+//    var fn, methodname, ref, symbol;
+//    this.req = req1;
+//    this.sftpStream = sftpStream1;
+//    ref = this.constructor.Statuses;
+//    fn = (function(_this) {
+//        return function(symbol) {
+//            return _this[methodname] = function() {
+//                _this.done = true;
+//                return _this.sftpStream.status(_this.req, ssh2.SFTP_STATUS_CODE[symbol]);
+//            };
+//        };
+//    })(this);
+//foreach (methodname in ref)
+//{
+//    symbol = ref[methodname];
+//    fn(symbol);
+//}
+//  }
+
+//  return Responder;
+
+//})(EventEmitter);
+
+//FIXME_VAR_TYPE DirectoryEmitter = (function(superClass) {
+//  extend(DirectoryEmitter, superClass);
+
+//void DirectoryEmitter(sftpStream1, req1)
+//{
+//    this.sftpStream = sftpStream1;
+//    this.req = req1 != null ? req1 : null;
+//    this.stopped = false;
+//    this.done = false;
+//    DirectoryEmitter.__super__.constructor.call(this, sftpStream1, this.req);
+//}
+
+//DirectoryEmitter.prototype.request_directory = function(req) {
+//    this.req = req;
+//    if (!this.done)
+//    {
+//        return this.emit("dir");
+//    }
+//    else
+//    {
+//        return this.end();
+//    }
+//};
+
+//DirectoryEmitter.prototype.file = function(name, attrs) {
+//    if (typeof attrs === 'undefined')
+//    {
+//        attrs = { };
+//    }
+//    this.stopped = this.sftpStream.name(this.req, {
+//    filename: name.toString(),
+//      longname: name.toString(),
+//      attrs: attrs
+//    });
+//    if (!this.stopped && !this.done)
+//    {
+//        return this.emit("dir");
+//    }
+//};
+
+//return DirectoryEmitter;
+
+//})(Responder);
+
+//FIXME_VAR_TYPE ContextWrapper = (function() {
+//  void  ContextWrapper (ctx1, server){
+//    this.ctx = ctx1;
+//    this.server = server;
+//    this.method = this.ctx.method;
+//    this.username = this.ctx.username;
+//    this.password = this.ctx.password;
+//}
+
+//ContextWrapper.prototype.reject = function(methodsLeft, isPartial) {
+//    return this.ctx.reject(methodsLeft, isPartial);
+//};
+
+//ContextWrapper.prototype.accept = function(callback) {
+//    if (callback == null)
+//    {
+//        callback = function() { };
+//    }
+//    this.ctx.accept();
+//    return this.server._session_start_callback = callback;
+//};
+
+//return ContextWrapper;
+
+//})();
+
+//FIXME_VAR_TYPE debug = function(msg) {};
+
+//FIXME_VAR_TYPE SFTPServer = (function(superClass) {
+//  extend(SFTPServer, superClass);
+
+//void SFTPServer(options)
+//{
+//    // Expose options for the other classes to read.
+//    if (!options) options = { privateKeyFile: 'ssh_host_rsa_key' };
+//    if (typeof options === 'string') options = { privateKeyFile: options }; // Original constructor had just a privateKey string, so this preserves backwards compatibility.
+//    if (options.debug)
+//    {
+//        debug = function(msg) { console.log(msg); };
+//    }
+//    SFTPServer.options = options;
+//    this.server = new ssh2.Server({
+//      hostKeys: [fs.readFileSync(options.privateKeyFile)]
+//    }, (function(_this) {
+//    return function(client, info) {
+//        client.on('error', function(err) {
+//            debug("SFTP Server: error");
+//            return _this.emit("error", err);
+//        });
+//        client.on('authentication', function(ctx) {
+//            debug("SFTP Server: on('authentication')");
+//            _this.auth_wrapper = new ContextWrapper(ctx, _this);
+//            return _this.emit("connect", _this.auth_wrapper, info);
+//        });
+//        client.on('end', function() {
+//            debug("SFTP Server: on('end')");
+//            return _this.emit("end");
+//        });
+//        return client.on('ready', function(channel) {
+//            client._sshstream.debug = debug;
+//            return client.on('session', function(accept, reject) {
+//                FIXME_VAR_TYPE session;
+//                session = accept();
+//                return session.on('sftp', function(accept, reject) {
+//                    FIXME_VAR_TYPE sftpStream;
+//                    sftpStream = accept();
+//                    session = new SFTPSession(sftpStream);
+//                    return _this._session_start_callback(session);
+//                });
+//            });
+//        });
+//    };
+//})(this));
+//  }
+
+//  SFTPServer.prototype.listen = function(port) {
+//    return this.server.listen(port);
+//};
+
+//return SFTPServer;
+
+//})(EventEmitter);
+
+//module.exports = SFTPServer
+
+//FIXME_VAR_TYPE Statter = (function() {
+//  void  Statter (sftpStream1, reqid1){
+//    this.sftpStream = sftpStream1;
+//    this.reqid = reqid1;
+//}
+
+//Statter.prototype.is_file = function() {
+//    return this.type = constants.S_IFREG;
+//};
+
+//Statter.prototype.is_directory = function() {
+//    return this.type = constants.S_IFDIR;
+//};
+
+//Statter.prototype.file = function() {
+//    return this.sftpStream.attrs(this.reqid, this._get_statblock());
+//};
+
+//Statter.prototype.nofile = function() {
+//    return this.sftpStream.status(this.reqid, ssh2.SFTP_STATUS_CODE.NO_SUCH_FILE);
+//};
+
+//Statter.prototype._get_mode = function() {
+//    return this.type | this.permissions;
+//};
+
+//Statter.prototype._get_statblock = function() {
+//    return {
+//    mode: this._get_mode(),
+//      uid: this.uid,
+//      gid: this.gid,
+//      size: this.size,
+//      atime: this.atime,
+//      mtime: this.mtime
+//    };
+//};
+
+//return Statter;
+
+//})();
+
+//FIXME_VAR_TYPE SFTPFileStream = (function(superClass) {
+//  extend(SFTPFileStream, superClass);
+
+//void SFTPFileStream()
+//{
+//    return SFTPFileStream.__super__.constructor.apply(this, arguments);
+//}
+
+//SFTPFileStream.prototype._read = function(size) { };
+
+//return SFTPFileStream;
+
+//})(Readable);
+
+//FIXME_VAR_TYPE SFTPSession = (function(superClass) {
+//  extend(SFTPSession, superClass);
+
+//SFTPSession.Events = [
+//  "REALPATH", "STAT", "LSTAT", "FSTAT",
+//  "OPENDIR", "CLOSE", "REMOVE", "READDIR",
+//  "OPEN", "READ", "WRITE", "RENAME",
+//  "MKDIR", "RMDIR"
+//];
+
+//void SFTPSession(sftpStream1)
+//{
+//    var event, fn, i, len, ref;
+//    this.sftpStream = sftpStream1;
+//    this.max_filehandle = 0;
+//    this.handles = { };
+//    ref = this.constructor.Events;
+//    fn = (function(_this) {
+//        return function(event) {
+//            return _this.sftpStream.on(event, function() {
+//                FIXME_VAR_TYPE args;
+//                args = 1 <= arguments.length ? slice.call(arguments, 0) : [];
+//                debug('DEBUG: SFTP Session Event: ' + event);
+//                return _this[event].apply(_this, args);
+//            });
+//      };
+//    })(this);
+//for (i = 0, len = ref.length; i < len; i++)
+//{
+//      event = ref[i];
+//    fn(event);
+//}
+//  }
+
+//  SFTPSession.prototype.fetchhandle = function() {
+//    FIXME_VAR_TYPE prevhandle;
+//    prevhandle = this.max_filehandle;
+//    this.max_filehandle++;
+//    return new Buffer(prevhandle.toString());
+//};
+
+//SFTPSession.prototype.REALPATH = function(reqid, path) {
+//    FIXME_VAR_TYPE callback;
+//    if (EventEmitter.listenerCount(this, "realpath"))
+//    {
+//        callback = (function(_this) {
+//            return function(name) {
+//                return _this.sftpStream.name(reqid, {
+//                filename: name,
+//            longname: "-rwxrwxrwx 1 foo foo 3 Dec 8 2009 " + name,
+//            attrs: { }
+//                });
+//            };
+//        })(this);
+//        return this.emit("realpath", path, callback);
+//    }
+//    else
+//    {
+//        return this.sftpStream.name(reqid, {
+//        filename: path,
+//        longname: path,
+//        attrs: { }
+//        });
+//    }
+//};
+
+//SFTPSession.prototype.do_stat = function(reqid, path, kind) {
+//    if (EventEmitter.listenerCount(this, "stat"))
+//    {
+//        return this.emit("stat", path, kind, new Statter(this.sftpStream, reqid));
+//    }
+//    else
+//    {
+//        console.log("WARNING: No stat function for " + kind + ", all files exist!");
+//        return this.sftpStream.attrs(reqid, {
+//        filename: path,
+//        longname: path,
+//        attrs: { }
+//        });
+//    }
+//};
+
+//SFTPSession.prototype.STAT = function(reqid, path) {
+//    return this.do_stat(reqid, path, 'STAT');
+//};
+
+//SFTPSession.prototype.LSTAT = function(reqid, path) {
+//    return this.do_stat(reqid, path, 'LSTAT');
+//};
+
+//SFTPSession.prototype.FSTAT = function(reqid, handle) {
+//    return this.do_stat(reqid, this.handles[handle].path, 'FSTAT');
+//};
+
+//SFTPSession.prototype.OPENDIR = function(reqid, path) {
+//    FIXME_VAR_TYPE diremit;
+//    diremit = new DirectoryEmitter(this.sftpStream, reqid);
+//    diremit.on("newListener", (function(_this) {
+//        return function(event, listener) {
+//            FIXME_VAR_TYPE handle;
+//            if (event !== "dir") {
+//                return;
+//            }
+//            handle = _this.fetchhandle();
+//            _this.handles[handle] = {
+//            mode: "OPENDIR",
+//          path: path,
+//          loc: 0,
+//          responder: diremit
+//            };
+//            return _this.sftpStream.handle(reqid, handle);
+//        };
+//    })(this));
+//    return this.emit("readdir", path, diremit);
+//};
+
+//SFTPSession.prototype.READDIR = function(reqid, handle) {
+//    FIXME_VAR_TYPE ref;
+//    if (((ref = this.handles[handle]) != null ? ref.mode : void 0) !== "OPENDIR") {
+//        return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.NO_SUCH_FILE);
+//    }
+//    return this.handles[handle].responder.request_directory(reqid);
+//};
+
+//SFTPSession.prototype.OPEN = function(reqid, pathname, flags, attrs) {
+//    var handle, rs, started, stringflags, ts;
+//    stringflags = SFTP.flagsToString(flags);
+//    switch (stringflags)
+//    {
+//        case "r":
+//            // Create a temporary file to hold stream contents.
+//            FIXME_VAR_TYPE options = { };
+//            if (SFTPServer.options.temporaryFileDirectory) options.dir = SFTPServer.options.temporaryFileDirectory;
+//            return tmp.file(options, function(err, tmpPath, fd) {
+//                if (err) throw err;
+//                handle = this.fetchhandle();
+//                this.handles[handle] = {
+//                mode: "READ",
+//            path: pathname,
+//            finished: false,
+//            tmpPath: tmpPath,
+//            tmpFile: fd
+//                };
+//                FIXME_VAR_TYPE writestream = fs.createWriteStream(tmpPath);
+//                writestream.on("finish", function() {
+//                    this.handles[handle].finished = true;
+//                }.bind(this));
+//                this.emit("readfile", pathname, writestream);
+//                return this.sftpStream.handle(reqid, handle);
+//            }.bind(this));
+//        case "w":
+//            rs = new Readable();
+//            started = false;
+//            rs._read = (function(_this) {
+//                return function(bytes) {
+//                    if (started)
+//                    {
+//                        return;
+//                    }
+//                    handle = _this.fetchhandle();
+//                    _this.handles[handle] = {
+//                    mode: "WRITE",
+//              path: pathname,
+//              stream: rs
+//                    };
+//                    _this.sftpStream.handle(reqid, handle);
+//                    return started = true;
+//                };
+//            })(this);
+//            return this.emit("writefile", pathname, rs);
+//        default:
+//            return this.emit("error", new Error("Unknown open flags: " + stringflags));
+//    }
+//};
+
+//SFTPSession.prototype.READ = function(reqid, handle, offset, length) {
+//    FIXME_VAR_TYPE localHandle = this.handles[handle];
+
+//    // Once our readstream is at eof, we're done reading into the
+//    // buffer, and we know we can check against it for EOF state.
+//    if (localHandle.finished)
+//    {
+//        return fs.stat(localHandle.tmpPath, function(err, stats) {
+//            if (err) throw err;
+
+//            if (offset >= stats.size)
+//            {
+//                return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.EOF);
+//            }
+//            else
+//            {
+//                FIXME_VAR_TYPE buffer = Buffer.alloc(length);
+//                return fs.read(localHandle.tmpFile, buffer, 0, length, offset, function(err, bytesRead, buffer) {
+//                    return this.sftpStream.data(reqid, buffer.slice(0, bytesRead));
+//                }.bind(this));
+//            }
+//        }.bind(this));
+//    }
+
+//    // If we're not at EOF from the buffer yet, we either need to put more data
+//    // down the wire, or need to wait for more data to become available.
+//    return fs.stat(localHandle.tmpPath, function(err, stats) {
+//        if (stats.size >= offset + length)
+//        {
+//            FIXME_VAR_TYPE buffer = Buffer.alloc(length);
+//            return fs.read(localHandle.tmpFile, buffer, 0, length, offset, function(err, bytesRead, buffer) {
+//                return this.sftpStream.data(reqid, buffer.slice(0, bytesRead));
+//            }.bind(this));
+//        }
+//        else
+//        {
+//            // Wait for more data to become available.
+//            setTimeout(function() {
+//                this.READ(reqid, handle, offset, length);
+//            }.bind(this), 50);
+//        }
+//    }.bind(this));
+//};
+
+//SFTPSession.prototype.WRITE = function(reqid, handle, offset, data) {
+//    this.handles[handle].stream.push(data);
+//    return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.OK);
+//};
+
+//SFTPSession.prototype.CLOSE = function(reqid, handle) {
+//    //return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.OK);
+//    if (this.handles[handle])
+//    {
+//        switch (this.handles[handle].mode)
+//        {
+//            case "OPENDIR":
+//                this.handles[handle].responder.emit("end");
+//                delete this.handles[handle];
+//                return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.OK);
+//            case "READ":
+//                delete this.handles[handle];
+//                return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.OK);
+//            case "WRITE":
+//                this.handles[handle].stream.push(null);
+//                //delete this.handles[handle]; //can't delete it while it's still going, right?
+//                return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.OK);
+//            default:
+//                return this.sftpStream.status(reqid, ssh2.SFTP_STATUS_CODE.FAILURE);
+//        }
+//    }
+//};
+
+//SFTPSession.prototype.REMOVE = function(reqid, path) {
+//    return this.emit("delete", path, new Responder(this.sftpStream, reqid));
+//};
+
+//SFTPSession.prototype.RENAME = function(reqid, oldPath, newPath) {
+//    return this.emit("rename", oldPath, newPath, new Responder(this.sftpStream, reqid));
+//};
+
+//SFTPSession.prototype.MKDIR = function(reqid, path) {
+//    return this.emit("mkdir", path, new Responder(this.sftpStream, reqid));
+//};
+
+//SFTPSession.prototype.RMDIR = function(reqid, path) {
+//    return this.emit("rmdir", path, new Responder(this.sftpStream, reqid));
+//};
+
+//return SFTPSession;
+
+//})(EventEmitter);
+//}
+//}
