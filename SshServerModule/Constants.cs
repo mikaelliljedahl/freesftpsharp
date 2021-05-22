@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace FxSshSftpServer.SftpService
+namespace FxSsh.SshServerModule
 {
     // https://datatracker.ietf.org/doc/html/draft-ietf-secsh-connect-11#page-10
     // https://assets.ctfassets.net/0lvk5dbamxpi/6jBxT5LDgMqutNK4mPTGKd/4fa27cb4a130bca3b48a10c9045b0497/draft-ietf-secsh-filexfer-02
@@ -47,7 +47,7 @@ namespace FxSshSftpServer.SftpService
     //    MKDIR, RMDIR
     //}
 
-    public enum FxpStatusType
+    public enum SftpStatusType
     {
         SSH_FX_OK = 0,
         SSH_FX_EOF = 1,
@@ -100,23 +100,4 @@ namespace FxSshSftpServer.SftpService
         All = 2047, // 0x00000000000007FF
     }
 
-    ///// <summary>
-    //   /// Occurs after a file (or a part of a file) has been downloaded.
-    //   /// </summary>
-    //   public event EventHandler<FileTransferredEventArgs> FileDownloaded;
-
-    //   /// <summary>
-    //   /// Occurs after a file (or a part of a file) has been uploaded.
-    //   /// </summary>
-    //   public event EventHandler<FileTransferredEventArgs> FileUploaded;
-
-    //   /// <summary>Occurs when path access authorization is required.</summary>
-    //   public event EventHandler<PathAccessAuthorizationEventArgs> PathAccessAuthorization;
-
-    //   /// <summary>Occurs when a shell command is executed.</summary>
-    //   public event EventHandler<ShellCommandEventArgs> ShellCommand;
-
-    //   /// <summary>Occurs when a tunnel is requested.</summary>
-    //   public event EventHandler<TunnelRequestedEventArgs> TunnelRequested;
-    // }
 }

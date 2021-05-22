@@ -96,14 +96,14 @@ namespace FxSsh
                                  .ToDictionary(x => x.Number, x => x.Type);
         }
 
-        public Session(Socket socket, Dictionary<string, string> hostKeys)
+        public Session(Socket socket, Dictionary<string, string> hostKeys, string serverbanner)
         {
             Contract.Requires(socket != null);
             Contract.Requires(hostKeys != null);
 
             _socket = socket;
             _hostKeys = hostKeys.ToDictionary(s => s.Key, s => s.Value);
-            ServerVersion = "SSH-2.0-OpenSSH_7.1";
+            ServerVersion = "SSH-2.0-FxSSH_7.1";
         }
 
         public event EventHandler<EventArgs> Disconnected;

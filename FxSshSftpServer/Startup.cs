@@ -1,4 +1,5 @@
-using FxSsh.SshServerLoader;
+
+using FxSsh.SshServerModule;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Hosting;

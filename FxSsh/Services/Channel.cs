@@ -1,6 +1,8 @@
 ﻿using FxSsh.Messages.Connection;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.Contracts;
+using System.Linq;
 using System.Threading;
 
 namespace FxSsh.Services
@@ -54,6 +56,12 @@ namespace FxSsh.Services
             this.SendData(data, 0, data.Length);
         }
 
+        public void SendData(ICollection<byte> data)
+        {
+            Contract.Requires(data != null);
+            this.SendData(data.ToArray(), 0, data.Count);
+        }
+
         public void SendData(byte[] data, int offset, int count)
         {
             Contract.Requires(data != null);
@@ -79,6 +87,8 @@ namespace FxSsh.Services
 
                 if (buf == null || packetSize != buf.Length)
                     buf = new byte[packetSize];
+               
+                
                 Array.Copy(data, offset, buf, 0, packetSize);
 
                 msg.Data = buf;

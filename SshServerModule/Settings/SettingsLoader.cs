@@ -1,9 +1,9 @@
 using System;
 using System.Text;
 using LiteDB;
-using SshServerLoader.Settings;
 
-namespace FxSsh.SshServerLoader
+
+namespace FxSsh.SshServerModule
 {
     public class SettingsRepository : IDisposable
     {

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace FxSsh.SshServerLoader
+namespace FxSsh.SshServerModule
 {
 
 

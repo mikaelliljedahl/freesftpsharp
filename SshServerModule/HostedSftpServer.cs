@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FxSsh.SshServerLoader
+namespace FxSsh.SshServerModule
 {
     public class HostedSftpServer : IHostedService
     {
@@ -30,7 +30,7 @@ namespace FxSsh.SshServerLoader
             settingsrepo = new SettingsRepository();
             var port = settingsrepo.ServerSettings.ListenToPort;
 
-            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSH-2.0-OpenSSH_7.1" });
+            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSHSFTP" });
             server.AddHostKey("ssh-rsa", settingsrepo.ServerSettings.ServerRsaKey);
 
 
@@ -57,8 +57,6 @@ namespace FxSsh.SshServerLoader
            
         }
 
-
-
        
         void OnConnectionAccepted(object sender, Session e)
         {
@@ -82,10 +80,10 @@ namespace FxSsh.SshServerLoader
             else if (e is ConnectionService)
             {
                 var service = (ConnectionService)e;
-                service.CommandOpened += OnServiceCommandOpened;
-                service.SessionRequest += OnSessionRequestOpened;
 
+                service.SessionRequest += OnSessionRequestOpened; // adding SFTP session initiation support
 
+                //service.CommandOpened += OnServiceCommandOpened;
                 //service.TcpForwardRequest += OnDirectTcpIpReceived
                 //service.DirectTcpIpReceived += OnDirectTcpIpReceived;
 
@@ -112,8 +110,7 @@ namespace FxSsh.SshServerLoader
                 var pwhashed = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(pw.Password));
                 var base64encoded = Convert.ToBase64String(pwhashed);
 
-                
-                var testpw = "A6xnQhbz4Vx2HuGl4lXwZ5U2I8iziLRFnhP5eNfIRvQ=";
+                var testpw = "A6xnQhbz4Vx2HuGl4lXwZ5U2I8iziLRFnhP5eNfIRvQ="; // "1234"
 
                 if (base64encoded == testpw)
                     e.Result = true;
@@ -130,53 +127,76 @@ namespace FxSsh.SshServerLoader
         {
 
             _logger.LogInformation("Channel {0} requested session: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
-            e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
-            e.Channel.SendClose();
-        }
 
-
-        void OnServiceCommandOpened(object sender, CommandRequestedArgs e)
-        {
-
-            Console.WriteLine($"Channel {e.Channel.ServerChannelId} runs {e.SubSystemName}: \"{e.CommandText}\".");
-
-            var allow = true;  // func(e.ShellType, e.CommandText, e.AttachedUserauthArgs);
-
-            if (!allow)
-                return;
-
-            if (e.SubSystemName == "shell")
+            if (e.SubSystemName == "sftp")
             {
-                // requirements: Windows 10 RedStone 5, 1809
-                // also, you can call powershell.exe
-                //var terminal = new Terminal("cmd.exe", windowWidth, windowHeight);
+               
+                SftpSubsystem sftpsub = new SftpSubsystem(_logger, e.Channel.ClientChannelId);
 
-                //e.Channel.DataReceived += (ss, ee) => terminal.OnInput(ee);
-                //e.Channel.CloseReceived += (ss, ee) => terminal.OnClose();
-                //terminal.DataReceived += (ss, ee) => e.Channel.SendData(ee);
+                e.Channel.DataReceived += (ss, ee) => sftpsub.OnInput(ee);
+                sftpsub.OnOutput += (ss, ee) => e.Channel.SendData(ee);
+                sftpsub.OnClose += (ss, ee) => e.Channel.SendClose(null);
                 //terminal.CloseReceived += (ss, ee) => e.Channel.SendClose(ee);
+                // e.Channel.SendData(messagetyperesponse);
+                
 
-                //terminal.Run();
             }
-            else if (e.SubSystemName == "exec")
+            else
             {
-                //var parser = new Regex(@"(?<cmd>git-receive-pack|git-upload-pack|git-upload-archive) \'/?(?<proj>.+)\.git\'");
-                //var match = parser.Match(e.CommandText);
-                //var command = match.Groups["cmd"].Value;
-                //var project = match.Groups["proj"].Value;
-
+                e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
+                e.Channel.SendClose();
             }
-            else if (e.SubSystemName == "subsystem")
-            {
-                // do something more
-            }
-
-
-            _logger.LogInformation($"Channel {e.Channel.ServerChannelId} runs command: \"{e.CommandText}\". on subsystem: {e.SubSystemName}"  );
-            
-            e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
-            e.Channel.SendClose();
         }
 
+        // uncomment to support SSH commands
+        //void OnServiceCommandOpened(object sender, CommandRequestedArgs e)
+        //{
+
+        //    Console.WriteLine($"Channel {e.Channel.ServerChannelId} runs {e.SubSystemName}: \"{e.CommandText}\".");
+
+        //    var allow = true;  // func(e.ShellType, e.CommandText, e.AttachedUserauthArgs);
+
+        //    if (!allow)
+        //        return;
+
+        //    if (e.SubSystemName == "shell")
+        //    {
+        //        // requirements: Windows 10 RedStone 5, 1809
+        //        // also, you can call powershell.exe
+        //        //var terminal = new Terminal("cmd.exe", windowWidth, windowHeight);
+
+        //        //e.Channel.DataReceived += (ss, ee) => terminal.OnInput(ee);
+        //        //e.Channel.CloseReceived += (ss, ee) => terminal.OnClose();
+        //        //terminal.DataReceived += (ss, ee) => e.Channel.SendData(ee);
+        //        //terminal.CloseReceived += (ss, ee) => e.Channel.SendClose(ee);
+
+        //        //terminal.Run();
+        //    }
+        //    else if (e.SubSystemName == "exec")
+        //    {
+        //        //var parser = new Regex(@"(?<cmd>git-receive-pack|git-upload-pack|git-upload-archive) \'/?(?<proj>.+)\.git\'");
+        //        //var match = parser.Match(e.CommandText);
+        //        //var command = match.Groups["cmd"].Value;
+        //        //var project = match.Groups["proj"].Value;
+
+        //    }
+        //    else if (e.SubSystemName == "sftp")
+        //    {
+        //        // do something more
+
+        //        _logger.LogInformation($"Channel {e.Channel.ServerChannelId} runs command: \"{e.CommandText}\". on subsystem: {e.SubSystemName}");
+
+        //    }
+
+
+        //    _logger.LogInformation($"Channel {e.Channel.ServerChannelId} runs command: \"{e.CommandText}\". on subsystem: {e.SubSystemName}"  );
+            
+        //    e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
+        //    e.Channel.SendClose();
+        //}
+
+    
+
+    
     }
 }
