@@ -17,7 +17,6 @@ namespace FxSsh.Services
 
         public event EventHandler<string> Succeed;
 
-        private bool _authenticationSucceeded = false;
 
         protected internal override void CloseService()
         {
@@ -69,8 +68,6 @@ namespace FxSsh.Services
                 _session.RegisterService(message.ServiceName, args);
 
                 Succeed?.Invoke(this, message.ServiceName);
-
-                _authenticationSucceeded = true;
 
                 _session.SendMessage(new SuccessMessage());
                 return;

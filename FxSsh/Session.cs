@@ -46,8 +46,8 @@ namespace FxSsh
 //#if DEBUG
 //        private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
 //#else
-        private readonly TimeSpan _timeout = TimeSpan.FromSeconds(60);
-//#endif
+        private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
+        //#endif
         private readonly Dictionary<string, string> _hostKeys;
 
         private uint _outboundPacketSequence;
@@ -96,7 +96,7 @@ namespace FxSsh
                                  .ToDictionary(x => x.Number, x => x.Type);
         }
 
-        public Session(Socket socket, Dictionary<string, string> hostKeys, string serverbanner)
+        public Session(Socket socket, Dictionary<string, string> hostKeys, string serverbanner, int timeoutSeconds)
         {
             Contract.Requires(socket != null);
             Contract.Requires(hostKeys != null);
@@ -104,6 +104,9 @@ namespace FxSsh
             _socket = socket;
             _hostKeys = hostKeys.ToDictionary(s => s.Key, s => s.Value);
             ServerVersion = "SSH-2.0-FxSSH_7.1";
+
+            if (timeoutSeconds > 0)
+                _timeout = TimeSpan.FromSeconds(timeoutSeconds);
         }
 
         public event EventHandler<EventArgs> Disconnected;
@@ -111,7 +114,7 @@ namespace FxSsh
         public event EventHandler<SshService> ServiceRegistered;
 
         public event EventHandler<KeyExchangeArgs> KeysExchanged;
-
+                
         internal void EstablishConnection()
         {
             if (!_socket.Connected)
@@ -192,7 +195,9 @@ namespace FxSsh
             }
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, socketBufferSize);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBuffer, socketBufferSize);
-        
+
+            _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+
             _socket.ReceiveTimeout = this._timeout.Milliseconds;
             _socket.SendTimeout = this._timeout.Milliseconds;
         }
@@ -606,7 +611,7 @@ namespace FxSsh
 
         private void HandleMessage(UnimplementedMessage message)
         {
-            // ignore. SendMessage(message);
+            // ignore. SendMessage(message);            
         }
 
         private void HandleMessage(ServiceRequestMessage message)

@@ -4,11 +4,12 @@
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>Aimeast, Lirunki</Authors>
+    <LangVersion>8</LangVersion>
     <PackageLicenseUrl>https://github.com/Lirunki/FxSsh/blob/master/LICENSE.md</PackageLicenseUrl>
     <RepositoryUrl>https://github.com/Lirunki/FxSsh</RepositoryUrl>
     <PackageTags>ssh,ssh-reinforcement,ssh-server,csharp,dotnet-core</PackageTags>
-    <Description>FxSsh is a lightweight SSH server side application as SSH reinforcement of GitCandy. http://gitcandy.com
-This version is a mod on FxSsh that allows password authentication, and basic direct-tcpip tunnelling.
+    <Description>FxSsh is a lightweight SSH server side application 
+This version is a mod on FxSsh that allows password authentication and is prepared for the sftp protocol.
 All credit for this work goes to Aimeast.</Description>
     <PackageId>FxSsh.PwAuth</PackageId>
     <Company>Aimeast, Lirunki</Company>

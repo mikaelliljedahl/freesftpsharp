@@ -14,7 +14,7 @@ namespace FxSsh.Services
         private readonly object _locker = new object();
         private readonly List<Channel> _channels = new List<Channel>();
         private readonly UserAuthArgs _auth = null;
-
+        private KeepAliveTimer _keepAliveTimer;
         private int _serverChannelCounter = -1;
 
         public ConnectionService(Session session, UserAuthArgs auth)
@@ -23,11 +23,22 @@ namespace FxSsh.Services
             Contract.Requires(auth != null);
 
             _auth = auth;
+
+            // Send keep-alives if no incoming messages within 5 seconds
+            _keepAliveTimer = new KeepAliveTimer(5000, SendKeepAlive);
+
+            _session.Disconnected += (ss, ee) => { _keepAliveTimer.Dispose(); };
         }
 
+        public void SendKeepAlive()
+        {
+            var keepalive = new Messages.Connection.ShouldIgnoreMessage();
+            
 
-        
-            public event EventHandler<SessionRequestedArgs> SessionRequest;
+            _session.SendMessage(keepalive);
+        }
+
+        public event EventHandler<SessionRequestedArgs> SessionRequest;
         public event EventHandler<CommandRequestedArgs> CommandOpened;
         public event EventHandler<EnvironmentArgs> EnvReceived;
         public event EventHandler<PtyArgs> PtyReceived;
@@ -49,6 +60,8 @@ namespace FxSsh.Services
             typeof(ConnectionService)
                        .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
                        .Invoke(this, new[] { message });
+
+            _keepAliveTimer.Nudge();
         }
 
         private void HandleMessage(ChannelOpenMessage message)
@@ -80,7 +93,9 @@ namespace FxSsh.Services
 
         private void HandleMessage(ShouldIgnoreMessage message)
         {
+            _session.SendMessage(message); // this could be used like a ping / pong message used for keepAlive, but it seems we should not reply
         }
+
 
         private void HandleMessage(ForwardedTcpIpMessage message)
         {

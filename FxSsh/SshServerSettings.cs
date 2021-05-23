@@ -10,5 +10,7 @@ namespace FxSsh
         public int Port { get; set; } = DefaultPort;
 
         public string ServerBanner { get; set; } = "FxSSHSFTP";
+
+        public int IdleTimeout { get; set; }
     }
 }

@@ -108,7 +108,8 @@ namespace FxSsh.SshServerModule
                             writer.Write((uint)1); // 1 file item at a time
                             // Dummy file for test 
                             writer.Write(path, Encoding.UTF8);
-                            writer.Write(@"-rwxr-xr-x   1 mjos     staff      348911 Mar 25 14:29 " + path, Encoding.UTF8);
+                            // longname: "-rwxrwxrwx 1 foo foo 3 Dec 8 2009 " + name,
+                            writer.Write(@"-rwxr-xr-x   1 foo     foo      348911 Mar 25 14:29 " + path, Encoding.UTF8);
 
                             writer.Write((uint)requestId);
                             writer.Write(uint.MaxValue); // flags
@@ -197,10 +198,15 @@ namespace FxSsh.SshServerModule
 
                         break;
 
+                    case RequestPacketType.SSH_FXP_OPEN:
+
+                        SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
+                        break;
                     default:
                         // unsupported command
                         _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
 
+                        SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
                         break;
                 }
             }

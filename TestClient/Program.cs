@@ -11,10 +11,6 @@ namespace TestClient
             var testUsername = "test_person";
             var testPassword = "1234";
 
-            var sha256 = new System.Security.Cryptography.SHA256CryptoServiceProvider();
-            var pwhashed = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(testPassword));
-
-            var pwhashedstring = Convert.ToBase64String(pwhashed);
 
             var connInfo = new ConnectionInfo(IPAddress.Loopback.ToString(), 22, testUsername,
                 new AuthenticationMethod[]

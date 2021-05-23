@@ -30,7 +30,7 @@ namespace FxSsh.SshServerModule
             settingsrepo = new SettingsRepository();
             var port = settingsrepo.ServerSettings.ListenToPort;
 
-            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSHSFTP" });
+            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSHSFTP", IdleTimeout = settingsrepo.ServerSettings.IdleTimeout });
             server.AddHostKey("ssh-rsa", settingsrepo.ServerSettings.ServerRsaKey);
 
 

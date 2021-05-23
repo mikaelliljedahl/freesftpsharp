@@ -11,5 +11,10 @@ namespace FxSsh.Messages.Connection
         protected override void OnLoad(SshDataWorker reader)
         {
         }
+
+        protected override void OnGetPacket(SshDataWorker writer)
+        {
+
+        }
     }
 }
