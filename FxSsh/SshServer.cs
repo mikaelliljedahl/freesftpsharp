@@ -120,7 +120,7 @@ namespace FxSsh
 
                 Task.Run(() =>
                 {
-                    var session = new Session(socket, hostKeys, ServerSettings.ServerBanner, ServerSettings.IdeTimeout);
+                    var session = new Session(socket, hostKeys, ServerSettings.ServerBanner, ServerSettings.IdleTimeout);
                     session.Disconnected += (ss, ee) => { lock (_lock) sessions.Remove(session); };
                     lock (_lock)
                         sessions.Add(session);

@@ -12,7 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FxSsh.SshServerModule
+namespace FxSsh.SshServerModule.Services
 {
 
     public class SftpSubsystem
@@ -25,7 +25,7 @@ namespace FxSsh.SshServerModule
         internal EventHandler OnClose;
         Dictionary<string, string> HandleToPathDictionary;
 
-        public SftpSubsystem(ILogger logger, uint channel)
+        public SftpSubsystem(ILogger logger, uint channel, string HomeDirectory)
         {
             this._logger = logger;
             this.channel = channel;
@@ -37,7 +37,7 @@ namespace FxSsh.SshServerModule
         {
             var input = Encoding.ASCII.GetString(ee);
            
-            //        uint32 length
+            //uint32 length
             //byte type
             //byte[length - 1] data payload
             SshDataWorker reader = new SshDataWorker(ee);
@@ -99,7 +99,7 @@ namespace FxSsh.SshServerModule
                         requestId = reader.ReadUInt32();
                         handle = reader.ReadString(Encoding.UTF8);
 
-                        if (HandleToPathDictionary.ContainsKey(handle)) // remove - this is just for testing
+                        if (HandleToPathDictionary.ContainsKey(handle)) // remove after handle is used first time
                         {
 
                             // returns SSH_FXP_NAME or SSH_FXP_STATUS with SSH_FX_EOF 
@@ -126,7 +126,7 @@ namespace FxSsh.SshServerModule
 
                             SendPacket(writer.ToByteArray());
 
-                            HandleToPathDictionary.Remove(handle); // remove - this is just for testing
+                            HandleToPathDictionary.Remove(handle); // remove will return EOF next time
 
                         }
                         else
@@ -155,7 +155,7 @@ namespace FxSsh.SshServerModule
 
                         SendPacket(writer.ToByteArray());
 
-                        _logger.LogInformation($"sftp command {msgtype.ToString()} request Id: \"{requestId}\". path: {path} on channel: {channel}");
+                        _logger.LogInformation($"sftp command {msgtype} request Id: \"{requestId}\". path: {path} on channel: {channel}");
 
                         break;
 

@@ -13,7 +13,10 @@ namespace FxSsh.SshServerModule
         public List<string> BlacklistedIps { get; set; }
         public int MaxLoginAttemptsBeforeBan { get; set; }
 
-        public int IdleTimeout { get; set; } 
+        public int IdleTimeout { get; set; }
+        public bool EnableCommand { get; set; }
+        public bool EnableDirectTcpIp { get; set; }
 
+        
     }
 }

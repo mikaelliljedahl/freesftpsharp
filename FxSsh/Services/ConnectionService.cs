@@ -282,6 +282,7 @@ namespace FxSsh.Services
 
             if (SessionRequest != null)
             {
+                
                 var args = new SessionRequestedArgs(channel, message.SubsystemName, "open", _auth);
                 SessionRequest(this, args);
             }

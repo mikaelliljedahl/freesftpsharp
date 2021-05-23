@@ -20,7 +20,7 @@ namespace FxSsh.Services
             AttachedUserAuthArgs = userauthArgs;
             SubSystemName = subsystem;
         }
-
+        public System.Net.EndPoint remoteEndpoint { get; private set; }
         public SessionChannel Channel { get; private set; }
         public string CommandText { get; private set; }
         public string SubSystemName { get; private set; }

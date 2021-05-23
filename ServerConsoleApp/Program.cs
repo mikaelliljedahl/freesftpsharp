@@ -27,7 +27,7 @@ namespace ServerConsoleApp
             {
                 services.AddLogging();
                 Log.Information("Starting host service");
-                services.AddHostedService<HostedSftpServer>();
+                services.AddHostedService<HostedServer>();
             })
             .RunConsoleAsync();
         }
