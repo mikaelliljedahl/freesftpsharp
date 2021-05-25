@@ -43,9 +43,10 @@ namespace FxSsh.SshServerModule
             return false;
         }
 
-        internal bool VerifyUserKey(byte[] key, string keyAlgorithm)
+        internal bool VerifyUserKey(byte[] key, string fingerprint, string keyAlgorithm)
         {
-            throw new NotImplementedException();
+            //RsaKey
+            return false;
         }
 
         internal bool VerifyUserPassword(string password)
