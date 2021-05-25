@@ -45,7 +45,7 @@ namespace FxSsh.SshServerModule
 
         }
 
-        public User AddUser(User NewUser)
+        public bool AddUser(User NewUser)
         {
             // Get a collection (or create, if doesn't exist)
             var usercol = db.GetCollection<User>("users");
