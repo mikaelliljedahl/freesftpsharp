@@ -1,3 +1,4 @@
+using LiteDB;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -14,6 +15,7 @@ namespace FxSsh.SshServerModule
     /// <value></value>
     public class User
     {
+        public ObjectId Id { get; set; }
         public string Username { get; set; }
         public string UserRootDirectory { get; set; }
         public string HashedPassword { get; set; }

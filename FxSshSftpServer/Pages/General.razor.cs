@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Components;
+﻿using FxSsh.SshServerModule;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
@@ -15,15 +16,31 @@ namespace FxSshSftpServer.Pages
     {
 
 
-        private int currentCount = 0;
+        
 
-        private void IncrementCount()
+        public ServerSettings ServerSettings { get; private set; }
+        public bool Savesuccess { get; private set; }
+
+        protected override async Task OnAfterRenderAsync(bool firstRender)
         {
-            currentCount++;
+            if (firstRender)
+            {
+                ServerSettings = HostedServer.settingsrepo.ServerSettings;
+                _ = InvokeAsync(StateHasChanged);
+            }
+        }
+
+      
+        private async Task OnSave()
+        {
+            Savesuccess = HostedServer.settingsrepo.UpdateServerSettings(ServerSettings);
+
+            
+
         }
 
 
-        
+
     }
 
 }

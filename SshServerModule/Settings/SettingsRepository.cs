@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using LiteDB;
 
@@ -18,10 +20,12 @@ namespace FxSsh.SshServerModule
 
         public ServerSettings ServerSettings { get; set; }
         
-        public bool UpdateServerSettingss(ServerSettings UpdatedSettings)
+        public bool UpdateServerSettings(ServerSettings UpdatedSettings)
         {
             var serversettings = db.GetCollection<ServerSettings>("settings");
 
+
+            ServerSettings = serversettings.FindOne(s => s.ServerRsaKey != null);
 
             ServerSettings.BindToAddress = UpdatedSettings.BindToAddress;
             ServerSettings.BlacklistedIps = UpdatedSettings.BlacklistedIps;
@@ -45,6 +49,15 @@ namespace FxSsh.SshServerModule
 
         }
 
+        public List<User> GetAllUsers()
+        {
+            // Get a collection (or create, if doesn't exist)
+            var usercol = db.GetCollection<User>("users");
+
+            return usercol.FindAll().ToList();
+
+        }
+
         public bool AddUser(User NewUser)
         {
             // Get a collection (or create, if doesn't exist)
@@ -61,7 +74,8 @@ namespace FxSsh.SshServerModule
             var usercol = db.GetCollection<User>("users");
 
             var user = usercol.FindOne(x => x.Username == UpdatedUser.Username);
-            
+           
+
             user.HashedPassword = UpdatedUser.HashedPassword;
             user.LastSuccessfulLogin = UpdatedUser.LastSuccessfulLogin;
             user.OnlyWhitelistedIps = UpdatedUser.OnlyWhitelistedIps;
@@ -82,9 +96,10 @@ namespace FxSsh.SshServerModule
             var usercol = db.GetCollection<User>("users");
 
             // Index users using username property
-            usercol.EnsureIndex(x => x.Username);
+            usercol.EnsureIndex(x => x.Username, true);
 
             ServerSettings = serversettings.FindOne(s=>s.ServerRsaKey != null);
+            
 
             if (ServerSettings == null)
             {

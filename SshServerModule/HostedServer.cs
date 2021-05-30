@@ -13,7 +13,7 @@ namespace FxSsh.SshServerModule
 {
     public class HostedServer : IHostedService
     {
-        private SettingsRepository settingsrepo;
+        public static SettingsRepository settingsrepo;
         private SshServer server;
         
         private readonly ILogger _logger;

@@ -154,3 +154,5 @@ $RECYCLE.BIN/
 # Mac desktop service store files
 .DS_Store
 /.vs/FxSsh/DesignTimeBuild/.dtbcache.v2
+/.vs/FxSsh/config/applicationhost.config
+*.txt

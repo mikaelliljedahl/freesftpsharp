@@ -1,7 +1,87 @@
-﻿@page "/users"
+﻿@using Radzen.Blazor
+@using FxSshSftpServer.Components
+@using FxSsh.SshServerModule
 
-<h1>Counter</h1>
+@page "/users"
 
-<p>Current count: @currentCount</p>
+@inject IJSRuntime JSRuntime
 
-<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+<h1>Users</h1>
+<div class="col-12">
+    <div class="row">
+        <div class="col-2">
+            <RadzenListBox @bind-Value=@SelectedUser Data=@AllUsers TextProperty="username" ValueProperty="username" Style="height:200px"
+                           Change=@(args => OnUserSelected())
+                           FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive" FilterOperator="StringFilterOperator.StartsWith">
+                <Template>
+                    @((context as User).Username)
+                </Template>
+            </RadzenListBox>
+        </div>
+        <div class="col-10">
+            @if (SelectedUser == null)
+            {
+
+                <TwoColumnRow HeaderText="Create new user" TooltipText="The username for login to create">
+                    <RadzenTextBox @bind-Value="@NewUsername"></RadzenTextBox>
+                </TwoColumnRow>
+
+
+                <TwoColumnRow HeaderText="Create new user">
+                    <RadzenButton Click=@(args => CreateUser()) Text="Create user"></RadzenButton>
+                </TwoColumnRow>
+            }
+            else
+            {
+
+                <TwoColumnRow HeaderText="User name" TooltipText="The username for login">
+                    <RadzenTextBox @bind-Value="@SelectedUser.Username"></RadzenTextBox>
+                </TwoColumnRow>
+
+                <RadzenRadioButtonList @bind-Value=@usekeyfile TValue="bool">
+                    <Items>
+                        <RadzenRadioButtonListItem Text="Use password" Value="false" />
+                        <RadzenRadioButtonListItem Text="Use Keyfile" Value="true" />
+
+                    </Items>
+                </RadzenRadioButtonList>
+
+                @if (usekeyfile)
+                {
+                    <TwoColumnRow HeaderText="Keyfile" TooltipText="Click to generate a key file used for login">
+                        <span>Keyfile type is .pem</span>
+                        @if (!string.IsNullOrWhiteSpace(SelectedUser.RsaKey))
+                        {
+                            <span>Key has already been created</span>
+                        }
+                        else
+                        {
+                            <RadzenButton Click=@(args => CreateKeyForUser()) Text="Generate client key"></RadzenButton>
+                        }
+                    </TwoColumnRow>
+
+                }
+                else
+                {
+                    <TwoColumnRow HeaderText="Password" TooltipText="Will be saved as SHA256 hash if used">
+                        @if (!string.IsNullOrWhiteSpace(SelectedUser.HashedPassword))
+                        {
+                            <span>Password has been set. You can change it by entering a new one</span>
+                        }
+                        <RadzenTextBox @bind-Value="@newpassword"></RadzenTextBox>
+                    </TwoColumnRow>
+                }
+
+                <TwoColumnRow HeaderText="Root directory" TooltipText="Server path for selected user">
+                    <RadzenTextBox @bind-Value="@SelectedUser.UserRootDirectory"></RadzenTextBox>
+                </TwoColumnRow>
+
+
+                <TwoColumnRow HeaderText="Save user">
+                    <RadzenButton Click=@(args => SaveUser()) Text="Save user"></RadzenButton>
+                </TwoColumnRow>
+            }
+        </div>
+    </div>
+</div>
+

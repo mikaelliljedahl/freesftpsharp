@@ -1,0 +1,15 @@
+﻿
+<div class="row">
+    <div class="col-2">
+        @HeaderText
+    </div>
+    <div class="col-5 float-left">
+        @ChildContent
+    </div>
+    <div class="col-1">
+        @if (TooltipText != null)
+        {
+            <ToolTip Text="@TooltipText">?</ToolTip>
+        }
+    </div>
+</div>

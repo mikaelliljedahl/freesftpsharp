@@ -1,7 +1,31 @@
-﻿@page "/general"
+﻿@using Radzen.Blazor
+@using FxSshSftpServer.Components
 
-<h1>Counter</h1>
+@page "/general"
 
-<p>Current count: @currentCount</p>
 
-<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+<h1>Server settings</h1>
+
+@if (ServerSettings != null)
+{
+    <TwoColumnRow HeaderText="Port:" TooltipText="Changing port requires server restart">
+        <RadzenNumeric @bind-Value="@ServerSettings.ListenToPort"></RadzenNumeric>
+    </TwoColumnRow>
+
+    <TwoColumnRow HeaderText="Idle timeout:" TooltipText="Time in seconds before client is disconnected. 0 means no timeout">
+        <RadzenNumeric @bind-Value="@ServerSettings.IdleTimeout"></RadzenNumeric>
+    </TwoColumnRow>
+
+
+    <TwoColumnRow HeaderText="Server RSA Key:" TooltipText="The RSA-key the server uses">
+        <RadzenTextArea Cols="30" Rows="10" @bind-Text="@ServerSettings.ServerRsaKey"></RadzenTextArea>
+    </TwoColumnRow>
+
+    <RadzenButton Click=@(args => OnSave()) Text="Save" Style="margin-bottom: 20px; width: 150px" />
+
+    @if (Savesuccess)
+    {
+        <span>Settings were saved!</span>
+    }
+
+}
