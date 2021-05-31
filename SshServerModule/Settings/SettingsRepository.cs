@@ -79,7 +79,7 @@ namespace FxSsh.SshServerModule
             user.HashedPassword = UpdatedUser.HashedPassword;
             user.LastSuccessfulLogin = UpdatedUser.LastSuccessfulLogin;
             user.OnlyWhitelistedIps = UpdatedUser.OnlyWhitelistedIps;
-            user.RsaKey = UpdatedUser.RsaKey;
+            user.RsaPublicKey = UpdatedUser.RsaPublicKey;
             user.UserRootDirectory = UpdatedUser.UserRootDirectory;
             user.WhitelistedIps = UpdatedUser.WhitelistedIps;
             return usercol.Update(user);

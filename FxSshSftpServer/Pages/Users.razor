@@ -48,17 +48,18 @@
 
                 @if (usekeyfile)
                 {
-                    <TwoColumnRow HeaderText="Keyfile" TooltipText="Click to generate a key file used for login">
-                        <span>Keyfile type is .pem</span>
-                        @if (!string.IsNullOrWhiteSpace(SelectedUser.RsaKey))
-                        {
-                            <span>Key has already been created</span>
-                        }
-                        else
-                        {
-                            <RadzenButton Click=@(args => CreateKeyForUser()) Text="Generate client key"></RadzenButton>
-                        }
-                    </TwoColumnRow>
+        <TwoColumnRow HeaderText="Keyfile" TooltipText="Click to generate a key file used for login">
+            <span>Keyfile type is .pem</span>
+            @if (!string.IsNullOrWhiteSpace(SelectedUser.RsaPublicKey))
+            {
+                <span>Key has already been created</span>
+                <RadzenButton Click=@(args => CreateKeyForUser()) Text="Generate a new client key"></RadzenButton>
+            }
+            else
+            {
+                <RadzenButton Click=@(args => CreateKeyForUser()) Text="Generate client key"></RadzenButton>
+            }
+        </TwoColumnRow>
 
                 }
                 else

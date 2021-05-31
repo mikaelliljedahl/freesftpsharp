@@ -21,7 +21,7 @@ namespace FxSshSftpServer.Pages
         public ServerSettings ServerSettings { get; private set; }
         public bool Savesuccess { get; private set; }
 
-        protected override async Task OnAfterRenderAsync(bool firstRender)
+        protected override void OnAfterRender(bool firstRender)
         {
             if (firstRender)
             {
@@ -31,7 +31,7 @@ namespace FxSshSftpServer.Pages
         }
 
       
-        private async Task OnSave()
+        private void OnSave()
         {
             Savesuccess = HostedServer.settingsrepo.UpdateServerSettings(ServerSettings);
 

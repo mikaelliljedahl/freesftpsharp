@@ -135,7 +135,7 @@ namespace FxSsh.SshServerModule
                 var pk = e as PKUserAuthArgs;
                 //  verify key against user data
                 e.Result = user.VerifyUserKey(pk.Key, pk.Fingerprint, pk.KeyAlgorithm);
-                
+
 
                 _logger.LogInformation("Client {0} fingerprint: {1}. Successful: {2}", pk.KeyAlgorithm, pk.Fingerprint, e.Result);
             }

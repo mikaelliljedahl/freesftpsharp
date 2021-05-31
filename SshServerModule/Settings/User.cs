@@ -1,6 +1,7 @@
 using LiteDB;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,7 +20,7 @@ namespace FxSsh.SshServerModule
         public string Username { get; set; }
         public string UserRootDirectory { get; set; }
         public string HashedPassword { get; set; }
-        public string RsaKey { get; set; }
+        public string RsaPublicKey { get; set; }
         public bool OnlyWhitelistedIps { get; set; }
         public List<string> WhitelistedIps { get; set; }
         public DateTime LastSuccessfulLogin { get; set; }
@@ -47,8 +48,20 @@ namespace FxSsh.SshServerModule
 
         internal bool VerifyUserKey(byte[] key, string fingerprint, string keyAlgorithm)
         {
-            //RsaKey
-            return false;
+            var savedkey = Convert.FromBase64String(RsaPublicKey);
+            var keyAlg = new Algorithms.RsaKey(null);            
+            keyAlg.ImportKey(savedkey);
+            var fingprint2 = keyAlg.GetFingerprint();
+
+            
+
+            return fingerprint == fingprint2;
+
+        }
+
+        public static byte[] ConvertFingerprintToByteArray(string fingerprint)
+        {
+            return fingerprint.Split(':').Select(s => Convert.ToByte(s, 16)).ToArray();
         }
 
         internal bool VerifyUserPassword(string password)

@@ -27,7 +27,7 @@ namespace FxSshSftpServer.Pages
 
         public bool usekeyfile { get; set; }
 
-        protected override async Task OnAfterRenderAsync(bool firstRender)
+        protected override void OnAfterRender(bool firstRender)
         {
             if (firstRender)
             {
@@ -39,10 +39,14 @@ namespace FxSshSftpServer.Pages
         void OnUserSelected()
         {
             SelectedUserNotSaved = false;
-            
+
+            if (!string.IsNullOrWhiteSpace(SelectedUser.RsaPublicKey))
+                usekeyfile = true;
+            else
+                usekeyfile = false;
         }
 
-        private async Task LoadUser(string username)
+        private void LoadUser(string username)
         {
             SelectedUser = HostedServer.settingsrepo.GetUser(username);
             SelectedUserNotSaved = false;
@@ -50,22 +54,32 @@ namespace FxSshSftpServer.Pages
 
         private async Task CreateKeyForUser()
         {
+            var csp = new System.Security.Cryptography.RSACryptoServiceProvider(1024);
 
-            var csp = new System.Security.Cryptography.RSACryptoServiceProvider(4096);
+            var rsakeyparam = csp.ExportParameters(true);
 
-            var rsakeydata = csp.ExportCspBlob(true);
-            var publicKey = csp.ExportRSAPublicKey();
+            var privkey = RSAConverter.ExportPrivateKey(csp);
+            //var publicKey = RSAConverter.ExportPublicKey(csp);
 
-            SelectedUser.RsaKey = Convert.ToBase64String(publicKey);
-            JSRuntime.SaveFile(rsakeydata, $"{SelectedUser.Username}.ppk");
+            var publickeybytes = csp.ExportCspBlob(false);
+
+            var publicKey = Convert.ToBase64String(publickeybytes);
+
+            SelectedUser.RsaPublicKey = publicKey;
+
+            var rsakeydata = System.Text.Encoding.UTF8.GetBytes(privkey);
+
+            await JSRuntime.SaveFile(rsakeydata, $"{SelectedUser.Username}.pem");
+            SaveUser();
         }
 
-        private async Task CreateUser()
+        private void CreateUser()
         {
             SelectedUser = new User();
             SelectedUser.Username = NewUsername;
             AllUsers.Add(SelectedUser);
             SelectedUserNotSaved = true;
+            usekeyfile = false;
             // HostedServer.settingsrepo.AddUser(new User() { Username = NewUsername });
         }
 
@@ -73,7 +87,7 @@ namespace FxSshSftpServer.Pages
         {
             _ = InvokeAsync(StateHasChanged);
         }
-        private async Task SaveUser()
+        private void SaveUser()
         {
             if (!string.IsNullOrWhiteSpace(newpassword))
             {
