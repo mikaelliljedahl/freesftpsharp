@@ -53,8 +53,6 @@ namespace FxSsh.SshServerModule
             keyAlg.ImportKey(savedkey);
             var fingprint2 = keyAlg.GetFingerprint();
 
-            
-
             return fingerprint == fingprint2;
 
         }

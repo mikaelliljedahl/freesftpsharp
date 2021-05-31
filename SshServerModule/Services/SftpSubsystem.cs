@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,22 +16,35 @@ using System.Threading.Tasks;
 namespace FxSsh.SshServerModule.Services
 {
 
-    public class SftpSubsystem
+    public class SftpSubsystem : IDisposable
     {
 
         private ILogger _logger;
         private uint channel;
+        private string UserRootDirectory;
         internal EventHandler<ICollection<byte>> OnOutput;
 
         internal EventHandler OnClose;
         Dictionary<string, string> HandleToPathDictionary;
+        Dictionary<string, FileStream> HandleToFileStreamDictionary;
 
         public SftpSubsystem(ILogger logger, uint channel, string HomeDirectory)
         {
             this._logger = logger;
             this.channel = channel;
+            this.UserRootDirectory = HomeDirectory;
 
             HandleToPathDictionary = new Dictionary<string, string>();
+            HandleToFileStreamDictionary = new Dictionary<string, FileStream>();
+        }
+
+        public void Dispose()
+        {
+            foreach(var fs in HandleToFileStreamDictionary.Values)
+            {
+                fs.Close();
+                fs.Dispose();
+            }
         }
 
         internal void OnInput(byte[] ee)
@@ -50,6 +64,7 @@ namespace FxSsh.SshServerModule.Services
 
                 uint requestId = 0;
                 string path = "";
+                string absolutepath = "";
                 string handle = Guid.NewGuid().ToString().Replace("-","");
 
                 switch (msgtype)
@@ -101,28 +116,22 @@ namespace FxSsh.SshServerModule.Services
 
                         if (HandleToPathDictionary.ContainsKey(handle)) // remove after handle is used first time
                         {
+                            var relativepath = HandleToPathDictionary[handle];
+                            absolutepath = UserRootDirectory + relativepath;
+
+                            System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(absolutepath);
+                            var allfiles = di.GetFiles();
 
                             // returns SSH_FXP_NAME or SSH_FXP_STATUS with SSH_FX_EOF 
                             writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
                             writer.Write((uint)requestId);
-                            writer.Write((uint)1); // 1 file item at a time
-                            // Dummy file for test 
-                            writer.Write(path, Encoding.UTF8);
-                            // longname: "-rwxrwxrwx 1 foo foo 3 Dec 8 2009 " + name,
-                            writer.Write(@"-rwxr-xr-x   1 foo     foo      348911 Mar 25 14:29 " + path, Encoding.UTF8);
+                            writer.Write((uint)allfiles.Count()); // all files at the same time
 
-                            writer.Write((uint)requestId);
-                            writer.Write(uint.MaxValue); // flags
-                            writer.Write((ulong)0); // size
-                            writer.Write(uint.MaxValue); // uid
-                            writer.Write(uint.MaxValue); // gid
-                            writer.Write(uint.MaxValue); // permissions
-                            writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
-                            writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
-                            writer.Write((uint)0); // extended_count
-                                                   //string   extended_type blank
-                                                   //string   extended_data blank
-
+                            foreach (var file in allfiles)
+                            {
+                                writer.Write( GetFileWithAttributes(file) );
+                                
+                            }
 
                             SendPacket(writer.ToByteArray());
 
@@ -198,10 +207,92 @@ namespace FxSsh.SshServerModule.Services
 
                         break;
 
-                    case RequestPacketType.SSH_FXP_OPEN:
+                    case RequestPacketType.SSH_FXP_OPEN: 
+                        
+                        requestId = reader.ReadUInt32(); //uint32 request-id
+                        path = reader.ReadString(Encoding.UTF8); // //string filename [UTF-8]
 
-                        SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
+                        HandleToPathDictionary.Add(handle, path);
+                        
+                        var desired_access = reader.ReadUInt32();
+                        var flags = reader.ReadUInt32();
+
+                        //uint32 desired-access
+                        var write = desired_access & (uint)FileSystemOperation.Write ;
+                        var read = desired_access & (uint)FileSystemOperation.Read;
+                        var create = desired_access & (uint)FileSystemOperation.Create;
+                        //uint32 flags
+                        //ATTRS  attrs
+                        absolutepath = UserRootDirectory + path;
+                        System.IO.FileInfo fi = new System.IO.FileInfo(absolutepath);
+
+                        if (read > 0 && write == 0 && create == 0)
+                        {
+                            try
+                            {
+
+                                var fs = fi.OpenRead();
+                                HandleToFileStreamDictionary.Add(handle, fs);
+                            }
+                            catch
+                            {
+                                SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+                            }
+                        }
+
+                        writer.Write((byte)RequestPacketType.SSH_FXP_HANDLE);
+                        writer.Write((uint)requestId);
+                        writer.Write(handle, Encoding.UTF8);
+                        // returns SSH_FXP_HANDLE on success or a SSH_FXP_STATUS message on fail
+
+                        SendPacket(writer.ToByteArray());
+                        
                         break;
+
+                    case RequestPacketType.SSH_FXP_READ:
+                        requestId = reader.ReadUInt32(); //uint32 request-id
+                        handle = reader.ReadString(Encoding.UTF8);
+                        if (HandleToPathDictionary.ContainsKey(handle))
+                        {
+                            var fs = HandleToFileStreamDictionary[handle];
+                            var offset = (long)reader.ReadUInt64();
+                            var length = (int)reader.ReadUInt32();
+                            var buffer = new byte[length];
+
+
+
+                            if (fs.Length - offset < 0) // EOF already reached
+                            {
+                                SendStatus((uint)requestId, SftpStatusType.SSH_FX_EOF);
+                                
+                                break;
+                            }
+
+
+                            writer.Write((byte)RequestPacketType.SSH_FXP_DATA);
+                            writer.Write((uint)requestId);
+
+                            if (fs.Length - offset < length)
+                            {
+                                buffer = new byte[fs.Length - offset];
+                            }
+
+                            fs.Seek(offset, SeekOrigin.Begin);
+                            fs.Read(buffer);
+
+
+                            writer.WriteBinary(buffer);
+                           
+
+                            SendPacket(writer.ToByteArray());
+                        }
+                        else
+                        {
+                            // send invalid handle: SSH_FX_INVALID_HANDLE
+                        }
+
+                        break;
+
                     default:
                         // unsupported command
                         _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
@@ -224,6 +315,25 @@ namespace FxSsh.SshServerModule.Services
             SendPacket(writer.ToByteArray());
         }
 
+
+        private byte[] GetFileWithAttributes(System.IO.FileInfo file)
+        {
+            SshDataWorker writer = new SshDataWorker();
+            writer.Write(file.Name, Encoding.UTF8);
+            writer.Write($"-rwxr-xr-x   1 foo     foo      {file.Length} Mar 25 14:29 " + file.Name, Encoding.UTF8);
+            writer.Write(uint.MaxValue); // flags
+            writer.Write((ulong)10); // size
+            writer.Write(uint.MaxValue); // uid
+            writer.Write(uint.MaxValue); // gid
+            writer.Write(uint.MaxValue); // permissions
+            writer.Write(GetUnixFileTime(file.LastAccessTime)); //atime   
+            writer.Write(GetUnixFileTime(file.LastWriteTime)); //mtime
+            writer.Write((uint)0); // extended_count
+                                   //string   extended_type blank
+                                   //string   extended_data blank
+
+            return writer.ToByteArray();
+        }
         private byte[] GetAttributes(string path)
         {
             SshDataWorker writer = new SshDataWorker();
@@ -288,8 +398,7 @@ namespace FxSsh.SshServerModule.Services
                 OnOutput(this, data);
         }
 
-
-        
+       
     }
 }
 
