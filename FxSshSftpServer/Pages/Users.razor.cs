@@ -25,6 +25,7 @@ namespace FxSshSftpServer.Pages
         public bool SelectedUserNotSaved { get; set; }
         public string newpassword { get; set; }
 
+        public string InfoText { get; set; }
         public bool usekeyfile { get; set; }
 
         protected override void OnAfterRender(bool firstRender)
@@ -44,12 +45,30 @@ namespace FxSshSftpServer.Pages
                 usekeyfile = true;
             else
                 usekeyfile = false;
+
+            InfoText = "";
         }
 
         private void LoadUser(string username)
         {
             SelectedUser = HostedServer.settingsrepo.GetUser(username);
             SelectedUserNotSaved = false;
+        }
+        private void RemoveUser()
+        {
+            var removesuccess = HostedServer.settingsrepo.RemoveUser(SelectedUser.Username);
+
+            if (removesuccess)
+            {
+                InfoText = $"User {SelectedUser.Username} was deleted";
+                SelectedUser = null;
+                AllUsers = HostedServer.settingsrepo.GetAllUsers();
+                
+            }
+            else
+                InfoText = $"Error deleting user {SelectedUser.Username}";
+
+            _ = InvokeAsync(StateHasChanged);
         }
 
         private async Task CreateKeyForUser()
@@ -100,10 +119,12 @@ namespace FxSshSftpServer.Pages
             if (SelectedUserNotSaved)
             {
                 HostedServer.settingsrepo.AddUser(SelectedUser);
+                InfoText = $"User {SelectedUser.Username} was created";
             }
             else
             {
                 HostedServer.settingsrepo.UpdateUser(SelectedUser);
+                InfoText = $"Settings for user {SelectedUser.Username} were updated";
             }
         }
     }

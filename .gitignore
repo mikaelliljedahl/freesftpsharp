@@ -156,3 +156,5 @@ $RECYCLE.BIN/
 /.vs/FxSsh/DesignTimeBuild/.dtbcache.v2
 /.vs/FxSsh/config/applicationhost.config
 *.txt
+*.sqlite
+/.vs/freesftpsharp/config/applicationhost.config

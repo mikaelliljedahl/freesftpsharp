@@ -48,6 +48,17 @@ namespace FxSsh.SshServerModule
             return usercol.FindOne(x => x.Username == Username);
 
         }
+        public bool RemoveUser(string Username)
+        {
+            // Get a collection (or create, if doesn't exist)
+            var usercol = db.GetCollection<User>("users");
+
+            var usertoremove = usercol.FindOne(x => x.Username == Username);
+
+            return usercol.Delete(usertoremove.Id);
+
+        }
+        
 
         public List<User> GetAllUsers()
         {
@@ -63,7 +74,9 @@ namespace FxSsh.SshServerModule
             // Get a collection (or create, if doesn't exist)
             var usercol = db.GetCollection<User>("users");
 
-            return usercol.Insert(NewUser);
+            usercol.Insert(NewUser);
+
+            return true;
 
         }
 
