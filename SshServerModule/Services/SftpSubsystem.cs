@@ -133,21 +133,99 @@ namespace FxSsh.SshServerModule.Services
 
         private void HandleRename(SshDataWorker reader)
         {
-            throw new NotImplementedException();
+           
+            uint requestId = reader.ReadUInt32();
+          
+            var oldpath = reader.ReadString(Encoding.UTF8);
+            var newpath = reader.ReadString(Encoding.UTF8);
+
+            if (oldpath.Contains(".."))
+            {
+                SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+            }
+            else
+            {
+                DirectoryInfo di = new DirectoryInfo(oldpath);
+                if (di.Exists)
+                {
+                    di.MoveTo(newpath);
+                    SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                }
+                else
+                {
+                    FileInfo fi = new FileInfo(oldpath);
+                    if (fi.Exists)
+                    {
+                        fi.MoveTo(newpath);
+                        SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                    }
+                }
+            }
+
         }
 
         private void HandleRemoveDir(SshDataWorker reader)
         {
-            throw new NotImplementedException();
+    
+            uint requestId = reader.ReadUInt32();
+            var pathtoremove = reader.ReadString(Encoding.UTF8);
+           
+            if (pathtoremove.Contains(".."))
+            {
+                SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+            }
+            else
+            {
+                var absolutepath = UserRootDirectory + pathtoremove;
+                System.IO.DirectoryInfo di = new DirectoryInfo(absolutepath);
+                try
+                {
+                    di.Delete();
+                    SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                }
+                catch
+                {
+                    SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE);
+                }
+            }
         }
 
         private void HandleMakeDir(SshDataWorker reader)
         {
-            throw new NotImplementedException();
+            //         New directories can be created using the SSH_FXP_MKDIR request.It has the following format:
+            //         uint32 id
+            //     string path
+            //     ATTRS attrs
+            uint requestId = reader.ReadUInt32();
+            var newpath = reader.ReadString(Encoding.UTF8);
+            // what about ATTRS???
+
+            if (newpath.Contains(".."))
+            {
+                SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+            }
+            else
+            {
+                var absolutepath = UserRootDirectory + newpath;
+                System.IO.DirectoryInfo di = new DirectoryInfo(absolutepath);
+                try
+                {
+                    di.Create();
+                    SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                }
+                catch
+                {
+                    SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE);
+                }
+            }
         }
 
         private void HandleRemoveFile(SshDataWorker reader)
         {
+            
+            uint requestId = reader.ReadUInt32();
+            var filename = reader.ReadString(Encoding.UTF8);
+           
             throw new NotImplementedException();
         }
 
