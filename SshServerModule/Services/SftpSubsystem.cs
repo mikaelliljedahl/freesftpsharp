@@ -104,6 +104,23 @@ namespace FxSsh.SshServerModule.Services
                     case RequestPacketType.SSH_FXP_WRITE:
                         HandleWriteFile(reader);
                         break;
+
+                    case RequestPacketType.SSH_FXP_REMOVE:
+                        HandleRemoveFile(reader);
+                        break;
+
+                    case RequestPacketType.SSH_FXP_MKDIR:
+                        HandleMakeDir(reader);
+                        break;
+
+                    case RequestPacketType.SSH_FXP_RMDIR:
+                        HandleRemoveDir(reader);
+                        break;
+
+                    case RequestPacketType.SSH_FXP_RENAME:
+                        HandleRename(reader);
+                        break;
+
                     default:
                         // unsupported command
                         _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
@@ -112,6 +129,26 @@ namespace FxSsh.SshServerModule.Services
                         break;
                 }
             }
+        }
+
+        private void HandleRename(SshDataWorker reader)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void HandleRemoveDir(SshDataWorker reader)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void HandleMakeDir(SshDataWorker reader)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void HandleRemoveFile(SshDataWorker reader)
+        {
+            throw new NotImplementedException();
         }
 
         private void HandleStat(SshDataWorker reader)
