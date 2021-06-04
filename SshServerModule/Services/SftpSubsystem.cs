@@ -429,12 +429,30 @@ namespace FxSsh.SshServerModule.Services
                 var absolutepath = UserRootDirectory + relativepath;
 
                 System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(absolutepath);
+                var alldirs = di.GetDirectories().ToDictionary(x=>x.Name, x=>x);
+                
                 var allfiles = di.GetFiles();
+
+                var totalcount = allfiles.Count();
+
+                if (relativepath != "/" && !string.IsNullOrWhiteSpace(relativepath) )
+                {
+                    alldirs.Add("..", di.Parent); // if not on root level, add parent too
+                }
+                else 
+                {
+                     totalcount += alldirs.Count();
+                }
 
                 // returns SSH_FXP_NAME or SSH_FXP_STATUS with SSH_FX_EOF 
                 writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
                 writer.Write((uint)requestId);
-                writer.Write((uint)allfiles.Count()); // all files at the same time
+                writer.Write((uint)totalcount); // all files at the same time
+
+                foreach (var dir in alldirs)
+                {
+                    writer.Write(GetDirectoryWithAttributes(dir.Value, dir.Key == ".."));
+                }
 
                 foreach (var file in allfiles)
                 {
@@ -460,6 +478,28 @@ namespace FxSsh.SshServerModule.Services
             return handle;
         }
 
+        private byte[] GetDirectoryWithAttributes(DirectoryInfo dir, bool isParent)
+        {
+            SshDataWorker writer = new SshDataWorker();
+            if (isParent)
+                writer.Write("..", Encoding.UTF8);
+            else
+                writer.Write(dir.Name, Encoding.UTF8);
+            writer.Write($"-rwxr-xr-x   1 foo     foo        Mar 25 14:29 " + dir.Name, Encoding.UTF8);
+            writer.Write(uint.MaxValue); // flags
+            writer.Write((ulong)0); // size
+            writer.Write(uint.MaxValue); // uid
+            writer.Write(uint.MaxValue); // gid
+            writer.Write(uint.MaxValue); // permissions
+            writer.Write(GetUnixFileTime(dir.LastAccessTime)); //atime   
+            writer.Write(GetUnixFileTime(dir.LastWriteTime)); //mtime
+            writer.Write((uint)0); // extended_count
+                                   //string   extended_type blank
+                                   //string   extended_data blank
+
+            return writer.ToByteArray();
+        }
+
         private void HandleRealPath(SshDataWorker reader)
         {
             SshDataWorker writer = new SshDataWorker();
@@ -475,7 +515,7 @@ namespace FxSsh.SshServerModule.Services
             writer.Write((uint)1);
             // Dummy file for SSH_FXP_REALPATH request
             writer.Write(path, Encoding.UTF8);
-            writer.Write(@"-rwxr-xr-x   1 mjos     staff      348911 Mar 25 14:29 " + path, Encoding.UTF8);
+            writer.Write(@"-rwxr-xr-x   1 mjos     staff      0 Mar 25 14:29 " + path, Encoding.UTF8);
 
             writer.Write((uint)requestId);
             writer.Write(uint.MaxValue); // flags
