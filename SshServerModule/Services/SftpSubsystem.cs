@@ -133,9 +133,9 @@ namespace FxSsh.SshServerModule.Services
 
         private void HandleRename(SshDataWorker reader)
         {
-           
+
             uint requestId = reader.ReadUInt32();
-          
+
             var oldpath = reader.ReadString(Encoding.UTF8);
             var newpath = reader.ReadString(Encoding.UTF8);
 
@@ -166,10 +166,10 @@ namespace FxSsh.SshServerModule.Services
 
         private void HandleRemoveDir(SshDataWorker reader)
         {
-    
+
             uint requestId = reader.ReadUInt32();
             var pathtoremove = reader.ReadString(Encoding.UTF8);
-           
+
             if (pathtoremove.Contains(".."))
             {
                 SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
@@ -222,10 +222,10 @@ namespace FxSsh.SshServerModule.Services
 
         private void HandleRemoveFile(SshDataWorker reader)
         {
-            
+
             uint requestId = reader.ReadUInt32();
             var filename = reader.ReadString(Encoding.UTF8);
-           
+
             throw new NotImplementedException();
         }
 
@@ -233,7 +233,7 @@ namespace FxSsh.SshServerModule.Services
         {
             uint requestId = reader.ReadUInt32();
             var path = reader.ReadString(Encoding.UTF8);
-            SendAttributes(requestId, path);
+            SendAttributes(requestId, path, true);
         }
 
         private void HandleFStat(SshDataWorker reader)
@@ -243,7 +243,7 @@ namespace FxSsh.SshServerModule.Services
             if (HandleToPathDictionary.ContainsKey(handle))
             {
                 var path = HandleToPathDictionary[handle];
-                SendAttributes(requestId, path);
+                SendAttributes(requestId, path, true);
             }
             else
             {
@@ -325,7 +325,7 @@ namespace FxSsh.SshServerModule.Services
                 }
                 var fs = HandleToFileStreamDictionary[handle];
                 var offsetfromfileBeginning = (long)reader.ReadUInt64();
-                
+
                 var buffer = reader.ReadBinary();
 
                 if (fs.CanWrite && fs.CanSeek)
@@ -339,7 +339,7 @@ namespace FxSsh.SshServerModule.Services
                     SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
                 else
                     SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
-                
+
             }
             else
             {
@@ -417,6 +417,55 @@ namespace FxSsh.SshServerModule.Services
             SendPacket(writer.ToByteArray());
         }
 
+        private void HandleReadDir(string relativepath, uint requestId)
+        {
+            var writer = new SshDataWorker();
+            var absolutepath = UserRootDirectory + relativepath;
+
+            DirectoryInfo diRoot = new DirectoryInfo(UserRootDirectory);
+            DirectoryInfo di = new DirectoryInfo(absolutepath);
+            absolutepath = di.FullName.Replace(UserRootDirectory, "/");
+
+
+            if (diRoot.Parent?.FullName == di.FullName || diRoot.Parent?.Parent?.FullName == di.FullName)
+            {
+                
+                di = new DirectoryInfo(UserRootDirectory);
+            }
+
+            var alldirs = di.GetDirectories().ToDictionary(x => x.Name, x => x);
+            var allfiles = di.GetFiles();
+
+            var totalcount = allfiles.Count();
+
+            if (absolutepath != "/" && !string.IsNullOrWhiteSpace(relativepath))
+            {
+                alldirs.Add("..", di.Parent); // if not on root level, add parent too
+            }
+
+            totalcount += alldirs.Count();
+
+            // returns SSH_FXP_NAME or SSH_FXP_STATUS with SSH_FX_EOF 
+            writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
+            writer.Write((uint)requestId);
+            writer.Write((uint)totalcount); // all files at the same time
+
+
+            foreach (var file in allfiles)
+            {
+                writer.Write(GetFileWithAttributes(file));
+            }
+
+
+            foreach (var dir in alldirs)
+            {
+                writer.Write(GetDirectoryWithAttributes(dir.Value, dir.Key == ".."));
+            }
+
+            SendPacket(writer.ToByteArray());
+
+        }
+
         private string HandleReadDir(SshDataWorker reader)
         {
             var requestId = reader.ReadUInt32();
@@ -426,53 +475,14 @@ namespace FxSsh.SshServerModule.Services
             if (HandleToPathDictionary.ContainsKey(handle)) // remove after handle is used first time
             {
                 var relativepath = HandleToPathDictionary[handle];
-                var absolutepath = UserRootDirectory + relativepath;
-
-                System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(absolutepath);
-                var alldirs = di.GetDirectories().ToDictionary(x=>x.Name, x=>x);
-                
-                var allfiles = di.GetFiles();
-
-                var totalcount = allfiles.Count();
-
-                if (relativepath != "/" && !string.IsNullOrWhiteSpace(relativepath) )
-                {
-                    alldirs.Add("..", di.Parent); // if not on root level, add parent too
-                }
-                else 
-                {
-                     totalcount += alldirs.Count();
-                }
-
-                // returns SSH_FXP_NAME or SSH_FXP_STATUS with SSH_FX_EOF 
-                writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
-                writer.Write((uint)requestId);
-                writer.Write((uint)totalcount); // all files at the same time
-
-                foreach (var dir in alldirs)
-                {
-                    writer.Write(GetDirectoryWithAttributes(dir.Value, dir.Key == ".."));
-                }
-
-                foreach (var file in allfiles)
-                {
-                    writer.Write(GetFileWithAttributes(file));
-                }
-
-                SendPacket(writer.ToByteArray());
-
+                HandleReadDir(relativepath, requestId);
                 HandleToPathDictionary.Remove(handle); // remove will return EOF next time
 
             }
             else
             {
                 // return SSH_FXP_STATUS indicating SSH_FX_EOF  when all files have been listed
-                writer.Write((byte)RequestPacketType.SSH_FXP_STATUS);
-                writer.Write((uint)requestId);
-                writer.Write((uint)SftpStatusType.SSH_FX_EOF); // status code
-                                                               //writer.Write("", Encoding.UTF8);
-                                                               //writer.Write("", Encoding.UTF8);
-                SendPacket(writer.ToByteArray());
+                SendStatus(requestId, SftpStatusType.SSH_FX_EOF);
             }
 
             return handle;
@@ -485,17 +495,14 @@ namespace FxSsh.SshServerModule.Services
                 writer.Write("..", Encoding.UTF8);
             else
                 writer.Write(dir.Name, Encoding.UTF8);
-            writer.Write($"-rwxr-xr-x   1 foo     foo        Mar 25 14:29 " + dir.Name, Encoding.UTF8);
-            writer.Write(uint.MaxValue); // flags
-            writer.Write((ulong)0); // size
-            writer.Write(uint.MaxValue); // uid
-            writer.Write(uint.MaxValue); // gid
-            writer.Write(uint.MaxValue); // permissions
-            writer.Write(GetUnixFileTime(dir.LastAccessTime)); //atime   
-            writer.Write(GetUnixFileTime(dir.LastWriteTime)); //mtime
-            writer.Write((uint)0); // extended_count
-                                   //string   extended_type blank
-                                   //string   extended_data blank
+
+            if (isParent)
+                writer.Write($"drwxr-xr-x   1 foo     foo        Mar 25 14:29 " + "..", Encoding.UTF8);
+            else
+                writer.Write($"drwxr-xr-x   1 foo     foo        Mar 25 14:29 " + dir.Name, Encoding.UTF8);
+
+            writer.Write(GetAttributes(dir.FullName, true));
+
 
             return writer.ToByteArray();
         }
@@ -505,30 +512,19 @@ namespace FxSsh.SshServerModule.Services
             SshDataWorker writer = new SshDataWorker();
             var requestId = reader.ReadUInt32();
             var path = reader.ReadString(Encoding.UTF8);
-            // List files in root directory for this user
-            // foreach file create a response message
-            if (path == ".")
+
+            // return current dir for absolutepath
+            if (path == "." || path == "/.")
                 path = "/"; // replace with current filepath
 
             writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
             writer.Write((uint)requestId);
-            writer.Write((uint)1);
-            // Dummy file for SSH_FXP_REALPATH request
+            writer.Write((uint)1); // always count = 1 for realpath
+
             writer.Write(path, Encoding.UTF8);
+            //// Dummy file for SSH_FXP_REALPATH request
             writer.Write(@"-rwxr-xr-x   1 mjos     staff      0 Mar 25 14:29 " + path, Encoding.UTF8);
-
-            writer.Write((uint)requestId);
-            writer.Write(uint.MaxValue); // flags
-            writer.Write((ulong)0); // size
-            writer.Write(uint.MaxValue); // uid
-            writer.Write(uint.MaxValue); // gid
-            writer.Write(uint.MaxValue); // permissions
-            writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
-            writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
-            writer.Write((uint)0); // extended_count
-                                   //string   extended_type blank
-                                   //string   extended_data blank
-
+            writer.Write(GetAttributes(path, true));
 
             SendPacket(writer.ToByteArray());
         }
@@ -543,14 +539,12 @@ namespace FxSsh.SshServerModule.Services
             SendPacket(writer.ToByteArray());
         }
 
-        private void SendAttributes(uint requestId, string path)
+        private void SendAttributes(uint requestId, string path, bool isDirectory)
         {
             SshDataWorker writer = new SshDataWorker();
             writer.Write((byte)RequestPacketType.SSH_FXP_ATTRS);
             writer.Write(requestId);
-
-            writer.Write(GetAttributes(path));
-
+            writer.Write(GetAttributes(path, isDirectory));
             SendPacket(writer.ToByteArray());
         }
 
@@ -560,32 +554,41 @@ namespace FxSsh.SshServerModule.Services
             SshDataWorker writer = new SshDataWorker();
             writer.Write(file.Name, Encoding.UTF8);
             writer.Write($"-rwxr-xr-x   1 foo     foo      {file.Length} Mar 25 14:29 " + file.Name, Encoding.UTF8);
-            writer.Write(uint.MaxValue); // flags
-            writer.Write((ulong)10); // size
-            writer.Write(uint.MaxValue); // uid
-            writer.Write(uint.MaxValue); // gid
-            writer.Write(uint.MaxValue); // permissions
-            writer.Write(GetUnixFileTime(file.LastAccessTime)); //atime   
-            writer.Write(GetUnixFileTime(file.LastWriteTime)); //mtime
-            writer.Write((uint)0); // extended_count
-                                   //string   extended_type blank
-                                   //string   extended_data blank
+            writer.Write(GetAttributes(file.FullName, false));
 
             return writer.ToByteArray();
         }
-        private byte[] GetAttributes(string path)
+        private byte[] GetAttributes(string path, bool isDirectory)
         {
             SshDataWorker writer = new SshDataWorker();
-            writer.Write(uint.MaxValue); // flags
-            writer.Write((ulong)10); // size
-            writer.Write(uint.MaxValue); // uid
-            writer.Write(uint.MaxValue); // gid
-            writer.Write(uint.MaxValue); // permissions
-            writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
-            writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
-            writer.Write((uint)0); // extended_count
-                                   //string   extended_type blank
-                                   //string   extended_data blank
+            if (isDirectory)
+            {
+                System.IO.DirectoryInfo dirinfo = new DirectoryInfo(path);
+                writer.Write(uint.MinValue); // flags
+                writer.Write(ulong.MinValue); // size
+                writer.Write(uint.MinValue); // uid
+                writer.Write(uint.MinValue); // gid
+                writer.Write(uint.MinValue); // permissions
+                writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
+                writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
+                writer.Write((uint)0); // extended_count
+                                       //string   extended_type blank
+                                       //string   extended_data blank
+            }
+            else
+            {
+                System.IO.FileInfo fileinfo = new FileInfo(path);
+                writer.Write(uint.MaxValue); // flags
+                writer.Write((ulong)fileinfo.Length); // size
+                writer.Write(uint.MaxValue); // uid
+                writer.Write(uint.MaxValue); // gid
+                writer.Write(uint.MaxValue); // permissions
+                writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
+                writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
+                writer.Write((uint)0); // extended_count
+                                       //string   extended_type blank
+                                       //string   extended_data blank
+            }
 
             return writer.ToByteArray();
 
