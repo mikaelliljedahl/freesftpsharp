@@ -158,3 +158,4 @@ $RECYCLE.BIN/
 *.txt
 *.sqlite
 /.vs/freesftpsharp/config/applicationhost.config
+*.db
