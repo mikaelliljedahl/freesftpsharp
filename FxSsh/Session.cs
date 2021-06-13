@@ -43,11 +43,11 @@ namespace FxSsh
         public EndPoint LocalEndpoint => _socket.LocalEndPoint;
         public EndPoint RemoteEndpoint => _socket.RemoteEndPoint;
 
-//#if DEBUG
-//        private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
-//#else
+#if DEBUG
+        private readonly TimeSpan _timeout = TimeSpan.FromSeconds(45);
+#else
         private readonly TimeSpan _timeout = TimeSpan.FromDays(1);
-        //#endif
+#endif
         private readonly Dictionary<string, string> _hostKeys;
 
         private uint _outboundPacketSequence;
@@ -180,7 +180,7 @@ namespace FxSsh
                 Disconnected(this, EventArgs.Empty);
         }
 
-        #region Socket operations
+#region Socket operations
         private void SetSocketOptions()
         {
             const int socketBufferSize = 2 * MaximumSshPacketSize;
@@ -315,9 +315,9 @@ namespace FxSsh
                     _timeout.TotalMilliseconds),
                     DisconnectReason.ConnectionLost);
         }
-        #endregion
+#endregion
 
-        #region Message operations
+#region Message operations
         private Message ReceiveMessage()
         {
             var useAlg = _algorithms != null;
@@ -500,9 +500,9 @@ namespace FxSsh
 
             return message;
         }
-        #endregion
+#endregion
 
-        #region Handle messages
+#region Handle messages
         private void HandleMessageCore(Message message)
         {
             typeof(Session)
@@ -639,7 +639,7 @@ namespace FxSsh
             if (service != null)
                 service.HandleMessageCore(message);
         }
-        #endregion
+#endregion
 
         private string ChooseAlgorithm(string[] serverAlgorithms, string[] clientAlgorithms)
         {

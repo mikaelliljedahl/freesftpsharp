@@ -25,16 +25,14 @@ namespace FxSsh.Services
             _auth = auth;
 
             // Send keep-alives if no incoming messages within 5 seconds
-            _keepAliveTimer = new KeepAliveTimer(5000, SendKeepAlive);
+            //_keepAliveTimer = new KeepAliveTimer(5000, SendKeepAlive);
 
-            _session.Disconnected += (ss, ee) => { _keepAliveTimer.Dispose(); };
+            //_session.Disconnected += (ss, ee) => { _keepAliveTimer.Dispose(); };
         }
 
         public void SendKeepAlive()
         {
-            var keepalive = new Messages.Connection.ShouldIgnoreMessage();
-            
-
+            var keepalive = new Messages.Connection.ShouldIgnoreMessage();            
             _session.SendMessage(keepalive);
         }
 
@@ -61,7 +59,9 @@ namespace FxSsh.Services
                        .GetMethod("HandleMessage", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { message.GetType() }, null)
                        .Invoke(this, new[] { message });
 
-            _keepAliveTimer.Nudge();
+
+            if (_keepAliveTimer != null)
+                _keepAliveTimer.Nudge();
         }
 
         private void HandleMessage(ChannelOpenMessage message)
@@ -340,6 +340,11 @@ namespace FxSsh.Services
         {
             lock (_locker)
             {
+
+                channel.SendClose();
+
+                //ConnectionDisconnected?.Invoke(this, null);
+
                 _channels.Remove(channel);
             }
         }

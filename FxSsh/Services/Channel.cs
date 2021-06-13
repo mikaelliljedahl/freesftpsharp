@@ -120,7 +120,12 @@ namespace FxSsh.Services
                 _connectionService._session.SendMessage(new ExitStatusMessage { RecipientChannel = ClientChannelId, ExitStatus = exitCode.Value });
             _connectionService._session.SendMessage(new ChannelCloseMessage { RecipientChannel = ClientChannelId });
 
+
             CheckBothClosed();
+
+
+            if (CloseReceived != null)
+                CloseReceived(this, EventArgs.Empty);
         }
 
         internal void OnData(byte[] data)
@@ -186,6 +191,8 @@ namespace FxSsh.Services
 
         internal void ForceClose()
         {
+            this.CloseReceived?.Invoke(this, null);
+
             _connectionService.RemoveChannel(this);
             _sendingWindowWaitHandle.Set();
             _sendingWindowWaitHandle.Close();

@@ -24,7 +24,7 @@ namespace FxSsh.SshServerModule.Services
         private string UserRootDirectory;
         internal EventHandler<ICollection<byte>> OnOutput;
 
-        internal EventHandler OnClose;
+        //internal EventHandler OnClose;
         Dictionary<string, string> HandleToPathDictionary;
         Dictionary<string, Dictionary<string, FileInfo>> HandleToPathDirList;
         Dictionary<string, FileStream> HandleToFileStreamDictionary;

@@ -62,7 +62,7 @@ namespace FxSsh.SshServerModule
             e.ServiceRegistered += OnServiceRegistered;
         }
 
-
+        
         void OnServiceRegistered(object sender, SshService e)
         {
             var session = (Session)sender;
@@ -163,7 +163,7 @@ namespace FxSsh.SshServerModule
 
             if (e.SubSystemName == "sftp")
             {
-
+                
                 InitializeSftp(e.Channel, e.AttachedUserAuthArgs.Username);
 
             }
@@ -185,7 +185,16 @@ namespace FxSsh.SshServerModule
                 SftpSubsystem sftpsub = new SftpSubsystem(_logger, channel.ClientChannelId, user.UserRootDirectory);
                 channel.DataReceived += (ss, ee) => sftpsub.OnInput(ee);
                 sftpsub.OnOutput += (ss, ee) => channel.SendData(ee);
-                sftpsub.OnClose += (ss, ee) => channel.SendClose(null);
+               
+
+                channel.CloseReceived += (ss, ee) =>
+                {
+                    channel.DataReceived -= (ss, ee) => sftpsub.OnInput(ee);
+                    sftpsub.OnOutput -= (ss, ee) => channel.SendData(ee);
+                    
+                    //sftpsub.OnClose -= (ss, ee) => channel.SendClose(null);
+                    sftpsub.Dispose();
+                };
 
             }
         }
