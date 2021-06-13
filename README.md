@@ -4,7 +4,8 @@
 Sftp Server implementation based on SSHServer library based heavily on [FxSsh](https://github.com/Aimeast/FxSsh). This fork (based on https://github.com/0xFireball/SSHServer) implements the sftp subsystem and a Graphical user interface for administration of users and server settings.
 
 ## Current status
-At the moment only listing files in the root directory and downloading them is implemented. More coming soon. You are welcome to create PR's.
+All basic Sftp command are now implemented except handling symbolic links. However some implementations such as returning correct file attributes are not finalized. Server was tested with FileZilla client only. There are probably some bugs left to fix. 
+You are welcome to create PR's
 
 ## FxSsh
 
@@ -23,7 +24,7 @@ FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server s
 
 
 ### Features planned for the future
-- whitelist IP/ip-range (CIDR) per account. 
+- whitelist IP/ip-range (CIDR) per account. (Implemented in server but not in the admin UI)
 - Ban IP, auto-ban on multiple failed attempts to login
 - Option to use cloud Blob storage as sftp root.
 - SCP subsystem
