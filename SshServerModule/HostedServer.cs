@@ -199,6 +199,12 @@ namespace FxSsh.SshServerModule
             }
         }
 
+        /// <summary>
+        /// The function is called when a user opens a service channel. The function checks if the user is
+        /// authorized to use the service. If the user is authorized, the function initializes the sftp service
+        /// </summary>
+        /// <param name="sender">The object that raised the event.</param>
+        /// <param name="CommandRequestedArgs"></param>
         void OnServiceCommandOpened(object sender, CommandRequestedArgs e)
         {
 

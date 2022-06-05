@@ -14,7 +14,7 @@ namespace FxSsh.Services
         private readonly object _locker = new object();
         private readonly List<Channel> _channels = new List<Channel>();
         private readonly UserAuthArgs _auth = null;
-        private KeepAliveTimer _keepAliveTimer;
+        // private KeepAliveTimer _keepAliveTimer;
         private int _serverChannelCounter = -1;
 
         public ConnectionService(Session session, UserAuthArgs auth)
@@ -60,8 +60,8 @@ namespace FxSsh.Services
                        .Invoke(this, new[] { message });
 
 
-            if (_keepAliveTimer != null)
-                _keepAliveTimer.Nudge();
+            // if (_keepAliveTimer != null)
+            //     _keepAliveTimer.Nudge();
         }
 
         private void HandleMessage(ChannelOpenMessage message)

@@ -49,6 +49,12 @@ namespace FxSsh.SshServerModule.Services
             }
         }
 
+        /// <summary>
+        /// It first reads the first 5 bytes of the input, which is the length of the message and the message
+        /// type. Then it reads the rest of the message and calls the appropriate function to handle the
+        /// message based on the type
+        /// </summary>
+        /// <param name="ee">the byte array of the data received from the client</param>
         internal void OnInput(byte[] ee)
         {
             var input = Encoding.ASCII.GetString(ee);
@@ -281,6 +287,16 @@ namespace FxSsh.SshServerModule.Services
             SendStatus(requestId, SftpStatusType.SSH_FX_OK);
         }
 
+       /// <summary>
+       /// The function reads the request-id, handle, offset and length from the packet and then reads
+       /// the file from the offset and length specified 
+       /// </summary>
+       /// <param name="SshDataWorker">This is a class that I wrote to help with reading and writing SSH
+       /// packets. </param>
+       /// <returns>
+       /// SendStatus method will be called on EOF or on error otherwise the method will will send data from 
+       /// the file being read to the SSH channel
+       /// </returns>
         private void HandleReadFile(SshDataWorker reader)
         {
             SshDataWorker writer = new SshDataWorker();
@@ -316,6 +332,16 @@ namespace FxSsh.SshServerModule.Services
                 // send invalid handle: SSH_FX_INVALID_HANDLE
             }
         }
+ 
+        /// <summary>
+        /// It reads the file handle, the offset from the beginning of the file, and the data to write,
+        /// and then writes the data to the file at the specified offset
+        /// </summary>
+        /// <param name="SshDataWorker">This is a class that I wrote to help me read and write data to
+        /// the SSH stream.</param>
+        /// <returns>
+        /// The method will return status to the SSH client using the SendStatus method.
+        /// </returns>        
         private void HandleWriteFile(SshDataWorker reader)
         {
             SshDataWorker writer = new SshDataWorker();
@@ -377,7 +403,6 @@ namespace FxSsh.SshServerModule.Services
         }
 
         
-
         private static string GenerateHandle()
         {
             return Guid.NewGuid().ToString().Replace("-", "");
