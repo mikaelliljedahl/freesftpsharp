@@ -21,7 +21,7 @@ namespace FxSsh
         private const byte CarriageReturn = 0x0d;
         private const byte LineFeed = 0x0a;
         internal const int MaximumSshPacketSize = LocalChannelDataPacketSize;
-        internal const int InitialLocalWindowSize = LocalChannelDataPacketSize * 32;
+        internal const int InitialLocalWindowSize = LocalChannelDataPacketSize * 32 * 1024;
         internal const int LocalChannelDataPacketSize = 1024 * 32;
 
         private static readonly RandomNumberGenerator _rng = new RNGCryptoServiceProvider();
@@ -218,7 +218,7 @@ namespace FxSsh
 
                 if (len == 0)
                 {
-                    throw new SshConnectionException("Could't read the protocal version", DisconnectReason.ProtocolError);
+                    throw new SshConnectionException("Could't read the protocol version", DisconnectReason.ProtocolError);
                 }
 
                 for (var i = 0; i < len; i++, pos++)
@@ -231,7 +231,7 @@ namespace FxSsh
                 }
                 _socket.Receive(dummy, 0, len, SocketFlags.None);
             }
-            throw new SshConnectionException("Could't read the protocal version", DisconnectReason.ProtocolError);
+            throw new SshConnectionException("Could't read the protocol version", DisconnectReason.ProtocolError);
         }
 
         private void SocketWriteProtocolVersion()
