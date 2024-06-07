@@ -23,6 +23,7 @@ namespace FxSsh.SshServerModule.Services
         private uint channel;
         private string UserRootDirectory;
         internal EventHandler<ICollection<byte>> OnOutput;
+        int sftpversion;
 
         //internal EventHandler OnClose;
         Dictionary<string, string> HandleToPathDictionary;
@@ -70,6 +71,8 @@ namespace FxSsh.SshServerModule.Services
                 var msgtype = (RequestPacketType)(int)reader.ReadByte();
 
 #if DEBUG
+                if (msgtype != RequestPacketType.SSH_FXP_READ && 
+                    msgtype != RequestPacketType.SSH_FXP_WRITE)
                 _logger.LogInformation($"sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
 #endif
 
@@ -580,8 +583,11 @@ namespace FxSsh.SshServerModule.Services
             var requestId = reader.ReadUInt32();
             var path = reader.ReadString(Encoding.UTF8);
 
+            _logger.LogInformation($"Reading path {path}");
+
+
             // return current dir for absolutepath
-            if (path == "." || path == "/.")
+            if (path == "" || path == "." || path == "/.")
                 path = "/"; // replace with current filepath
 
             writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
@@ -598,12 +604,24 @@ namespace FxSsh.SshServerModule.Services
 
         private void HandleInit(SshDataWorker reader)
         {
-            SshDataWorker writer = new SshDataWorker();
-            var sftpclientversion = reader.ReadUInt32();
-            writer.Write((byte)RequestPacketType.SSH_FXP_VERSION);
-            var version = Math.Min(3, sftpclientversion);
-            writer.Write((uint)version); // SFTP protocol version
-            SendPacket(writer.ToByteArray());
+            if (sftpversion > 0)
+            {
+                _logger.LogInformation($"Client already initialized, calling HandleRealPath with a file list for root path");
+
+                HandleRealPath(reader);
+            }
+            else
+            {
+                SshDataWorker writer = new SshDataWorker();
+                var sftpclientversion = reader.ReadUInt32();
+                writer.Write((byte)RequestPacketType.SSH_FXP_VERSION);
+                var version = Math.Min(3, sftpclientversion);
+
+                writer.Write((uint)version); // SFTP protocol version
+                sftpversion = Convert.ToInt32(version);
+                _logger.LogInformation($"Client version: {sftpversion}");
+                SendPacket(writer.ToByteArray());
+            }
         }
 
         private void SendAttributes(uint requestId, string path, bool isDirectory)

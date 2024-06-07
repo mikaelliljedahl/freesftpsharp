@@ -179,7 +179,8 @@ namespace FxSsh
             var bytesRead = _ms.Read(data, 0, length);
 
             if (bytesRead < length)
-                throw new ArgumentOutOfRangeException("length");
+                return data;
+                //throw new ArgumentOutOfRangeException("length");
 
             return data;
         }
