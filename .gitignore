@@ -159,3 +159,8 @@ $RECYCLE.BIN/
 *.sqlite
 /.vs/freesftpsharp/config/applicationhost.config
 *.db
+/.vs/freesftpsharp/DesignTimeBuild
+/.vs/freesftpsharp/FileContentIndex
+/.vs/freesftpsharp/v16/TestStore/0
+/.vs/freesftpsharp/v17
+/.vs/VSWorkspaceState.json
