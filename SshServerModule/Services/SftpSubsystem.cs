@@ -601,7 +601,7 @@ namespace FxSsh.SshServerModule.Services
             SshDataWorker writer = new SshDataWorker();
             var sftpclientversion = reader.ReadUInt32();
             writer.Write((byte)RequestPacketType.SSH_FXP_VERSION);
-            var version = Math.Max(3, sftpclientversion);
+            var version = Math.Min(3, sftpclientversion);
             writer.Write((uint)version); // SFTP protocol version
             SendPacket(writer.ToByteArray());
         }

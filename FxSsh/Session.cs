@@ -72,6 +72,7 @@ namespace FxSsh
         {
             _keyExchangeAlgorithms.Add("diffie-hellman-group14-sha1", () => new DiffieHellmanGroupSha1(new DiffieHellman(2048)));
             _keyExchangeAlgorithms.Add("diffie-hellman-group1-sha1", () => new DiffieHellmanGroupSha1(new DiffieHellman(1024)));
+            _keyExchangeAlgorithms.Add("diffie-hellman-group14-sha256", () => new DiffieHellmanGroupSha256(new DiffieHellman(2048)));
 
             _publicKeyAlgorithms.Add("ssh-rsa", x => new RsaKey(x));
             _publicKeyAlgorithms.Add("ssh-dss", x => new DssKey(x));

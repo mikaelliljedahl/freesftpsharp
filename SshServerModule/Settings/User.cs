@@ -33,7 +33,7 @@ namespace FxSsh.SshServerModule
             var endpoint = remoteEndpoint as IPEndPoint;
 
             // https://github.com/lduchosal/ipnetwork
-            IPNetwork ipaddress = IPNetwork.Parse(endpoint.Address.ToString());
+            var ipaddress = IPAddress.Parse(endpoint.Address.ToString());
 
             foreach(var whitelisted in WhitelistedIps)
             {
