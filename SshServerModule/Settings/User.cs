@@ -1,10 +1,8 @@
-using LiteDB;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace FxSsh.SshServerModule
 {
@@ -16,9 +14,8 @@ namespace FxSsh.SshServerModule
     /// <value></value>
     public class User
     {
-        public ObjectId Id { get; set; }
+        public int Id { get; set; }
         public string Username { get; set; }
-        public string UserRootDirectory { get; set; }
         public string HashedPassword { get; set; }
         public string RsaPublicKey { get; set; }
         public bool OnlyWhitelistedIps { get; set; }
