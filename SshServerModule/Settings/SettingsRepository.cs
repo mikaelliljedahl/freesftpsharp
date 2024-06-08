@@ -13,5 +13,4 @@ public interface ISettingsRepository
     List<User> GetAllUsers();
     bool AddUser(User newUser);
     bool UpdateUser(User updatedUser);
-    public string ServerRsaKey { get; }
 }

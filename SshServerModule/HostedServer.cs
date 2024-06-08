@@ -30,7 +30,7 @@ namespace FxSsh.SshServerModule
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             server = new SshServer(_settings);
-            server.AddHostKey("ssh-rsa", _settingsRepository.ServerRsaKey);
+            server.AddHostKey("ssh-rsa", _settingsRepository.ServerSettings.ServerRsaKey);
 
             // TODO also generate and add key of type "ssh-dss"
 
