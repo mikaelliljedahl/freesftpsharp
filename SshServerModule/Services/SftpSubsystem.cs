@@ -102,10 +102,6 @@ namespace FxSsh.SshServerModule.Services
                         }
                         break;
 
-                    case RequestPacketType.SSH_FXP_VERSION:
-                        HandleVersion(reader);
-                        break;
-
                     case RequestPacketType.SSH_FXP_REALPATH:
 
                         HandleRealPath(reader, false);
@@ -672,25 +668,6 @@ namespace FxSsh.SshServerModule.Services
                 SendPacket(writer.ToByteArray());
             }
         }
-
-        private void HandleVersion(SshDataWorker reader)
-        {
-           
-                //SshDataWorker writer = new SshDataWorker();
-            //    var sftpclientversion = reader.ReadUInt32();
-            //_logger.LogInformation($"Version with client version: {sftpclientversion}");
-
-
-            //writer.Write((byte)RequestPacketType.SSH_FXP_INIT);
-            //var version = Math.Min(3, sftpclientversion);
-
-            //writer.Write((uint)version); // SFTP protocol version
-            //sftpversion = Convert.ToInt32(version);
-            //_logger.LogInformation($"Version with client version: {sftpversion}");
-            //SendPacket(writer.ToByteArray());
-
-        }
-
         private void SendAttributes(uint requestId, string path, bool isDirectory)
         {
             SshDataWorker writer = new SshDataWorker();
