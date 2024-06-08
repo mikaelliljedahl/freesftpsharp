@@ -65,17 +65,10 @@ namespace FxSsh.SshServerModule.Services
 
                 if (msglength > 1e6 && cwdInitialized)
                 {
-                    //ee = ee.Skip(1).ToArray();
                     reader = new SshDataWorker(ee);
                     msgtype = (RequestPacketType)(int)reader.ReadByte();
                     //msglength = reader.ReadUInt32();
                     //msgtype = (RequestPacketType)(int)reader.ReadByte();
-                }
-
-
-                if (msgtype == RequestPacketType.SSH_FXP_VERSION)
-                {
-                    msgtype = (RequestPacketType)(int)reader.ReadUInt32();
                 }
 
 
