@@ -16,7 +16,7 @@ namespace FxSsh.SshServerModule.Services
         private string UserRootDirectory;
         internal EventHandler<ICollection<byte>> OnOutput;
         int sftpversion;
-        bool cwdInitializedProbablyOnWindowsSftpClient = false;
+        bool ProbablyOnWindowsSftpClient = false;
 
         //internal EventHandler OnClose;
         Dictionary<string, string> HandleToPathDictionary;
@@ -63,25 +63,26 @@ namespace FxSsh.SshServerModule.Services
                 var msglength = reader.ReadUInt32();
                 var msgtype = (RequestPacketType)(int)reader.ReadByte();
 
-                if (cwdInitializedProbablyOnWindowsSftpClient &&  // special hack for windows sftp client
-                     msglength > 1e6)
+                if ((msgtype == RequestPacketType.SSH_FXP_INIT ||
+                    ProbablyOnWindowsSftpClient) &&  // special hack for windows sftp client
+                     msglength > 1e6) // msglength is not sent for some reason
                 {
                     reader = new SshDataWorker(ee);
                     msgtype = (RequestPacketType)(int)reader.ReadByte();
                     msglength = (uint)ee.Length;
-                    if (msgtype == 0)
-                    {
-
+                    ProbablyOnWindowsSftpClient = true; // only windows sftp client ignores sending msglength
+                }
+                else
+                {
 #if DEBUG
-                        _logger.LogInformation($"sftp command {msgtype.ToString()}, msglength: {msglength} on channel: {channel}");
+
+                    _logger.LogInformation($"normal sftp command {msgtype.ToString()}, messagelength: {msglength} on channel: {channel}");
 #endif
-                    }
+
                 }
 
-
 #if DEBUG
-                if (msgtype != RequestPacketType.SSH_FXP_READ &&
-                    msgtype != RequestPacketType.SSH_FXP_WRITE && 
+                if (msgtype != RequestPacketType.SSH_FXP_WRITE && 
                     msgtype != RequestPacketType.SSH_FXP_UNKNOWN &&
                     msgtype != 0)
                     _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} inputbase64: \"{Convert.ToBase64String(ee)}\" input: \"{input}\". on channel: {channel}");
@@ -92,7 +93,7 @@ namespace FxSsh.SshServerModule.Services
                 switch (msgtype)
                 {
                     case RequestPacketType.SSH_FXP_INIT:
-                        if (!cwdInitializedProbablyOnWindowsSftpClient)
+                        if (!ProbablyOnWindowsSftpClient)
                         {
                             HandleInit(reader);
                         }
@@ -350,6 +351,10 @@ namespace FxSsh.SshServerModule.Services
                 var buffer = new byte[length];
                 if (fs.Length - offset < 0) // EOF already reached
                 {
+
+#if DEBUG
+                    _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, already on EOF");
+#endif
                     SendStatus((uint)requestId, SftpStatusType.SSH_FX_EOF);
                     return;
                 }
@@ -363,6 +368,10 @@ namespace FxSsh.SshServerModule.Services
                 fs.Seek(offset, SeekOrigin.Begin);
                 fs.Read(buffer);
                 writer.WriteBinary(buffer);
+
+#if DEBUG
+                _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, length {buffer.Length}");
+#endif
                 SendPacket(writer.ToByteArray());
             }
             else
@@ -472,6 +481,7 @@ namespace FxSsh.SshServerModule.Services
             {
                 try
                 {
+                    _logger.LogInformation($"Opening file {path} with handle: {handle}");
 
                     var fs = fi.OpenRead();
                     HandleToFileStreamDictionary.Add(handle, fs);
@@ -650,25 +660,16 @@ namespace FxSsh.SshServerModule.Services
 
         private void HandleInit(SshDataWorker reader)
         {
-            if (sftpversion > 0)
-            {
-                _logger.LogInformation($"Client already initialized, calling HandleRealPath with a file list for root path");
 
-                HandleRealPath(reader, true);
-                cwdInitializedProbablyOnWindowsSftpClient = true;
-            }
-            else
-            {
-                SshDataWorker writer = new SshDataWorker();
-                var sftpclientversion = reader.ReadUInt32();
-                writer.Write((byte)RequestPacketType.SSH_FXP_VERSION);
-                var version = Math.Min(3, sftpclientversion);
+            SshDataWorker writer = new SshDataWorker();
+            var sftpclientversion = reader.ReadUInt32();
+            writer.Write((byte)RequestPacketType.SSH_FXP_VERSION);
+            var version = Math.Min(3, sftpclientversion);
 
-                writer.Write((uint)version); // SFTP protocol version
-                sftpversion = Convert.ToInt32(version);
-                _logger.LogInformation($"Init with client version: {sftpversion}");
-                SendPacket(writer.ToByteArray());
-            }
+            writer.Write((uint)version); // SFTP protocol version
+            sftpversion = Convert.ToInt32(version);
+            _logger.LogInformation($"Init with client version: {sftpversion}");
+            SendPacket(writer.ToByteArray());
         }
         private void SendAttributes(uint requestId, string path, bool isDirectory)
         {
