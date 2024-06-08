@@ -63,19 +63,27 @@ namespace FxSsh.SshServerModule.Services
                 var msglength = reader.ReadUInt32();
                 var msgtype = (RequestPacketType)(int)reader.ReadByte();
 
-                if (msglength > 1e6 && cwdInitialized)
+                if (msglength > 1e6)
                 {
                     reader = new SshDataWorker(ee);
                     msgtype = (RequestPacketType)(int)reader.ReadByte();
-                    //msglength = reader.ReadUInt32();
-                    //msgtype = (RequestPacketType)(int)reader.ReadByte();
+
+                    if (msgtype == 0)
+                    {
+#if DEBUG
+                        _logger.LogInformation($"sftp command {msgtype.ToString()} on channel: {channel}");
+#endif
+                    }
                 }
 
 
 #if DEBUG
                 if (msgtype != RequestPacketType.SSH_FXP_READ &&
-                    msgtype != RequestPacketType.SSH_FXP_WRITE)
+                    msgtype != RequestPacketType.SSH_FXP_WRITE && 
+                    msgtype != RequestPacketType.SSH_FXP_UNKNOWN)
                     _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} inputbase64: \"{Convert.ToBase64String(ee)}\" input: \"{input}\". on channel: {channel}");
+                else
+                    _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} on channel: {channel}");
 #endif
 
                 switch (msgtype)
@@ -153,10 +161,14 @@ namespace FxSsh.SshServerModule.Services
 
                     default:
                         // unsupported command
-                        _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
-                        uint requestId = reader.ReadUInt32();
-                        SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
+                        if (msgtype > 0)
+                        {
+                            _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
+                            uint requestId = reader.ReadUInt32();
+                            SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
+                        }
                         break;
+
                 }
             }
         }
@@ -255,10 +267,12 @@ namespace FxSsh.SshServerModule.Services
 
             uint requestId = reader.ReadUInt32();
             var filename = reader.ReadString(Encoding.UTF8); // SSH_FXP_REMOVE
-            FileInfo fi = new FileInfo(filename);
+            FileInfo fi = new FileInfo(UserRootDirectory+filename);
             if (fi.Exists)
             {
                 fi.Delete();
+                SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+
             }
             else
             {

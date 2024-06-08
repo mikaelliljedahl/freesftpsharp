@@ -30,6 +30,7 @@ namespace FxSsh.SshServerModule
         SSH_FXP_RENAME = 18,
         SSH_FXP_READLINK = 19,
         SSH_FXP_SYMLINK = 20,
+        SSH_FXP_UNKNOWN = 100,
         SSH_FXP_STATUS = 101,
         SSH_FXP_HANDLE = 102,
         SSH_FXP_DATA = 103,
