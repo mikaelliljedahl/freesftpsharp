@@ -26,7 +26,8 @@ FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server s
 ### Features planned for the future
 - whitelist IP/ip-range (CIDR) per account. (Implemented in server but not in the admin UI)
 - Ban IP, auto-ban on multiple failed attempts to login
-- Option to use cloud Blob storage as sftp root.
+- Option to use cloud Blob storage as sftp root. Filesystem will be an interface in the SFTP engine, then both local file system or blob storage can be used. Controlled using Dependency Injection
+- Different ways to store settings and users (using Dependency Injection). E.g. Azure SQL, SQLite, JSON, LiteDb
 - SCP subsystem
 
 ## Sample
