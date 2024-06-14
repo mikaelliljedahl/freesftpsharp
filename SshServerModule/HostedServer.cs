@@ -2,6 +2,8 @@
 using FxSsh.SshServerModule.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SshServer.Interfaces;
+using SshServerModule.Services;
 using System;
 using System.Net;
 using System.Security.Cryptography;
@@ -13,12 +15,14 @@ namespace FxSsh.SshServerModule
 {
     public class HostedServer : IHostedService
     {
-        public static SettingsRepository settingsrepo;
         private SshServer server;
         
         private readonly ILogger _logger;
+        private readonly IFileSystemFactory _fileSystemFactory;
+        private readonly ISettingsRepository _settingsRepository;
+        private readonly SshServerSettings _settings;
 
-        public HostedServer(ILogger<HostedServer> logger)
+        public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository, SshServerSettings settings)
         {
             _logger = logger;
         }
@@ -26,11 +30,10 @@ namespace FxSsh.SshServerModule
         public async Task StartAsync(CancellationToken cancellationToken)
         {
 
-            settingsrepo = new SettingsRepository();
-            var port = settingsrepo.ServerSettings.ListenToPort;
+            var port = _settingsRepository.ServerSettings.ListenToPort;
 
-            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSHSFTP", IdleTimeout = settingsrepo.ServerSettings.IdleTimeout });
-            server.AddHostKey("ssh-rsa", settingsrepo.ServerSettings.ServerRsaKey);
+            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSHSFTP", IdleTimeout = _settingsRepository.ServerSettings.IdleTimeout });
+            server.AddHostKey("ssh-rsa", _settingsRepository.ServerSettings.ServerRsaKey);
 
             // TODO also generate and add key of type "ssh-dss"
 
@@ -50,7 +53,7 @@ namespace FxSsh.SshServerModule
             server.ConnectionAccepted -= OnConnectionAccepted;
             server.Stop();
             server.Dispose();
-            settingsrepo.Dispose();
+            _settingsRepository.Dispose();
             await Task.Delay(1);
            
         }
@@ -81,9 +84,9 @@ namespace FxSsh.SshServerModule
 
                 service.SessionRequest += OnSessionRequestOpened; // adding SFTP session initiation support
 
-                if (settingsrepo.ServerSettings.EnableCommand)
+                if (_settingsRepository.ServerSettings.EnableCommand)
                     service.CommandOpened += OnServiceCommandOpened;
-                if (settingsrepo.ServerSettings.EnableDirectTcpIp)
+                if (_settingsRepository.ServerSettings.EnableDirectTcpIp)
                 {
                     service.TcpForwardRequest += OnDirectTcpIpReceived;
                     //service.DirectTcpIpReceived += OnDirectTcpIpReceived;
@@ -114,14 +117,14 @@ namespace FxSsh.SshServerModule
         void OnUserAuth(object sender, UserAuthArgs e)
         {
 
-            var user = settingsrepo.GetUser(e.Username);
+            var user = _settingsRepository.GetUser(e.Username);
             if (user == null)
             {
                 e.Result = false;
                 return;
             }
 
-            e.Result = user.VerifyUserIpWhitelisted(e.Session.RemoteEndpoint);
+            e.Result = UserLogics.VerifyUserIpWhitelisted(user, e.Session.RemoteEndpoint);
 
             if (!e.Result)
             {
@@ -134,7 +137,7 @@ namespace FxSsh.SshServerModule
             {
                 var pk = e as PKUserAuthArgs;
                 //  verify key against user data
-                e.Result = user.VerifyUserKey(pk.Key, pk.Fingerprint, pk.KeyAlgorithm);
+                e.Result = UserLogics.VerifyUserKey(user, pk.Key, pk.Fingerprint, pk.KeyAlgorithm);
 
 
                 _logger.LogInformation("Client {0} fingerprint: {1}. Successful: {2}", pk.KeyAlgorithm, pk.Fingerprint, e.Result);
@@ -145,7 +148,7 @@ namespace FxSsh.SshServerModule
 
                 // verify password against user data
               
-                e.Result = user.VerifyUserPassword(pw.Password);
+                e.Result = UserLogics.VerifyUserPassword(user, pw.Password);
 
 
                 //e.Password 
@@ -176,7 +179,7 @@ namespace FxSsh.SshServerModule
 
         private void InitializeSftp(SessionChannel channel, string username)
         {
-            var user = settingsrepo.GetUser(username);
+            var user = _settingsRepository.GetUser(username);
             if (user != null)
             {
                 // check IP user.WhitelistedIps
