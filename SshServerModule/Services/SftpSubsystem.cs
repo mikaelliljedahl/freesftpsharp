@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using SshServerModule.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,8 +13,8 @@ namespace FxSsh.SshServerModule.Services
     {
 
         private ILogger _logger;
-        private uint channel;
-        private string UserRootDirectory;
+        private string _userRootDirectory;
+        private readonly string _username;
         internal EventHandler<ICollection<byte>> OnOutput;
         int sftpversion;
         bool ProbablyOnWindowsSftpClient = false;
@@ -23,11 +24,11 @@ namespace FxSsh.SshServerModule.Services
         Dictionary<string, Dictionary<string, FileInfo>> HandleToPathDirList;
         Dictionary<string, FileStream> HandleToFileStreamDictionary;
 
-        public SftpSubsystem(ILogger logger, uint channel, string HomeDirectory)
+        public SftpSubsystem(ILogger logger, uint channel, string homeDirectory, string username)
         {
-            this._logger = logger;
-            this.channel = channel;
-            this.UserRootDirectory = HomeDirectory;
+            _logger = logger;
+            _userRootDirectory = homeDirectory;
+            _username = username;
 
             HandleToPathDictionary = new Dictionary<string, string>();
             HandleToFileStreamDictionary = new Dictionary<string, FileStream>();
@@ -76,19 +77,19 @@ namespace FxSsh.SshServerModule.Services
                 {
 #if DEBUG
 
-                    _logger.LogInformation($"normal sftp command {msgtype.ToString()}, messagelength: {msglength} on channel: {channel}");
+                    _logger.LogInformation($"normal sftp command {msgtype.ToString()}, messagelength: {msglength} user: {_username}");
 #endif
 
                 }
 
-#if DEBUG
-                if (msgtype != RequestPacketType.SSH_FXP_WRITE && 
-                    msgtype != RequestPacketType.SSH_FXP_UNKNOWN &&
-                    msgtype != 0)
-                    _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} inputbase64: \"{Convert.ToBase64String(ee)}\" input: \"{input}\". on channel: {channel}");
-                else
-                    _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} on channel: {channel}");
-#endif
+//#if DEBUG
+//                if (msgtype != RequestPacketType.SSH_FXP_WRITE && 
+//                    msgtype != RequestPacketType.SSH_FXP_UNKNOWN &&
+//                    msgtype != 0)
+//                    _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} inputbase64: \"{Convert.ToBase64String(ee)}\" input: \"{input}\". on channel: {channel}");
+//                else
+//                    _logger.LogInformation($"sftp command {msgtype.ToString()}, messagelength: {msglength} on channel: {channel}");
+//#endif
 
                 switch (msgtype)
                 {
@@ -100,7 +101,7 @@ namespace FxSsh.SshServerModule.Services
                         else
                         {
                             var requestIdError = reader.ReadUInt32();
-                            _logger.LogInformation($"sftp command {msgtype.ToString()} unsupported in this state, requestId: {requestIdError} on channel: {channel}");
+                            _logger.LogInformation($"sftp command {msgtype.ToString()} unsupported in this state, requestId: {requestIdError} for user: {_username}");
 
                             SendStatus(requestIdError, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
                         }
@@ -163,7 +164,7 @@ namespace FxSsh.SshServerModule.Services
                         // unsupported command
                         if (msgtype > 0)
                         {
-                            _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". on channel: {channel}");
+                            _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". for user: {_username}");
                             uint requestId = reader.ReadUInt32();
                             SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
                         }
@@ -218,17 +219,34 @@ namespace FxSsh.SshServerModule.Services
             }
             else
             {
-                var absolutepath = UserRootDirectory + pathtoremove;
+                var absolutepath = _userRootDirectory + pathtoremove;
                 System.IO.DirectoryInfo di = new DirectoryInfo(absolutepath);
+                System.IO.FileInfo fi = new FileInfo(absolutepath); // Renci SSH uses this command to remove a file too
+
                 try
                 {
-                    di.Delete();
+                    if (fi.Exists)
+                        fi.Delete();
                     SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                    return;
                 }
                 catch
                 {
-                    SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE);
+
                 }
+
+                try
+                {
+                    if (di.Exists)
+                        di.Delete();
+                    SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                    return;
+                }
+                catch 
+                {
+                }
+                SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE);
+
             }
         }
 
@@ -248,7 +266,7 @@ namespace FxSsh.SshServerModule.Services
             }
             else
             {
-                var absolutepath = UserRootDirectory + newpath;
+                var absolutepath = _userRootDirectory + newpath;
                 System.IO.DirectoryInfo di = new DirectoryInfo(absolutepath);
                 try
                 {
@@ -267,7 +285,7 @@ namespace FxSsh.SshServerModule.Services
 
             uint requestId = reader.ReadUInt32();
             var filename = reader.ReadString(Encoding.UTF8); // SSH_FXP_REMOVE
-            FileInfo fi = new FileInfo(UserRootDirectory+filename);
+            FileInfo fi = new FileInfo(_userRootDirectory+filename);
             if (fi.Exists)
             {
                 fi.Delete();
@@ -400,7 +418,7 @@ namespace FxSsh.SshServerModule.Services
             {
                 if (!HandleToFileStreamDictionary.ContainsKey(handle))
                 {
-                    var newfs = new FileStream(UserRootDirectory + HandleToPathDictionary[handle], FileMode.OpenOrCreate);
+                    var newfs = new FileStream(_userRootDirectory + HandleToPathDictionary[handle], FileMode.OpenOrCreate);
                     HandleToFileStreamDictionary.Add(handle, newfs);
                 }
                 var fs = HandleToFileStreamDictionary[handle];
@@ -433,7 +451,9 @@ namespace FxSsh.SshServerModule.Services
             var requestId = reader.ReadUInt32();
             var path = reader.ReadString(Encoding.UTF8);
             var handle = GenerateHandle();
-            var absolutepath = UserRootDirectory + path;
+            var absolutepath = _userRootDirectory + path;
+
+            _logger.LogInformation($"user {_username} opened dir {absolutepath}");
 
             System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(absolutepath);
             if (!di.Exists)
@@ -474,7 +494,7 @@ namespace FxSsh.SshServerModule.Services
             var create = desired_access & (uint)FileSystemOperation.Create;
             //uint32 flags
             //ATTRS  attrs
-            var absolutepath = UserRootDirectory + path;
+            var absolutepath = _userRootDirectory + path;
             System.IO.FileInfo fi = new System.IO.FileInfo(absolutepath);
 
             if (read > 0 && write == 0 && create == 0)
@@ -507,15 +527,15 @@ namespace FxSsh.SshServerModule.Services
         /// <returns>Dictionary with relativepath, FileInfo object</returns>
         private Dictionary<string, FileInfo> ListDir(string path)
         {
-            var absolutepath = UserRootDirectory + path;
+            var absolutepath = _userRootDirectory + path;
 
-            DirectoryInfo diRoot = new DirectoryInfo(UserRootDirectory + "/");
+            DirectoryInfo diRoot = new DirectoryInfo(_userRootDirectory + "/");
             DirectoryInfo di = new DirectoryInfo(absolutepath);
-            absolutepath = di.FullName.Replace(UserRootDirectory, "/").Replace("\\", "/").Replace("//", "/");
+            absolutepath = di.FullName.Replace(_userRootDirectory, "/").Replace("\\", "/").Replace("//", "/");
 
             if (diRoot.Parent?.FullName == di.FullName || diRoot.Parent?.Parent?.FullName == di.FullName)
             {
-                di = new DirectoryInfo(UserRootDirectory);
+                di = new DirectoryInfo(_userRootDirectory);
             }
 
 
@@ -612,11 +632,16 @@ namespace FxSsh.SshServerModule.Services
                 writer.Write("..", Encoding.UTF8);
             else
                 writer.Write(dir.Name, Encoding.UTF8);
-
             if (isParent)
-                writer.Write($"drwxr-xr-x   1 foo     foo        Mar 25 14:29 " + "..", Encoding.UTF8);
+            {
+                var filedatetime = $"{dir.Parent.LastWriteTime.ToString("MMM dd HH:mm")}";
+                writer.Write($"drwxr-xr-x   1 foo     bar      0 {filedatetime} ..", Encoding.UTF8);
+            }
             else
-                writer.Write($"drwxr-xr-x   1 foo     foo        Mar 25 14:29 " + dir.Name, Encoding.UTF8);
+            {
+                var filedatetime = $"{dir.LastWriteTime.ToString("MMM dd HH:mm")}";
+                writer.Write($"drwxr-xr-x   1 foo     bar      0 {filedatetime} {dir.Name}", Encoding.UTF8);
+            }
 
             writer.Write(GetAttributes(dir.FullName, true));
 
@@ -650,9 +675,14 @@ namespace FxSsh.SshServerModule.Services
             if (path.Length < 150)
                 _logger.LogInformation($"Reading path {path}");
 
+            var absolutepath = _userRootDirectory + path;
+            var dirInfo = new DirectoryInfo(absolutepath);
+
             writer.Write(path, Encoding.UTF8);
-            //// Dummy dir for SSH_FXP_REALPATH request
-            writer.Write(@"drwxr-xr-x   1 foo     foo      0 Mar 25 14:29 " + path, Encoding.UTF8);
+            // Dummy dir for SSH_FXP_REALPATH request
+            var filedatetime = $"{dirInfo.LastWriteTime.ToString("MMM dd HH:mm")}";
+
+            writer.Write($"drwxr-xr-x   1 foo     bar      0 {filedatetime} {path}", Encoding.UTF8);
             writer.Write(GetAttributes(path, true));
 
             SendPacket(writer.ToByteArray());
@@ -685,7 +715,11 @@ namespace FxSsh.SshServerModule.Services
         {
             SshDataWorker writer = new SshDataWorker();
             writer.Write(file.Name, Encoding.UTF8);
-            writer.Write($"-rwxr-xr-x   1 foo     foo      {file.Length} Mar 25 14:29 " + file.Name, Encoding.UTF8);
+
+            var filedatetime = $"{file.LastWriteTime.ToString("MMM dd HH:mm")}";
+
+            //writer.Write($"-rwxrwxrwx   1 foo     foo      {file.Length} Mar 25 14:29 " + file.Name, Encoding.UTF8);
+            writer.Write($"-rwxrwxrwx   1 foo     bar      {file.Length} {filedatetime} {file.Name}", Encoding.UTF8);
             writer.Write(GetAttributes(file.FullName, false));
 
             return writer.ToByteArray();
@@ -696,13 +730,15 @@ namespace FxSsh.SshServerModule.Services
             if (isDirectory)
             {
                 System.IO.DirectoryInfo dirinfo = new DirectoryInfo(path);
-                writer.Write(uint.MinValue); // flags
-                writer.Write(ulong.MinValue); // size
-                writer.Write(uint.MinValue); // uid
-                writer.Write(uint.MinValue); // gid
-                writer.Write(uint.MinValue); // permissions
-                writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
-                writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
+                var attributes = new SftpFileAttributes(dirinfo.LastAccessTimeUtc, dirinfo.LastWriteTimeUtc, 0, _username.GetHashCode(), _username.GetHashCode(), true, null);
+                
+                writer.Write((uint)12); // flags, tells the client which of the following attributes that are sent
+                //writer.Write(ulong.MinValue); // size
+                //writer.Write(uint.MinValue); // uid
+                //writer.Write(uint.MinValue); // gid
+                writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
+                writer.Write(GetUnixFileTime(dirinfo.LastAccessTimeUtc)); //atime   
+                writer.Write(GetUnixFileTime(dirinfo.LastWriteTimeUtc)); //mtime
                 writer.Write((uint)0); // extended_count
                                        //string   extended_type blank
                                        //string   extended_data blank
@@ -710,13 +746,15 @@ namespace FxSsh.SshServerModule.Services
             else
             {
                 System.IO.FileInfo fileinfo = new FileInfo(path);
-                writer.Write(uint.MaxValue); // flags
-                writer.Write((ulong)fileinfo.Length); // size
-                writer.Write(uint.MaxValue); // uid
-                writer.Write(uint.MaxValue); // gid
-                writer.Write(uint.MaxValue); // permissions
-                writer.Write(GetUnixFileTime(DateTime.Now)); //atime   
-                writer.Write(GetUnixFileTime(DateTime.Now)); //mtime
+                var attributes = new SftpFileAttributes(fileinfo.LastAccessTimeUtc, fileinfo.LastWriteTimeUtc, 0, _username.GetHashCode(), _username.GetHashCode(), false, null);
+
+                writer.Write((uint)13); // flags, tells the client which of the following attributes that are sent
+                writer.Write((ulong)fileinfo.Length); // size (that is why the flags is 1 higher for files than for directories)
+                //writer.Write(uint.MaxValue); // uid
+                //writer.Write(uint.MaxValue); // gid
+                writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
+                writer.Write(GetUnixFileTime(fileinfo.LastAccessTimeUtc)); //atime   
+                writer.Write(GetUnixFileTime(fileinfo.LastWriteTimeUtc)); //mtime
                 writer.Write((uint)0); // extended_count
                                        //string   extended_type blank
                                        //string   extended_data blank

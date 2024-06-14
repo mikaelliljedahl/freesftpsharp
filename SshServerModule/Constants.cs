@@ -124,4 +124,18 @@ namespace FxSsh.SshServerModule
         All = 2047, // 0x00000000000007FF
     }
 
+    [Flags]
+    public enum FileOrDirAttributeType : byte
+    {
+        SSH_FILEXFER_TYPE_REGULAR          = 1,
+        SSH_FILEXFER_TYPE_DIRECTORY        = 2,
+        SSH_FILEXFER_TYPE_SYMLINK          = 3,
+        SSH_FILEXFER_TYPE_SPECIAL          = 4,
+        SSH_FILEXFER_TYPE_UNKNOWN          = 5,
+        SSH_FILEXFER_TYPE_SOCKET           = 6,
+        SSH_FILEXFER_TYPE_CHAR_DEVICE      = 7,
+        SSH_FILEXFER_TYPE_BLOCK_DEVICE     = 8,
+        SSH_FILEXFER_TYPE_FIFO             = 9
+    }
+
 }

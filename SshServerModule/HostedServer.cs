@@ -182,7 +182,7 @@ namespace FxSsh.SshServerModule
                 // check IP user.WhitelistedIps
                 
 
-                SftpSubsystem sftpsub = new SftpSubsystem(_logger, channel.ClientChannelId, user.UserRootDirectory);
+                SftpSubsystem sftpsub = new SftpSubsystem(_logger, channel.ClientChannelId, user.UserRootDirectory, user.Username);
                 channel.DataReceived += (ss, ee) => sftpsub.OnInput(ee);
                 sftpsub.OnOutput += (ss, ee) => channel.SendData(ee);
                
