@@ -1,14 +1,15 @@
-﻿using LiteDB;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace FxSsh.SshServerModule
+namespace SshServer.Interfaces
 {
     public class ServerSettings
     {
-        public ObjectId Id{ get; set; }
+        public int Id{ get; set; }
         public string ServerRsaKey { get; set; }
+        public string ServerBanner { get; set; }
+
         public int ListenToPort { get; set; }
         public string ServerRootDirectory { get; set; }
         public List<string> BindToAddress { get; set; }

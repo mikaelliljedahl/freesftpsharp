@@ -1,21 +1,19 @@
 ﻿using FxSsh.SshServerModule;
+using FxSshSftpServer.Components;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Extensions.Logging;
+using SshServer.Interfaces;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
-using FxSshSftpServer.Components;
 
 namespace FxSshSftpServer.Pages
 {
 
     public partial class Users : ComponentBase
     {
+        [Inject]
+        public ISettingsRepository settingsRepository { get; set; }
         public List<User> AllUsers { get; set; }
 
         public User SelectedUser { get; set; }
@@ -32,7 +30,7 @@ namespace FxSshSftpServer.Pages
         {
             if (firstRender)
             {
-                AllUsers = HostedServer.settingsrepo.GetAllUsers();
+                AllUsers = settingsRepository.GetAllUsers();
                 _ = InvokeAsync(StateHasChanged);
             }
         }
@@ -51,18 +49,18 @@ namespace FxSshSftpServer.Pages
 
         private void LoadUser(string username)
         {
-            SelectedUser = HostedServer.settingsrepo.GetUser(username);
+            SelectedUser = settingsRepository.GetUser(username);
             SelectedUserNotSaved = false;
         }
         private void RemoveUser()
         {
-            var removesuccess = HostedServer.settingsrepo.RemoveUser(SelectedUser.Username);
+            var removesuccess = settingsRepository.RemoveUser(SelectedUser.Username);
 
             if (removesuccess)
             {
                 InfoText = $"User {SelectedUser.Username} was deleted";
                 SelectedUser = null;
-                AllUsers = HostedServer.settingsrepo.GetAllUsers();
+                AllUsers = settingsRepository.GetAllUsers();
                 
             }
             else
@@ -118,12 +116,12 @@ namespace FxSshSftpServer.Pages
 
             if (SelectedUserNotSaved)
             {
-                HostedServer.settingsrepo.AddUser(SelectedUser);
+                settingsRepository.AddUser(SelectedUser);
                 InfoText = $"User {SelectedUser.Username} was created";
             }
             else
             {
-                HostedServer.settingsrepo.UpdateUser(SelectedUser);
+                settingsRepository.UpdateUser(SelectedUser);
                 InfoText = $"Settings for user {SelectedUser.Username} were updated";
             }
         }

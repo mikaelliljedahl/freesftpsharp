@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.31205.134
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSsh", "FxSsh\FxSsh.csproj", "{E6C351AE-02D6-4145-931D-FCBCA37986C4}"
 EndProject
@@ -12,6 +12,14 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSshSftpServer", "FxSshSftpServer\FxSshSftpServer.csproj", "{ACF087F2-C2BF-4F55-BBB4-A7E69FE8539C}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ServerConsoleApp", "ServerConsoleApp\ServerConsoleApp.csproj", "{881A4234-A466-4E05-8D2F-00D45563C9C1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Interfaces", "SshServer.Interfaces\SshServer.Interfaces.csproj", "{2B4BF3CA-6AB1-4A42-B115-68D760068137}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Filesystem.LocalDisk", "SshServer.Filesystem.LocalDisk\SshServer.Filesystem.LocalDisk.csproj", "{BA86E8ED-32FE-460B-A497-660711E93FBD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Settings.Sql", "SshServer.Settings.Sql\SshServer.Settings.Sql.csproj", "{3D5D9B6B-174C-478E-8140-228EFCD28370}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Settings.LiteDb", "SshServer.Settings.LiteDb\SshServer.Settings.LiteDb.csproj", "{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -39,6 +47,22 @@ Global
 		{881A4234-A466-4E05-8D2F-00D45563C9C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{881A4234-A466-4E05-8D2F-00D45563C9C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{881A4234-A466-4E05-8D2F-00D45563C9C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B4BF3CA-6AB1-4A42-B115-68D760068137}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B4BF3CA-6AB1-4A42-B115-68D760068137}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B4BF3CA-6AB1-4A42-B115-68D760068137}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B4BF3CA-6AB1-4A42-B115-68D760068137}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA86E8ED-32FE-460B-A497-660711E93FBD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA86E8ED-32FE-460B-A497-660711E93FBD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA86E8ED-32FE-460B-A497-660711E93FBD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA86E8ED-32FE-460B-A497-660711E93FBD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3D5D9B6B-174C-478E-8140-228EFCD28370}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3D5D9B6B-174C-478E-8140-228EFCD28370}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3D5D9B6B-174C-478E-8140-228EFCD28370}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3D5D9B6B-174C-478E-8140-228EFCD28370}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
