@@ -181,6 +181,8 @@ public class SftpSubsystem : IDisposable
         }
         else
         {
+
+            _logger.LogInformation($"user {_username} moving {oldpath} to {newpath}");
             var success = _fileSystem.MoveFileOrDirectory( oldpath, newpath );
             if (success)
             {
@@ -188,7 +190,7 @@ public class SftpSubsystem : IDisposable
             }
             else
             {
-                SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+                SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE);
 
             }
            
@@ -338,9 +340,9 @@ public class SftpSubsystem : IDisposable
             if (fs.Length - offset < 0) // EOF already reached
             {
 
-#if DEBUG
-                _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, already on EOF");
-#endif
+//#if DEBUG
+//                _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, already on EOF");
+//#endif
                 SendStatus((uint)requestId, SftpStatusType.SSH_FX_EOF);
                 return;
             }
@@ -355,9 +357,9 @@ public class SftpSubsystem : IDisposable
             fs.Read(buffer);
             writer.WriteBinary(buffer);
 
-#if DEBUG
-            _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, length {buffer.Length}");
-#endif
+//#if DEBUG
+//            _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, length {buffer.Length}");
+//#endif
             SendPacket(writer.ToByteArray());
         }
         else
@@ -545,8 +547,6 @@ public class SftpSubsystem : IDisposable
         writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
         writer.Write((uint)requestId);
         writer.Write((uint)1); // one file/directory at a time
-
-        _logger.LogInformation($"Reading path {resource.FullName} RequestId: {requestId}");
 
         if (resource.Type == ResourceType.Folder)
         {

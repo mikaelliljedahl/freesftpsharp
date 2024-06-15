@@ -215,7 +215,6 @@ namespace SshServer.Filesystem.LocalDisk
             };
             return res;
         }
-
         public DateTime GetDirectoryLastModified(string path)
         {
             //var absolutepath = _userRootDirectory + path;
@@ -228,7 +227,6 @@ namespace SshServer.Filesystem.LocalDisk
             var dirInfo = new DirectoryInfo(path);
             return dirInfo.LastAccessTimeUtc;
         }
-
 
         public DateTime GetFileLastModified(string path)
         {
