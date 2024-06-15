@@ -3,7 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Events;
-using System;
+using SshServer.Filesystem.LocalDisk;
+using SshServer.Interfaces;
 using System.Threading.Tasks;
 
 namespace ServerConsoleApp
@@ -27,7 +28,11 @@ namespace ServerConsoleApp
             {
                 services.AddLogging();
                 Log.Information("Starting host service");
+                services.AddSingleton<ISettingsRepository, SettingsRepository>();
+                services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
                 services.AddHostedService<HostedServer>();
+
+                
             })
             .RunConsoleAsync();
         }
