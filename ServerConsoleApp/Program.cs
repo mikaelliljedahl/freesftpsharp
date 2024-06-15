@@ -7,13 +7,7 @@ using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
 using System.Threading.Tasks;
 
-namespace ServerConsoleApp
-{
-    class Program
-    {
-        static async Task Main(string[] args)
-        {
-            Log.Logger = new LoggerConfiguration()
+Log.Logger = new LoggerConfiguration()
                       .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
                       .MinimumLevel.Override("System", LogEventLevel.Warning)
                       .Enrich.FromLogContext()
@@ -23,18 +17,20 @@ namespace ServerConsoleApp
                   //.WithDestructurers(new[] { new DbUpdateExceptionDestructurer() }))
                   .CreateLogger();
 
-            await new HostBuilder()
-            .ConfigureServices((hostContext, services) =>
-            {
-                services.AddLogging();
-                Log.Information("Starting host service");
-                services.AddSingleton<ISettingsRepository, SettingsRepository>();
-                services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
-                services.AddHostedService<HostedServer>();
 
-                
-            })
-            .RunConsoleAsync();
-        }
-    }
-}
+await new HostBuilder()
+.ConfigureServices((hostContext, services) =>
+{
+    services.AddLogging();
+    Log.Information("Starting host service");
+    services.AddLogging(configure =>
+    {
+        configure.AddSerilog(Log.Logger);
+    });
+    services.AddSingleton<ISettingsRepository, SettingsRepository>();
+    services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
+    services.AddHostedService<HostedServer>();
+
+
+})
+.RunConsoleAsync();

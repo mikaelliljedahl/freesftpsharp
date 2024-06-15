@@ -25,6 +25,7 @@ builder.Services.AddHostedService<HostedServer>();
 
 builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
 builder.Services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
+builder.Logging.AddSerilog(Log.Logger);
 
 Log.Information("Starting host service");
 var app = builder.Build();
@@ -43,7 +44,6 @@ else
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseRouting();
 
 app.UseEndpoints(endpoints =>
