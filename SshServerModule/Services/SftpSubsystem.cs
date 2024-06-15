@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -17,22 +18,19 @@ public class SftpSubsystem : IDisposable
     private ILogger _logger;
     private readonly IFileSystem _fileSystem;
 
-    //private string _userRootDirectory;
     private readonly string _username;
     internal EventHandler<ICollection<byte>> OnOutput;
     int sftpversion;
     bool ProbablyOnWindowsSftpClient = false;
 
-    //internal EventHandler OnClose;
-    Dictionary<string, string> HandleToPathDictionary;
-    Dictionary<string, Dictionary<string, Resource>> HandleToPathDirList;
-    Dictionary<string, Stream> HandleToFileStreamDictionary;
+    readonly Dictionary<string, string> HandleToPathDictionary;
+    readonly Dictionary<string, Dictionary<string, Resource>> HandleToPathDirList;
+    readonly Dictionary<string, Stream> HandleToFileStreamDictionary;
 
     public SftpSubsystem(ILogger logger, IFileSystem fileSystem, string username)
     {
         _logger = logger;
         _fileSystem = fileSystem;
-        //_userRootDirectory = homeDirectory;
         _username = username;
 
         HandleToPathDictionary = new Dictionary<string, string>();
@@ -183,21 +181,17 @@ public class SftpSubsystem : IDisposable
         }
         else
         {
-            DirectoryInfo di = new DirectoryInfo(oldpath);
-            if (di.Exists)
+            var success = _fileSystem.MoveFileOrDirectory( oldpath, newpath );
+            if (success)
             {
-                di.MoveTo(newpath);
                 SendStatus(requestId, SftpStatusType.SSH_FX_OK);
             }
             else
             {
-                FileInfo fi = new FileInfo(oldpath);
-                if (fi.Exists)
-                {
-                    fi.MoveTo(newpath);
-                    SendStatus(requestId, SftpStatusType.SSH_FX_OK);
-                }
+                SendStatus(requestId, SftpStatusType.SSH_FX_OK);
+
             }
+           
         }
 
     }
@@ -423,12 +417,10 @@ public class SftpSubsystem : IDisposable
         var requestId = reader.ReadUInt32();
         var path = reader.ReadString(Encoding.UTF8);
         var handle = GenerateHandle();
-        var absolutepath = _userRootDirectory + path;
 
-        _logger.LogInformation($"user {_username} opened dir {absolutepath}");
+        _logger.LogInformation($"user {_username} opened dir {path}");
 
-        System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(absolutepath);
-        if (!di.Exists)
+        if (!_fileSystem.DirectoryExists(path))
             SendStatus(requestId, SftpStatusType.SSH_FX_NO_SUCH_FILE);
         else
         {
@@ -466,8 +458,7 @@ public class SftpSubsystem : IDisposable
         var create = desired_access & (uint)FileSystemOperation.Create;
         //uint32 flags
         //ATTRS  attrs
-        var absolutepath = _userRootDirectory + path;
-        System.IO.FileInfo fi = new System.IO.FileInfo(absolutepath);
+       
 
         if (read > 0 && write == 0 && create == 0)
         {
@@ -475,7 +466,7 @@ public class SftpSubsystem : IDisposable
             {
                 _logger.LogInformation($"Opening file {path} with handle: {handle}");
 
-                var fs = fi.OpenRead();
+                var fs = _fileSystem.OpenStreamRead(path);
                 HandleToFileStreamDictionary.Add(handle, fs);
             }
             catch
@@ -529,7 +520,7 @@ public class SftpSubsystem : IDisposable
             if (firstitem != null)
             {
 
-                ReturnReadDir(filesanddirs[firstitem].FullName, requestId, firstitem == "..");
+                ReturnReadDir(filesanddirs[firstitem], requestId, firstitem == "..");
                 filesanddirs.Remove(firstitem); // remove first item from "queue" with dir-items to list
             }
             else
@@ -546,7 +537,7 @@ public class SftpSubsystem : IDisposable
 
     }
 
-    private void ReturnReadDir(string absolutepath, uint requestId, bool isParent)
+    private void ReturnReadDir(Resource resource, uint requestId, bool isParent)
     {
         var writer = new SshDataWorker();
 
@@ -555,40 +546,39 @@ public class SftpSubsystem : IDisposable
         writer.Write((uint)requestId);
         writer.Write((uint)1); // one file/directory at a time
 
-        _logger.LogInformation($"Reading path {absolutepath} RequestId: {requestId}");
+        _logger.LogInformation($"Reading path {resource.FullName} RequestId: {requestId}");
 
-        FileAttributes attr = File.GetAttributes(absolutepath);
-        if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
+        if (resource.Type == ResourceType.Folder)
         {
             // this is a directory
-            var dir = new DirectoryInfo(absolutepath);
-            writer.Write(GetDirectoryWithAttributes(dir, isParent));
+            writer.Write(GetDirectoryWithAttributes(resource, isParent));
         }
         else
         {
-            var fi = new FileInfo(absolutepath);
-            writer.Write(GetFileWithAttributes(fi));
+            writer.Write(GetFileWithAttributes(resource));
             // this is a file
         }
 
         SendPacket(writer.ToByteArray());
     }
 
-    private byte[] GetDirectoryWithAttributes(DirectoryInfo dir, bool isParent)
+    private byte[] GetDirectoryWithAttributes(Resource dir, bool isParent)
     {
         SshDataWorker writer = new SshDataWorker();
         if (isParent)
             writer.Write("..", Encoding.UTF8);
         else
             writer.Write(dir.Name, Encoding.UTF8);
+
+        var lastWriteTime = _fileSystem.GetDirectoryLastModified(dir.FullName);
+        var filedatetime = $"{lastWriteTime.ToString("MMM dd HH:mm")}";
+
         if (isParent)
         {
-            var filedatetime = $"{dir.Parent.LastWriteTime.ToString("MMM dd HH:mm")}";
             writer.Write($"drwxr-xr-x   1 foo     bar      0 {filedatetime} ..", Encoding.UTF8);
         }
         else
         {
-            var filedatetime = $"{dir.LastWriteTime.ToString("MMM dd HH:mm")}";
             writer.Write($"drwxr-xr-x   1 foo     bar      0 {filedatetime} {dir.Name}", Encoding.UTF8);
         }
 
@@ -657,16 +647,15 @@ public class SftpSubsystem : IDisposable
     }
 
 
-    private byte[] GetFileWithAttributes(System.IO.FileInfo file)
+    private byte[] GetFileWithAttributes(Resource fileResource)
     {
         SshDataWorker writer = new SshDataWorker();
-        writer.Write(file.Name, Encoding.UTF8);
+        writer.Write(fileResource.Name, Encoding.UTF8);
 
-        var filedatetime = $"{file.LastWriteTime.ToString("MMM dd HH:mm")}";
-
-        //writer.Write($"-rwxrwxrwx   1 foo     foo      {file.Length} Mar 25 14:29 " + file.Name, Encoding.UTF8);
-        writer.Write($"-rwxrwxrwx   1 foo     bar      {file.Length} {filedatetime} {file.Name}", Encoding.UTF8);
-        writer.Write(GetAttributes(file.FullName, false));
+        var lastWriteTime = _fileSystem.GetFileLastModified(fileResource.FullName);
+        var filedatetime = $"{lastWriteTime.ToString("MMM dd HH:mm")}";
+        writer.Write($"-rwxrwxrwx   1 foo     bar      {fileResource.Length} {filedatetime} {fileResource.Name}", Encoding.UTF8);
+        writer.Write(GetAttributes(fileResource.FullName, false));
 
         return writer.ToByteArray();
     }
@@ -675,32 +664,35 @@ public class SftpSubsystem : IDisposable
         SshDataWorker writer = new SshDataWorker();
         if (isDirectory)
         {
-            System.IO.DirectoryInfo dirinfo = new DirectoryInfo(path);
             var attributes = new SftpFileAttributes(_fileSystem.GetDirectoryLastAccessed(path), _fileSystem.GetDirectoryLastModified(path), 0, _username.GetHashCode(), _username.GetHashCode(), true, null);
-            
+            var lastAccessTimeUtc = _fileSystem.GetDirectoryLastAccessed(path);
+            var lastWriteTimeUtc = _fileSystem.GetDirectoryLastModified(path);
+
             writer.Write((uint)12); // flags, tells the client which of the following attributes that are sent
             //writer.Write(ulong.MinValue); // size
             //writer.Write(uint.MinValue); // uid
             //writer.Write(uint.MinValue); // gid
             writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
-            writer.Write(GetUnixFileTime(dirinfo.LastAccessTimeUtc)); //atime   
-            writer.Write(GetUnixFileTime(dirinfo.LastWriteTimeUtc)); //mtime
+            writer.Write(GetUnixFileTime(lastAccessTimeUtc)); //atime   
+            writer.Write(GetUnixFileTime(lastWriteTimeUtc)); //mtime
             writer.Write((uint)0); // extended_count
                                    //string   extended_type blank
                                    //string   extended_data blank
         }
         else
         {
-            System.IO.FileInfo fileinfo = new FileInfo(path);
             var attributes = new SftpFileAttributes(_fileSystem.GetFileLastAccessed(path), _fileSystem.GetFileLastModified(path), 0, _username.GetHashCode(), _username.GetHashCode(), false, null);
+            var lastAccessTimeUtc = _fileSystem.GetFileLastAccessed(path);
+            var lastWriteTimeUtc = _fileSystem.GetFileLastModified(path);
+            var size = _fileSystem.GetSize(path);
 
             writer.Write((uint)13); // flags, tells the client which of the following attributes that are sent
-            writer.Write((ulong)fileinfo.Length); // size (that is why the flags is 1 higher for files than for directories)
+            writer.Write(size); // size (that is why the flags is 1 higher for files than for directories)
             //writer.Write(uint.MaxValue); // uid
             //writer.Write(uint.MaxValue); // gid
             writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
-            writer.Write(GetUnixFileTime(fileinfo.LastAccessTimeUtc)); //atime   
-            writer.Write(GetUnixFileTime(fileinfo.LastWriteTimeUtc)); //mtime
+            writer.Write(GetUnixFileTime(lastAccessTimeUtc)); //atime   
+            writer.Write(GetUnixFileTime(lastWriteTimeUtc)); //mtime
             writer.Write((uint)0); // extended_count
                                    //string   extended_type blank
                                    //string   extended_data blank

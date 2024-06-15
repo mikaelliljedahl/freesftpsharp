@@ -8,6 +8,8 @@ namespace SshServer.Interfaces
     {
         public int Id{ get; set; }
         public string ServerRsaKey { get; set; }
+        public string ServerBanner { get; set; }
+
         public int ListenToPort { get; set; }
         public string ServerRootDirectory { get; set; }
         public List<string> BindToAddress { get; set; }

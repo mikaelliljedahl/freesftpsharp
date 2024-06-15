@@ -22,6 +22,7 @@ public interface IFileSystem
     DateTime GetDirectoryLastAccessed(string path);
     DateTime GetFileLastModified(string path);
     DateTime GetFileLastAccessed(string path);
+    bool MoveFileOrDirectory(string oldpath, string newpath);
 }
 
 public record struct Resource(string Name, string FullName, ResourceType Type, ulong Length);

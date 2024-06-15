@@ -19,12 +19,13 @@ namespace FxSsh.SshServerModule
         
         private readonly ILogger _logger;
         private readonly IFileSystemFactory _fileSystemFactory;
-        private readonly ISettingsRepository _settingsRepository;
-        private readonly SshServerSettings _settings;
+        public readonly ISettingsRepository _settingsRepository; // public so that we can access it from Blazor page to edit settings
 
-        public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository, SshServerSettings settings)
+        public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository)
         {
             _logger = logger;
+            _settingsRepository = settingsRepository;
+            _fileSystemFactory = fileSystemFactory;
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -32,7 +33,12 @@ namespace FxSsh.SshServerModule
 
             var port = _settingsRepository.ServerSettings.ListenToPort;
 
-            server = new SshServer(new SshServerSettings { Port = port, ServerBanner = "FxSSHSFTP", IdleTimeout = _settingsRepository.ServerSettings.IdleTimeout });
+            server = new SshServer(new SshServerSettings 
+            { 
+                Port = port, 
+                ServerBanner = _settingsRepository.ServerSettings.ServerBanner, 
+                IdleTimeout = _settingsRepository.ServerSettings.IdleTimeout 
+            });
             server.AddHostKey("ssh-rsa", _settingsRepository.ServerSettings.ServerRsaKey);
 
             // TODO also generate and add key of type "ssh-dss"
@@ -185,7 +191,7 @@ namespace FxSsh.SshServerModule
                 // check IP user.WhitelistedIps
                 
 
-                SftpSubsystem sftpsub = new SftpSubsystem(_logger, channel.ClientChannelId, user.UserRootDirectory, user.Username);
+                SftpSubsystem sftpsub = new SftpSubsystem(_logger, _fileSystemFactory.GetFileSystem(username), user.Username);
                 channel.DataReceived += (ss, ee) => sftpsub.OnInput(ee);
                 sftpsub.OnOutput += (ss, ee) => channel.SendData(ee);
                

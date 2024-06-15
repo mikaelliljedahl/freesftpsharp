@@ -9,14 +9,20 @@ namespace SshServer.Filesystem.LocalDisk
 {
     public class LocalFileSystemFactory : IFileSystemFactory
     {
-        private readonly string _username;
+        private ISettingsRepository _settingsRepository;
 
+        public LocalFileSystemFactory(ISettingsRepository settingsRepository)
+        {
+            _settingsRepository = settingsRepository;
 
+        }
         public IFileSystem GetFileSystem(string username)
         {
-            throw new NotImplementedException();
-            _userRootDirectory = homeDirectory;
-            _username = username;
+            var user = _settingsRepository.GetUser(username);
+
+            LocalFileSystem fs = new LocalFileSystem(user.UserRootDirectory);
+            return fs;
         }
+
     }
 }

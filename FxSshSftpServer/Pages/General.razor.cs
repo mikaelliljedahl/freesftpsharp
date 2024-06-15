@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
+using SshServer.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,10 +15,8 @@ namespace FxSshSftpServer.Pages
    
     public partial class General : ComponentBase
     {
-
-
-        
-
+        [Inject]
+        public ISettingsRepository settingsRepository { get; set; }
         public ServerSettings ServerSettings { get; private set; }
         public bool Savesuccess { get; private set; }
 
@@ -25,7 +24,7 @@ namespace FxSshSftpServer.Pages
         {
             if (firstRender)
             {
-                ServerSettings = HostedServer.settingsrepo.ServerSettings;
+                ServerSettings = settingsRepository.ServerSettings;
                 _ = InvokeAsync(StateHasChanged);
             }
         }
@@ -33,7 +32,7 @@ namespace FxSshSftpServer.Pages
       
         private void OnSave()
         {
-            Savesuccess = HostedServer.settingsrepo.UpdateServerSettings(ServerSettings);
+            Savesuccess = settingsRepository.UpdateServerSettings(ServerSettings);
 
             
 

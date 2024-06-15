@@ -6,16 +6,12 @@ namespace SshServer.Filesystem.LocalDisk
 {
     public class LocalFileSystem : IFileSystem
     {
-        private string _userRootDirectory;
-        Dictionary<string, string> HandleToPathDictionary;
-        Dictionary<string, Dictionary<string, Resource>> HandleToPathDirList;
-        Dictionary<string, FileStream> HandleToFileStreamDictionary;
+        private readonly string _userRootDirectory;
+
         
-        public LocalFileSystem()
+        public LocalFileSystem(string userRootDirectory)
         {
-            HandleToPathDictionary = new Dictionary<string, string>();
-            HandleToFileStreamDictionary = new Dictionary<string, FileStream>();
-            HandleToPathDirList = new Dictionary<string, Dictionary<string, Resource>>();
+            _userRootDirectory = userRootDirectory;
         }
 
         public bool DirectoryExists(string path)
@@ -147,9 +143,9 @@ namespace SshServer.Filesystem.LocalDisk
 
             }
 
-            if (diRoot.FullName != di.FullName && path != "/" && !string.IsNullOrWhiteSpace(path))
+            if (diRoot.FullName != di.FullName && path != "/" && !string.IsNullOrWhiteSpace(path) && !path.EndsWith(".."))
             {
-                var parent = MapFileToResource(new FileInfo(di.Parent.FullName));  // if not on root level, add parent too
+                var parent = MapDirectoryToResource(new FileInfo(di.Parent.FullName));  // if not on root level, add parent too
                 parent.Name = "..";
                 foundDirs.Add(parent);
 
@@ -157,6 +153,43 @@ namespace SshServer.Filesystem.LocalDisk
 
             return foundDirs;
 
+        }
+
+        public bool MoveFileOrDirectory(string oldpath, string newpath)
+        {
+            var oldpathAbsolute = _userRootDirectory + oldpath;
+            var newpathAbsolute = _userRootDirectory + newpath;
+
+            DirectoryInfo di = new DirectoryInfo(oldpathAbsolute);
+            if (di.Exists)
+            {
+                try
+                {
+                    di.MoveTo(newpathAbsolute);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                FileInfo fi = new FileInfo(oldpathAbsolute);
+                if (fi.Exists)
+                {
+                    try
+                    {
+                        fi.MoveTo(newpathAbsolute);
+                        return true;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+            }
+            return false;
         }
 
         private Resource MapDirectoryToResource(FileInfo fileInfo)
@@ -185,28 +218,28 @@ namespace SshServer.Filesystem.LocalDisk
 
         public DateTime GetDirectoryLastModified(string path)
         {
-            var absolutepath = _userRootDirectory + path;
-            var dirInfo = new DirectoryInfo(absolutepath);
+            //var absolutepath = _userRootDirectory + path;
+            var dirInfo = new DirectoryInfo(path);
             return dirInfo.LastWriteTimeUtc;
         }
         public DateTime GetDirectoryLastAccessed(string path)
         {
-            var absolutepath = _userRootDirectory + path;
-            var dirInfo = new DirectoryInfo(absolutepath);
+            //var absolutepath = _userRootDirectory + path;
+            var dirInfo = new DirectoryInfo(path);
             return dirInfo.LastAccessTimeUtc;
         }
 
 
         public DateTime GetFileLastModified(string path)
         {
-            var absolutepath = _userRootDirectory + path;
-            var fileInfo = new FileInfo(absolutepath);
+            //var absolutepath = _userRootDirectory + path;
+            var fileInfo = new FileInfo(path);
             return fileInfo.LastWriteTimeUtc;
         }
         public DateTime GetFileLastAccessed(string path)
         {
-            var absolutepath = _userRootDirectory + path;
-            var fileInfo = new FileInfo(absolutepath);
+            //var absolutepath = _userRootDirectory + path;
+            var fileInfo = new FileInfo(path);
             return fileInfo.LastAccessTimeUtc;
         }
 
