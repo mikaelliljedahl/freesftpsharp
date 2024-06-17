@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using FxSsh.SshServerModule;
+using Microsoft.Extensions.DependencyInjection;
+using SshServer.Interfaces;
 
 namespace SshServer.Settings.LiteDb
 {
@@ -7,6 +9,7 @@ namespace SshServer.Settings.LiteDb
         public static IServiceCollection AddSshServerSettingsLiteDb(this IServiceCollection services)
         {
 
+            services.AddSingleton<ISettingsRepository, SettingsRepository>();
             return services;
         }
     }

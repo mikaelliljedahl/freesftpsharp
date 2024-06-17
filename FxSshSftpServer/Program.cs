@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Events;
 using SshServer.Filesystem.LocalDisk;
-using SshServer.Interfaces;
+using SshServer.Settings.LiteDb;
 using System;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,8 +23,9 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddHostedService<HostedServer>();
 
-builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
-builder.Services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
+builder.Services.AddSshServerSettingsLiteDb();
+builder.Services.AddLocalFileSystemHosting();
+
 builder.Logging.AddSerilog(Log.Logger);
 
 Log.Information("Starting host service");
