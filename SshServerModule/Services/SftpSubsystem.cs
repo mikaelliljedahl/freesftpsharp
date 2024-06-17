@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -162,7 +161,6 @@ public class SftpSubsystem : IDisposable
                         SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
                     }
                     break;
-
             }
         }
     }
@@ -181,7 +179,6 @@ public class SftpSubsystem : IDisposable
         }
         else
         {
-
             _logger.LogInformation($"user {_username} moving {oldpath} to {newpath}");
             var success = _fileSystem.MoveFileOrDirectory( oldpath, newpath );
             if (success)
@@ -193,9 +190,7 @@ public class SftpSubsystem : IDisposable
                 SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE);
 
             }
-           
         }
-
     }
 
     private void HandleRemoveDir(SshDataWorker reader)
@@ -214,7 +209,6 @@ public class SftpSubsystem : IDisposable
             {
                 _fileSystem.RemoveDirectory(pathtoremove);
                 SendStatus(requestId, SftpStatusType.SSH_FX_OK);
-                return;
             }
             catch
             {
@@ -343,11 +337,11 @@ public class SftpSubsystem : IDisposable
 //#if DEBUG
 //                _logger.LogInformation($"Reading file handle {handle} with offset: {offset}, already on EOF");
 //#endif
-                SendStatus((uint)requestId, SftpStatusType.SSH_FX_EOF);
+                SendStatus(requestId, SftpStatusType.SSH_FX_EOF);
                 return;
             }
             writer.Write((byte)RequestPacketType.SSH_FXP_DATA);
-            writer.Write((uint)requestId);
+            writer.Write(requestId);
 
             if (fs.Length - offset < length)
             {
@@ -364,7 +358,7 @@ public class SftpSubsystem : IDisposable
         }
         else
         {
-            SendStatus((uint)requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
+            SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
             return;
             // send invalid handle: SSH_FX_INVALID_HANDLE
         }
@@ -408,7 +402,7 @@ public class SftpSubsystem : IDisposable
         }
         else
         {
-            SendStatus((uint)requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
+            SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
             
         }
     }
@@ -478,7 +472,7 @@ public class SftpSubsystem : IDisposable
         }
 
         writer.Write((byte)RequestPacketType.SSH_FXP_HANDLE);
-        writer.Write((uint)requestId);
+        writer.Write(requestId);
         writer.Write(handle, Encoding.UTF8);
         // returns SSH_FXP_HANDLE on success or a SSH_FXP_STATUS message on fail
 
@@ -545,7 +539,7 @@ public class SftpSubsystem : IDisposable
 
         // returns SSH_FXP_NAME or SSH_FXP_STATUS with SSH_FX_EOF 
         writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
-        writer.Write((uint)requestId);
+        writer.Write(requestId);
         writer.Write((uint)1); // one file/directory at a time
 
         if (resource.Type == ResourceType.Folder)
@@ -607,7 +601,7 @@ public class SftpSubsystem : IDisposable
     private void WritePathAttributes(SshDataWorker writer, uint requestId, string path)
     {
         writer.Write((byte)RequestPacketType.SSH_FXP_NAME);
-        writer.Write((uint)requestId);
+        writer.Write(requestId);
         writer.Write((uint)1); // always count = 1 for realpath
 
         if (path.Length < 150)
@@ -626,13 +620,12 @@ public class SftpSubsystem : IDisposable
 
     private void HandleInit(SshDataWorker reader)
     {
-
         SshDataWorker writer = new SshDataWorker();
         var sftpclientversion = reader.ReadUInt32();
         writer.Write((byte)RequestPacketType.SSH_FXP_VERSION);
         var version = Math.Min(3, sftpclientversion);
 
-        writer.Write((uint)version); // SFTP protocol version
+        writer.Write(version); // SFTP protocol version
         sftpversion = Convert.ToInt32(version);
         _logger.LogInformation($"Init with client version: {sftpversion}");
         SendPacket(writer.ToByteArray());
@@ -645,8 +638,6 @@ public class SftpSubsystem : IDisposable
         writer.Write(GetAttributes(path, isDirectory));
         SendPacket(writer.ToByteArray());
     }
-
-
     private byte[] GetFileWithAttributes(Resource fileResource)
     {
         SshDataWorker writer = new SshDataWorker();
@@ -662,42 +653,25 @@ public class SftpSubsystem : IDisposable
     private byte[] GetAttributes(string path, bool isDirectory)
     {
         SshDataWorker writer = new SshDataWorker();
+        var attributes = new SftpFileAttributes(_fileSystem.GetDirectoryLastAccessed(path), _fileSystem.GetDirectoryLastModified(path), 0, _username.GetHashCode(), _username.GetHashCode(), isDirectory, null);
+
         if (isDirectory)
         {
-            var attributes = new SftpFileAttributes(_fileSystem.GetDirectoryLastAccessed(path), _fileSystem.GetDirectoryLastModified(path), 0, _username.GetHashCode(), _username.GetHashCode(), true, null);
-            var lastAccessTimeUtc = _fileSystem.GetDirectoryLastAccessed(path);
-            var lastWriteTimeUtc = _fileSystem.GetDirectoryLastModified(path);
-
             writer.Write((uint)12); // flags, tells the client which of the following attributes that are sent
-            //writer.Write(ulong.MinValue); // size
-            //writer.Write(uint.MinValue); // uid
-            //writer.Write(uint.MinValue); // gid
-            writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
-            writer.Write(GetUnixFileTime(lastAccessTimeUtc)); //atime   
-            writer.Write(GetUnixFileTime(lastWriteTimeUtc)); //mtime
-            writer.Write((uint)0); // extended_count
-                                   //string   extended_type blank
-                                   //string   extended_data blank
         }
         else
         {
-            var attributes = new SftpFileAttributes(_fileSystem.GetFileLastAccessed(path), _fileSystem.GetFileLastModified(path), 0, _username.GetHashCode(), _username.GetHashCode(), false, null);
-            var lastAccessTimeUtc = _fileSystem.GetFileLastAccessed(path);
-            var lastWriteTimeUtc = _fileSystem.GetFileLastModified(path);
-            var size = _fileSystem.GetSize(path);
-
             writer.Write((uint)13); // flags, tells the client which of the following attributes that are sent
+            var size = _fileSystem.GetSize(path);
             writer.Write(size); // size (that is why the flags is 1 higher for files than for directories)
-            //writer.Write(uint.MaxValue); // uid
-            //writer.Write(uint.MaxValue); // gid
-            writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
-            writer.Write(GetUnixFileTime(lastAccessTimeUtc)); //atime   
-            writer.Write(GetUnixFileTime(lastWriteTimeUtc)); //mtime
-            writer.Write((uint)0); // extended_count
-                                   //string   extended_type blank
-                                   //string   extended_data blank
         }
 
+        writer.Write(attributes.Permissions.PermissionsAsUint); // permissions
+        writer.Write(GetUnixFileTime(attributes.LastAccessTimeUtc)); //atime   
+        writer.Write(GetUnixFileTime(attributes.LastWriteTimeUtc)); //mtime
+        writer.Write((uint)0); // extended_count
+                               //string   extended_type blank
+                               //string   extended_data blank
         return writer.ToByteArray();
 
     }

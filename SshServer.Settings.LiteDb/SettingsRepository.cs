@@ -32,6 +32,7 @@ namespace FxSsh.SshServerModule
 
         public UserWithObjectId(User user)
         {
+            this.Username = user.Username;
             this.HashedPassword = user.HashedPassword;
             this.LastSuccessfulLogin = user.LastSuccessfulLogin;
             this.OnlyWhitelistedIps = user.OnlyWhitelistedIps;
