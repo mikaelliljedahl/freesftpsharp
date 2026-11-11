@@ -1,6 +1,9 @@
-﻿using Renci.SshNet;
-using System;
+﻿using System;
 using System.Net;
+
+using Renci.SshNet;
+
+
 
 namespace TestClient
 {
@@ -11,13 +14,14 @@ namespace TestClient
             var testUsername = "test_person";
             var testPassword = "1234";
 
-
-            var connInfo = new ConnectionInfo(IPAddress.Loopback.ToString(), 22, testUsername,
-                new AuthenticationMethod[]
-                {
+            Console.WriteLine("Preparing ConnectionInfo...");
+            var connInfo = new ConnectionInfo(/* IPAddress.Loopback.ToString() */ "localhost", 22022,
+                testUsername,
+                //new AuthenticationMethod[]
+                //{
                     // Password auth
                     new PasswordAuthenticationMethod(testUsername, testPassword)
-                }
+                //}
             );
 
             using var sftpclient = new SftpClient(connInfo);
