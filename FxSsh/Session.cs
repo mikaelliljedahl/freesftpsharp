@@ -186,12 +186,12 @@ namespace FxSsh
         {
             const int socketBufferSize = 2 * MaximumSshPacketSize;
             _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
-            _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
             try
             {
-                //_socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
+                // SO_DONTLINGER is not supported on Linux/macOS (SocketException 95).
+                _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
             }
-            catch
+            catch (SocketException)
             {
             }
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, socketBufferSize);
