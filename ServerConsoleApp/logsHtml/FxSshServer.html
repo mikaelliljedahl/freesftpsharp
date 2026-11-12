@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Viewer</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-body: #1a1a2e;
+  --bg-toolbar: #16213e;
+  --bg-control: #1a1a2e;
+  --bg-btn: #0f3460;
+  --bg-btn-hover: #1a4a7a;
+  --border-main: #0f3460;
+  --border-row: rgba(15, 52, 96, 0.5);
+  --stripe-even: rgba(15, 52, 96, 0.18);
+  --hover-row: rgba(15, 52, 96, 0.45);
+  --bg-details: rgba(15, 52, 96, 0.25);
+  --text-main: #d4d4d4;
+  --text-label: #a0a0b8;
+  --text-muted: #78909C;
+  --text-detail: #c0c0d0;
+  --text-prop-key: #4ec9b0;
+  --text-prop-val: #ce9178;
+  --highlight-bg: #FF9800;
+  --highlight-fg: #000;
+}
+body.light {
+  --bg-body: #f5f5f5;
+  --bg-toolbar: #e8e8e8;
+  --bg-control: #fff;
+  --bg-btn: #ddd;
+  --bg-btn-hover: #ccc;
+  --border-main: #ccc;
+  --border-row: #e0e0e0;
+  --stripe-even: rgba(0, 0, 0, 0.03);
+  --hover-row: rgba(0, 0, 0, 0.07);
+  --bg-details: rgba(0, 0, 0, 0.04);
+  --text-main: #1a1a1a;
+  --text-label: #555;
+  --text-muted: #777;
+  --text-detail: #333;
+  --text-prop-key: #0b7261;
+  --text-prop-val: #a0522d;
+  --highlight-bg: #ffe082;
+  --highlight-fg: #000;
+}
+body {
+  font-family: sans-serif;
+  background: var(--bg-body);
+  color: var(--text-main);
+  padding: 0;
+  margin: 0;
+}
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-toolbar);
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-main);
+}
+.toolbar label {
+  font-size: 13px;
+  color: var(--text-label);
+}
+.toolbar select,
+.toolbar input,
+.toolbar button {
+  font-family: sans-serif;
+  font-size: 13px;
+  padding: 6px 10px;
+  background: var(--bg-control);
+  color: var(--text-main);
+  border: 1px solid var(--border-main);
+  border-radius: 6px;
+  outline: none;
+}
+.toolbar select:focus,
+.toolbar input:focus,
+.toolbar button:focus {
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.4);
+}
+.toolbar select:hover,
+.toolbar input:hover,
+.toolbar button:hover {
+  border-color: #2196F3;
+}
+.toolbar button {
+  cursor: pointer;
+  background: var(--bg-btn);
+}
+.toolbar button:hover {
+  background: var(--bg-btn-hover);
+}
+#theme-toggle {
+  display: none;
+}
+.theme-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.theme-switch .slider {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #555;
+  border-radius: 11px;
+  transition: background 0.2s ease;
+}
+.theme-switch .slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+body.light .theme-switch .slider {
+  background: #aaa;
+}
+body.light .theme-switch .slider::before {
+  transform: translateX(18px);
+}
+#entry-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+#log-container {
+  width: 100%;
+  padding: 0 4px;
+}
+.log-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-row);
+  font-family: monospace;
+  font-size: 13px;
+  cursor: default;
+  transition: background-color 0.15s ease;
+}
+.log-entry:nth-child(even) {
+  background: var(--stripe-even);
+}
+.log-entry:hover {
+  background: var(--hover-row);
+}
+.log-entry.expandable {
+  cursor: pointer;
+}
+.log-entry .expand-indicator {
+  display: inline-block;
+  width: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  user-select: none;
+}
+.log-entry.expanded .expand-indicator {
+  transform: rotate(90deg);
+}
+.log-entry .timestamp {
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.log-entry .level {
+  display: inline-block;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 86px;
+  color: #fff;
+}
+.level-Verbose { background: #78909C; }
+.level-Debug { background: #2196F3; }
+.level-Information { background: #4CAF50; }
+.level-Warning { background: #FF9800; }
+.level-Error { background: #F44336; }
+.level-Fatal { background: #9C27B0; }
+.log-entry .message {
+  flex: 1;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  min-width: 0;
+}
+.log-details {
+  display: none;
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  font-family: monospace;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-row);
+  background: var(--bg-details);
+}
+.log-entry.expanded + .log-details {
+  display: block;
+}
+.log-details .detail-full-msg {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text-detail);
+  margin-bottom: 6px;
+}
+.log-details .detail-props {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.log-details .detail-props li {
+  padding: 2px 0;
+}
+.log-details .detail-props .prop-key {
+  color: var(--text-prop-key);
+  margin-right: 4px;
+}
+.log-details .detail-props .prop-val {
+  color: var(--text-prop-val);
+}
+.highlight { background-color: var(--highlight-bg); color: var(--highlight-fg); border-radius: 2px; padding: 0 1px; }
+@media (max-width: 767px) {
+  .log-entry {
+    flex-wrap: wrap;
+  }
+  .log-entry .message {
+    width: 100%;
+    flex-basis: 100%;
+    padding-left: 22px;
+  }
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <label for="level-filter">Level:</label>
+  <select id="level-filter">
+    <option value="All">All</option>
+    <option value="Verbose">Verbose</option>
+    <option value="Debug">Debug</option>
+    <option value="Information">Information</option>
+    <option value="Warning">Warning</option>
+    <option value="Error">Error</option>
+    <option value="Fatal">Fatal</option>
+  </select>
+  <label for="search-input">Search:</label>
+  <input type="text" id="search-input" placeholder="Search messages...">
+  <label for="sort-order">Sort:</label>
+  <select id="sort-order">
+    <option value="desc">Descending</option>
+    <option value="asc">Ascending</option>
+  </select>
+  <button id="clear-btn">Clear</button>
+  <input type="checkbox" id="theme-toggle">
+  <label class="theme-switch" for="theme-toggle" title="Toggle light/dark mode"><span class="slider"></span></label>
+  <span id="entry-count"></span>
+</div>
+<div id="log-container"></div>
+<script>
+var logEntries = [
+{"type":"Information","time":"2026-11-12T08:51:31.718Z","msg":"Starting host service","props":{}},
+{"type":"Error","time":"2026-11-12T08:51:32.203Z","msg":"Hosting failed to start\nSystem.Net.Sockets.SocketException (13): Permission denied\n   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)\n   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)\n   at System.Net.Sockets.Socket.Bind(EndPoint localEP)\n   at System.Net.Sockets.TcpListener.Start(Int32 backlog)\n   at FxSsh.SshServer.Start() in \/home\/mikael\/code\/github\/freesftpsharp\/FxSsh\/SshServer.cs:line 49\n   at FxSsh.SshServerModule.HostedServer.StartAsync(CancellationToken cancellationToken) in \/home\/mikael\/code\/github\/freesftpsharp\/SshServerModule\/HostedServer.cs:line 52\n   at Microsoft.Extensions.Hosting.Internal.Host.\u003cStartAsync\u003eb__14_1(IHostedService service, CancellationToken token)\n   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)","props":{"EventId":"{ Id: 11, Name: \"HostedServiceStartupFaulted\" }","SourceContext":"Microsoft.Extensions.Hosting.Internal.Host"}},
+{"type":"Information","time":"2026-11-12T08:51:38.499Z","msg":"Starting host service","props":{}},
+{"type":"Error","time":"2026-11-12T08:51:38.619Z","msg":"Hosting failed to start\nSystem.Net.Sockets.SocketException (13): Permission denied\n   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)\n   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)\n   at System.Net.Sockets.Socket.Bind(EndPoint localEP)\n   at System.Net.Sockets.TcpListener.Start(Int32 backlog)\n   at FxSsh.SshServer.Start() in \/home\/mikael\/code\/github\/freesftpsharp\/FxSsh\/SshServer.cs:line 49\n   at FxSsh.SshServerModule.HostedServer.StartAsync(CancellationToken cancellationToken) in \/home\/mikael\/code\/github\/freesftpsharp\/SshServerModule\/HostedServer.cs:line 52\n   at Microsoft.Extensions.Hosting.Internal.Host.\u003cStartAsync\u003eb__14_1(IHostedService service, CancellationToken token)\n   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)","props":{"EventId":"{ Id: 11, Name: \"HostedServiceStartupFaulted\" }","SourceContext":"Microsoft.Extensions.Hosting.Internal.Host"}},
+// __LOG_ENTRIES_END__
+];
+(function() {
+  const container = document.getElementById('log-container');
+  const levelFilter = document.getElementById('level-filter');
+  const searchInput = document.getElementById('search-input');
+  const sortOrder = document.getElementById('sort-order');
+  const clearBtn = document.getElementById('clear-btn');
+  const entryCountEl = document.getElementById('entry-count');
+  const themeToggle = document.getElementById('theme-toggle');
+
+  // Theme: detect OS preference, allow manual override
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+  const stored = localStorage.getItem('log-viewer-theme');
+  if (stored === 'light') {
+    document.body.classList.add('light');
+    themeToggle.checked = true;
+  } else if (stored === 'dark') {
+    document.body.classList.remove('light');
+    themeToggle.checked = false;
+  } else if (!prefersDark.matches) {
+    document.body.classList.add('light');
+    themeToggle.checked = true;
+  }
+
+  themeToggle.addEventListener('change', () => {
+    const isLight = themeToggle.checked;
+    document.body.classList.toggle('light', isLight);
+    localStorage.setItem('log-viewer-theme', isLight ? 'light' : 'dark');
+  });
+
+  const escapeHtml = (str) => {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\x22/g,'&quot;');
+  };
+
+  const highlightText = (text, query) => {
+    if (!query) return escapeHtml(text);
+    const escaped = escapeHtml(text);
+    const escapedQuery = escapeHtml(query);
+    const regex = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    return escaped.replace(regex, '<span class=\x22highlight\x22>$1</span>');
+  };
+
+  const formatPropValue = (val) => {
+    if (val === null || val === undefined) return 'null';
+    if (typeof val === 'number') return String(val);
+    if (typeof val === 'boolean') return String(val);
+    return '\x22' + escapeHtml(String(val)) + '\x22';
+  };
+
+  const hasDetails = (entry) => {
+    if (entry.msg && entry.msg.indexOf('\\n') !== -1) return true;
+    if (entry.props) {
+      const keys = Object.keys(entry.props);
+      if (keys.length > 0) return true;
+    }
+    return false;
+  };
+
+  const render = () => {
+    const level = levelFilter.value;
+    const search = searchInput.value.toLowerCase();
+    const dir = sortOrder.value;
+
+    const filtered = logEntries.filter((e) => {
+      if (level !== 'All' && e.type !== level) return false;
+      if (search && e.msg.toLowerCase().indexOf(search) === -1) return false;
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      if (a.time < b.time) return dir === 'asc' ? -1 : 1;
+      if (a.time > b.time) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    entryCountEl.textContent = 'Showing ' + filtered.length + ' of ' + logEntries.length + ' entries';
+
+    let html = '';
+    for (let i = 0; i < filtered.length; i++) {
+      const e = filtered[i];
+      const expandable = hasDetails(e);
+      const firstLine = e.msg.indexOf('\\n') !== -1 ? e.msg.substring(0, e.msg.indexOf('\\n')) : e.msg;
+      const msgHtml = highlightText(firstLine, searchInput.value);
+      const indicator = expandable ? '\u25B6' : '';
+
+      html += '<div class=\x22log-entry' + (expandable ? ' expandable' : '') + '\x22 data-idx=\x22' + i + '\x22>'
+        + '<span class=\x22expand-indicator\x22>' + indicator + '</span>'
+        + '<span class=\x22timestamp\x22>' + escapeHtml(e.time) + '</span>'
+        + '<span class=\x22level level-' + escapeHtml(e.type) + '\x22>' + escapeHtml(e.type) + '</span>'
+        + '<span class=\x22message\x22>' + msgHtml + '</span>'
+        + '</div>';
+
+      if (expandable) {
+        let detailHtml = '<div class=\x22log-details\x22>';
+        if (e.msg.indexOf('\\n') !== -1) {
+          detailHtml += '<div class=\x22detail-full-msg\x22>' + escapeHtml(e.msg) + '</div>';
+        }
+        if (e.props) {
+          const keys = Object.keys(e.props);
+          if (keys.length > 0) {
+            detailHtml += '<ul class=\x22detail-props\x22>';
+            for (let j = 0; j < keys.length; j++) {
+              detailHtml += '<li><span class=\x22prop-key\x22>' + escapeHtml(keys[j]) + ':</span> '
+                + '<span class=\x22prop-val\x22>' + formatPropValue(e.props[keys[j]]) + '</span></li>';
+            }
+            detailHtml += '</ul>';
+          }
+        }
+        detailHtml += '</div>';
+        html += detailHtml;
+      }
+    }
+    container.innerHTML = html;
+  };
+
+  container.addEventListener('click', (evt) => {
+    let target = evt.target;
+    while (target && target !== container) {
+      if (target.classList && target.classList.contains('log-entry')) {
+        if (target.classList.contains('expandable')) {
+          target.classList.toggle('expanded');
+        }
+        return;
+      }
+      target = target.parentElement;
+    }
+  });
+
+  levelFilter.addEventListener('change', render);
+  searchInput.addEventListener('input', render);
+  sortOrder.addEventListener('change', render);
+  clearBtn.addEventListener('click', () => {
+    levelFilter.value = 'All';
+    searchInput.value = '';
+    sortOrder.value = 'desc';
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
