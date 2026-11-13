@@ -38,6 +38,11 @@ If no valid admin credential is configured, the UI is closed: every request gets
 short help text, and the log has an error that tells what is missing. The SSH server still runs.
 
 All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy).
+
+The login cookie and the antiforgery tokens are protected with ASP.NET Core data protection keys. The keys are
+stored in `DataProtection:KeysPath` (default: `keys/` in the app directory), so a login survives a restart. On
+Windows the keys are encrypted with DPAPI. On Linux and macOS they are stored unencrypted, and the log has a
+warning about it at the first start: give the directory restrictive file permissions (for example `chmod 700`).
 The login form has an antiforgery token. After 5 failed logins from one IP address, that address is locked out
 for 15 minutes (`AdminAuth:MaxFailedLogins`, `AdminAuth:LockoutMinutes`). Use "Log out" in the menu to end the
 session; a session expires after 8 hours without use.

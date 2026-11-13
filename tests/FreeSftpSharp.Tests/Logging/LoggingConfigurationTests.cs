@@ -85,7 +85,16 @@ public class NormalStartLoggingTests
 
         var events = InMemoryLogSink.Instance.Snapshot();
         Assert.Contains(events, e => e.RenderMessage().Contains("Starting host service")); // the sink works
-        var problems = events.Where(e => e.Level >= LogEventLevel.Warning).Select(e => $"{e.Level}: {e.RenderMessage()}").ToList();
+        var problems = events.Where(e => e.Level >= LogEventLevel.Warning)
+            .Where(e => !IsExpectedUnencryptedKeyWarning(e))
+            .Select(e => $"{e.Level}: {e.RenderMessage()}").ToList();
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
     }
+
+    // Outside Windows the data protection keys are stored unencrypted (DataProtectionSetup), and ASP.NET Core
+    // warns about that when it creates the first key. That warning is correct and expected on these platforms.
+    private static bool IsExpectedUnencryptedKeyWarning(LogEvent e) =>
+        !OperatingSystem.IsWindows()
+        && e.Level == LogEventLevel.Warning
+        && e.MessageTemplate.Text.Contains("No XML encryptor configured", StringComparison.Ordinal);
 }

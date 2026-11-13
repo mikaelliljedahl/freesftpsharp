@@ -14,17 +14,9 @@ public static class DataProtectionSetup
 {
     public const string KeysPathKey = "DataProtection:KeysPath";
     public const string DefaultKeysDirectory = "keys";
-    /// <summary>Keeps the keys in memory only. For tests: a login does not survive a restart.</summary>
-    public const string EphemeralKey = "DataProtection:Ephemeral";
 
     public static IServiceCollection AddAdminDataProtection(this IServiceCollection services, IConfiguration configuration)
     {
-        if (configuration.GetValue<bool>(EphemeralKey))
-        {
-            services.AddDataProtection().UseEphemeralDataProtectionProvider();
-            return services;
-        }
-
         var configured = configuration[KeysPathKey];
         var keysPath = Path.GetFullPath(string.IsNullOrWhiteSpace(configured) ? DefaultKeysDirectory : configured,
             AppContext.BaseDirectory);
