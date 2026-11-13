@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FxSsh\FxSsh.csproj" />
+    <ProjectReference Include="..\external\FxSsh\FxSsh\FxSsh.csproj" />
     <ProjectReference Include="..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
   </ItemGroup>
 

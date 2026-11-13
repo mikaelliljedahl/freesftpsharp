@@ -3,9 +3,9 @@ using System.Diagnostics.Contracts;
 using System.IO;
 using System.Text;
 
-namespace FxSsh
+namespace SshServerModule.Services
 {
-    public class SshDataWorker : IDisposable
+    internal class SshDataWorker : IDisposable
     {
         private readonly MemoryStream _ms;
 

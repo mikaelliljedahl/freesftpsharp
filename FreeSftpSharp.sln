@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.9.34728.123
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSsh", "FxSsh\FxSsh.csproj", "{E6C351AE-02D6-4145-931D-FCBCA37986C4}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SshServerModule", "SshServerModule\SshServerModule.csproj", "{B04031B6-8B5D-4774-8839-466933EBEDBE}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestClient", "TestClient\TestClient.csproj", "{1EC2331C-7AFA-450F-BC7D-5DD07BFC566A}"
@@ -24,6 +22,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FreeSftpSharp.Tests", "tests\FreeSftpSharp.Tests\FreeSftpSharp.Tests.csproj", "{15D5D843-59F7-41CA-83FF-C055F0149337}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{A288BEE0-695A-BEEA-455C-649571D89326}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSsh", "external\FxSsh\FxSsh\FxSsh.csproj", "{E6C351AE-02D6-4145-931D-FCBCA37986C4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -77,6 +79,7 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{15D5D843-59F7-41CA-83FF-C055F0149337} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{E6C351AE-02D6-4145-931D-FCBCA37986C4} = {A288BEE0-695A-BEEA-455C-649571D89326}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BC80F45C-E623-4F1E-AE8E-CF6B9C296BC6}

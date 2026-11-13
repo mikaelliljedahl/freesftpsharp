@@ -1,5 +1,4 @@
-﻿using FxSsh;
-using FxSsh.SshServerModule;
+﻿using FxSsh.SshServerModule;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
 using System;
@@ -58,16 +57,16 @@ public class SftpSubsystem : IDisposable
     /// waiting for the responses). This method buffers the data and gives each complete
     /// "uint32 length + payload" packet to <see cref="HandlePacket"/>.
     /// </summary>
-    /// <param name="ee">the byte array of the data received from the client</param>
-    internal void OnInput(byte[] ee)
+    /// <param name="ee">the data received from the client. It is only valid during the call, so it is copied.</param>
+    internal void OnInput(ReadOnlyMemory<byte> ee)
     {
         if (ProbablyOnWindowsSftpClient)
         {
-            HandlePacket(ee); // legacy behavior, see HandlePacket
+            HandlePacket(ee.ToArray()); // legacy behavior, see HandlePacket
             return;
         }
 
-        _inputBuffer.AddRange(ee);
+        _inputBuffer.AddRange(ee.Span);
 
         while (_inputBuffer.Count >= 4)
         {
