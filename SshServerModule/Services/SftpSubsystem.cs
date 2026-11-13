@@ -25,6 +25,7 @@ public class SftpSubsystem : IDisposable
     readonly Dictionary<string, string> HandleToPathDictionary;
     readonly Dictionary<string, Dictionary<string, Resource>> HandleToPathDirList;
     readonly Dictionary<string, Stream> HandleToFileStreamDictionary;
+    readonly HashSet<string> AppendHandles = new HashSet<string>();
 
     public SftpSubsystem(ILogger logger, IFileSystem fileSystem, string username)
     {
@@ -345,6 +346,7 @@ public class SftpSubsystem : IDisposable
         if (HandleToPathDictionary.ContainsKey(handle))
         {
             HandleToPathDictionary.Remove(handle);
+            AppendHandles.Remove(handle);
             if (HandleToFileStreamDictionary.ContainsKey(handle))
             {
                 var stream = HandleToFileStreamDictionary[handle];
@@ -441,7 +443,10 @@ public class SftpSubsystem : IDisposable
 
             if (fs.CanWrite && fs.CanSeek)
             {
-                fs.Seek(offsetfromfileBeginning, SeekOrigin.Begin);
+                if (AppendHandles.Contains(handle))
+                    fs.Seek(0, SeekOrigin.End); // SSH_FXF_APPEND: the offset is ignored
+                else
+                    fs.Seek(offsetfromfileBeginning, SeekOrigin.Begin);
                 fs.Write(buffer, 0, buffer.Length);
                 SendStatus(requestId, SftpStatusType.SSH_FX_OK);
             }
@@ -521,18 +526,52 @@ public class SftpSubsystem : IDisposable
         string handle = GenerateHandle();
         HandleToPathDictionary.Add(handle, path);
 
-        var desired_access = reader.ReadUInt32();
-        var flags = reader.ReadUInt32();
+        //uint32 pflags
+        //ATTRS  attrs (not used)
+        var pflags = (SftpOpenFlags)reader.ReadUInt32();
+        var read = pflags.HasFlag(SftpOpenFlags.SSH_FXF_READ);
+        var write = pflags.HasFlag(SftpOpenFlags.SSH_FXF_WRITE);
 
-        //uint32 desired-access
-        var write = desired_access & (uint)FileSystemOperation.Write;
-        var read = desired_access & (uint)FileSystemOperation.Read;
-        var create = desired_access & (uint)FileSystemOperation.Create;
-        //uint32 flags
-        //ATTRS  attrs
-       
+        if (write)
+        {
+            var create = pflags.HasFlag(SftpOpenFlags.SSH_FXF_CREAT);
+            var truncate = pflags.HasFlag(SftpOpenFlags.SSH_FXF_TRUNC);
+            var exclusive = pflags.HasFlag(SftpOpenFlags.SSH_FXF_EXCL);
 
-        if (read > 0 && write == 0 && create == 0)
+            var mode = create
+                ? (exclusive ? FileMode.CreateNew : truncate ? FileMode.Create : FileMode.OpenOrCreate)
+                : (truncate ? FileMode.Truncate : FileMode.Open);
+
+            try
+            {
+                _logger.LogInformation($"Opening file {path} for writing ({mode}) with handle: {handle}");
+
+                // Open the file now, so that an empty file is created and an existing file is truncated
+                // also when the client sends no SSH_FXP_WRITE.
+                HandleToFileStreamDictionary.Add(handle, _fileSystem.OpenStreamWrite(path, mode));
+                if (pflags.HasFlag(SftpOpenFlags.SSH_FXF_APPEND))
+                    AppendHandles.Add(handle);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_NO_SUCH_FILE);
+                return; // send only one response for each request
+            }
+            catch (UnauthorizedAccessException)
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+                return; // send only one response for each request
+            }
+            catch
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE); // for example SSH_FXF_EXCL and the file exists
+                return; // send only one response for each request
+            }
+        }
+        else if (read)
         {
             try
             {

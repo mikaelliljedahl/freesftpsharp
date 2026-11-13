@@ -124,6 +124,20 @@ namespace FxSsh.SshServerModule
         All = 2047, // 0x00000000000007FF
     }
 
+    /// <summary>
+    /// The pflags of SSH_FXP_OPEN in SFTP version 3 (draft-ietf-secsh-filexfer-02, section 6.3).
+    /// </summary>
+    [Flags]
+    public enum SftpOpenFlags : uint
+    {
+        SSH_FXF_READ   = 0x00000001,
+        SSH_FXF_WRITE  = 0x00000002,
+        SSH_FXF_APPEND = 0x00000004,
+        SSH_FXF_CREAT  = 0x00000008,
+        SSH_FXF_TRUNC  = 0x00000010,
+        SSH_FXF_EXCL   = 0x00000020,
+    }
+
     [Flags]
     public enum FileOrDirAttributeType : byte
     {

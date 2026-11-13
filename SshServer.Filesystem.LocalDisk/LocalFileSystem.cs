@@ -160,7 +160,12 @@ namespace SshServer.Filesystem.LocalDisk
 
         public Stream OpenStreamWrite(string path)
         {
-            return new FileStream(GetPhysicalPath(path), FileMode.OpenOrCreate);
+            return OpenStreamWrite(path, FileMode.OpenOrCreate);
+        }
+
+        public Stream OpenStreamWrite(string path, FileMode mode)
+        {
+            return new FileStream(GetPhysicalPath(path), mode, FileAccess.ReadWrite);
         }
 
         public bool RemoveDirectory(string pathToRemove)

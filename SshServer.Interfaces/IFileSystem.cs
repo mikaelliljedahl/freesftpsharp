@@ -14,6 +14,7 @@ public interface IFileSystem
     bool DirectoryExists(string path);
     Stream OpenStreamRead(string path);
     Stream OpenStreamWrite(string path);
+    Stream OpenStreamWrite(string path, FileMode mode);
     IEnumerable<Resource> GetFiles(string path);
     IEnumerable<Resource> GetDirectories(string path);
     bool RemoveFile(string path);
