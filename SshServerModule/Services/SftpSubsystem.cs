@@ -25,6 +25,7 @@ public class SftpSubsystem : IDisposable
     readonly Dictionary<string, string> HandleToPathDictionary;
     readonly Dictionary<string, Dictionary<string, Resource>> HandleToPathDirList;
     readonly Dictionary<string, Stream> HandleToFileStreamDictionary;
+    readonly HashSet<string> AppendHandles = new HashSet<string>();
 
     public SftpSubsystem(ILogger logger, IFileSystem fileSystem, string username)
     {
@@ -46,16 +47,67 @@ public class SftpSubsystem : IDisposable
         }
     }
 
+    // OpenSSH limits an SFTP packet to 256 KiB. Allow some extra space for the packet header.
+    private const int MaxSftpPacketLength = 256 * 1024 + 1024;
+    private readonly List<byte> _inputBuffer = new List<byte>();
+    private bool _receivedFirstPacket;
+
+    /// <summary>
+    /// Receives channel data from the client. One SSH channel data message can contain part of an
+    /// SFTP packet or more than one SFTP packet (clients such as OpenSSH sftp send requests without
+    /// waiting for the responses). This method buffers the data and gives each complete
+    /// "uint32 length + payload" packet to <see cref="HandlePacket"/>.
+    /// </summary>
+    /// <param name="ee">the byte array of the data received from the client</param>
+    internal void OnInput(byte[] ee)
+    {
+        if (ProbablyOnWindowsSftpClient)
+        {
+            HandlePacket(ee); // legacy behavior, see HandlePacket
+            return;
+        }
+
+        _inputBuffer.AddRange(ee);
+
+        while (_inputBuffer.Count >= 4)
+        {
+            var length = (uint)(_inputBuffer[0] << 24 | _inputBuffer[1] << 16 | _inputBuffer[2] << 8 | _inputBuffer[3]);
+
+            if (length > MaxSftpPacketLength)
+            {
+                var data = _inputBuffer.ToArray();
+                _inputBuffer.Clear();
+
+                if (!_receivedFirstPacket)
+                {
+                    HandlePacket(data); // legacy behavior for clients that do not send the length, see HandlePacket
+                }
+                else
+                {
+                    _logger.LogWarning($"Invalid sftp packet length {length} from user: {_username}. {data.Length} bytes ignored.");
+                }
+                return;
+            }
+
+            var packetLength = 4 + (int)length;
+            if (_inputBuffer.Count < packetLength)
+                return; // wait for the rest of the packet
+
+            var packet = _inputBuffer.GetRange(0, packetLength).ToArray();
+            _inputBuffer.RemoveRange(0, packetLength);
+            _receivedFirstPacket = true;
+            HandlePacket(packet);
+        }
+    }
+
     /// <summary>
     /// It first reads the first 5 bytes of the input, which is the length of the message and the message
     /// type. Then it reads the rest of the message and calls the appropriate function to handle the
     /// message based on the type
     /// </summary>
-    /// <param name="ee">the byte array of the data received from the client</param>
-    internal void OnInput(byte[] ee)
+    /// <param name="ee">one complete sftp packet, including the uint32 length</param>
+    private void HandlePacket(byte[] ee)
     {
-        var input = Encoding.ASCII.GetString(ee);
-
         //uint32 length
         //byte type
         //byte[length - 1] data payload
@@ -156,7 +208,7 @@ public class SftpSubsystem : IDisposable
                     // unsupported command
                     if (msgtype > 0)
                     {
-                        _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()} input: \"{input}\". for user: {_username}");
+                        _logger.LogWarning($"Unsupported sftp command {msgtype.ToString()}, packet length: {ee.Length} bytes, for user: {_username}");
                         uint requestId = reader.ReadUInt32();
                         SendStatus(requestId, SftpStatusType.SSH_FX_OP_UNSUPPORTED);
                     }
@@ -300,6 +352,7 @@ public class SftpSubsystem : IDisposable
         if (HandleToPathDictionary.ContainsKey(handle))
         {
             HandleToPathDictionary.Remove(handle);
+            AppendHandles.Remove(handle);
             if (HandleToFileStreamDictionary.ContainsKey(handle))
             {
                 var stream = HandleToFileStreamDictionary[handle];
@@ -337,7 +390,7 @@ public class SftpSubsystem : IDisposable
             var offset = (long)reader.ReadUInt64();
             var length = (int)reader.ReadUInt32();
             var buffer = new byte[length];
-            if (fs.Length - offset < 0) // EOF already reached
+            if (offset >= fs.Length) // EOF already reached. Clients such as OpenSSH sftp send reads after the end of the file.
             {
 
 //#if DEBUG
@@ -354,7 +407,7 @@ public class SftpSubsystem : IDisposable
                 buffer = new byte[fs.Length - offset];
             }
             fs.Seek(offset, SeekOrigin.Begin);
-            fs.Read(buffer);
+            fs.ReadExactly(buffer);
             writer.WriteBinary(buffer);
 
 //#if DEBUG
@@ -396,7 +449,10 @@ public class SftpSubsystem : IDisposable
 
             if (fs.CanWrite && fs.CanSeek)
             {
-                fs.Seek(offsetfromfileBeginning, SeekOrigin.Begin);
+                if (AppendHandles.Contains(handle))
+                    fs.Seek(0, SeekOrigin.End); // SSH_FXF_APPEND: the offset is ignored
+                else
+                    fs.Seek(offsetfromfileBeginning, SeekOrigin.Begin);
                 fs.Write(buffer, 0, buffer.Length);
                 SendStatus(requestId, SftpStatusType.SSH_FX_OK);
             }
@@ -437,6 +493,31 @@ public class SftpSubsystem : IDisposable
     }
 
     
+    /// <summary>
+    /// Returns the canonical form of a path for SSH_FXP_REALPATH: it starts with "/", has no "." or
+    /// empty segments, and ".." removes the previous segment. A ".." at the root stays at the root.
+    /// </summary>
+    internal static string NormalizePath(string path)
+    {
+        var segments = new List<string>();
+        foreach (var segment in path.Split('/'))
+        {
+            if (segment.Length == 0 || segment == ".")
+                continue;
+
+            if (segment == "..")
+            {
+                if (segments.Count > 0)
+                    segments.RemoveAt(segments.Count - 1);
+                continue;
+            }
+
+            segments.Add(segment);
+        }
+
+        return "/" + string.Join('/', segments);
+    }
+
     private static string GenerateHandle()
     {
         return Guid.NewGuid().ToString().Replace("-", "");
@@ -451,18 +532,52 @@ public class SftpSubsystem : IDisposable
         string handle = GenerateHandle();
         HandleToPathDictionary.Add(handle, path);
 
-        var desired_access = reader.ReadUInt32();
-        var flags = reader.ReadUInt32();
+        //uint32 pflags
+        //ATTRS  attrs (not used)
+        var pflags = (SftpOpenFlags)reader.ReadUInt32();
+        var read = pflags.HasFlag(SftpOpenFlags.SSH_FXF_READ);
+        var write = pflags.HasFlag(SftpOpenFlags.SSH_FXF_WRITE);
 
-        //uint32 desired-access
-        var write = desired_access & (uint)FileSystemOperation.Write;
-        var read = desired_access & (uint)FileSystemOperation.Read;
-        var create = desired_access & (uint)FileSystemOperation.Create;
-        //uint32 flags
-        //ATTRS  attrs
-       
+        if (write)
+        {
+            var create = pflags.HasFlag(SftpOpenFlags.SSH_FXF_CREAT);
+            var truncate = pflags.HasFlag(SftpOpenFlags.SSH_FXF_TRUNC);
+            var exclusive = pflags.HasFlag(SftpOpenFlags.SSH_FXF_EXCL);
 
-        if (read > 0 && write == 0 && create == 0)
+            var mode = create
+                ? (exclusive ? FileMode.CreateNew : truncate ? FileMode.Create : FileMode.OpenOrCreate)
+                : (truncate ? FileMode.Truncate : FileMode.Open);
+
+            try
+            {
+                _logger.LogInformation($"Opening file {path} for writing ({mode}) with handle: {handle}");
+
+                // Open the file now, so that an empty file is created and an existing file is truncated
+                // also when the client sends no SSH_FXP_WRITE.
+                HandleToFileStreamDictionary.Add(handle, _fileSystem.OpenStreamWrite(path, mode));
+                if (pflags.HasFlag(SftpOpenFlags.SSH_FXF_APPEND))
+                    AppendHandles.Add(handle);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_NO_SUCH_FILE);
+                return; // send only one response for each request
+            }
+            catch (UnauthorizedAccessException)
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+                return; // send only one response for each request
+            }
+            catch
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_FAILURE); // for example SSH_FXF_EXCL and the file exists
+                return; // send only one response for each request
+            }
+        }
+        else if (read)
         {
             try
             {
@@ -603,11 +718,8 @@ public class SftpSubsystem : IDisposable
         var path = "/";
         if (!ignoreReadingPath)
         {
-            path = (reader.ReadString(Encoding.UTF8)).Trim();
-
-            // return current dir for absolutepath
-            if (path == "" || path == "." || path == "/.")
-                path = "/"; // replace with current filepath
+            // The working directory of the session is always "/", so a relative path starts there.
+            path = NormalizePath(reader.ReadString(Encoding.UTF8).Trim());
         }
         WritePathAttributes(writer, requestId, path);
     }
