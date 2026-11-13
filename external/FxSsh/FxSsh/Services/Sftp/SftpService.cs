@@ -196,6 +196,14 @@ namespace FxSsh.Services.Sftp
             // successful subsystem exit instead of an unknown (-1) status.
             channel.EofReceived += (_, _) => outbound.Writer.TryComplete();
             channel.CloseReceived += (_, _) => OnClose();
+            // A lost connection force-closes the channel without a peer
+            // CLOSE: release the open handles here, or the files stay open
+            // until the garbage collector finalizes them.
+            channel.ForceClosed += (_, _) =>
+            {
+                outbound.Writer.TryComplete();
+                CloseAllHandles();
+            };
 
             DataReceived += (_, packet) => outbound.Writer.TryWrite(packet);
             CloseReceived += (_, exitCode) =>
@@ -313,8 +321,13 @@ namespace FxSsh.Services.Sftp
         {
             lock (_mapOfHandle)
             {
+                // Teardown must release every handle, also when one of them
+                // fails to close (for example a flush on a full disk).
                 foreach (var entry in _mapOfHandle.Values)
-                    entry.Dispose();
+                {
+                    try { entry.Dispose(); }
+                    catch (Exception ex) { Log.Warn($"SFTP: closing a handle failed: {ex.Message}"); }
+                }
                 _mapOfHandle.Clear();
             }
         }
