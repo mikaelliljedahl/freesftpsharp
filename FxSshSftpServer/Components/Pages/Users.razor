@@ -2,6 +2,7 @@
 @using FxSsh.SshServerModule
 @using System.Globalization
 @inject ISettingsRepository SettingsRepository
+@inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject IJSRuntime JS
 @inject ToastService Toasts
 
@@ -257,7 +258,7 @@
             var user = new User();
             // Hash off the circuit's synchronization context: PBKDF2 with 600,000 iterations takes a moment.
             await Task.Run(() => form.ApplyTo(user));
-            if (SettingsRepository.GetUser(username) is not null || !SettingsRepository.AddUser(user))
+            if (!UserService.TryAdd(user))
             {
                 Toasts.ShowError($"The user {username} could not be created. Is the name already used?");
                 return;
@@ -295,7 +296,7 @@
 
     private Task DeleteAsync()
     {
-        if (SettingsRepository.RemoveUser(pendingDelete))
+        if (UserService.Remove(pendingDelete))
         {
             Toasts.ShowSuccess($"The user {pendingDelete} was deleted.");
             if (form?.Username == pendingDelete)

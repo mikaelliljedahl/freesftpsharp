@@ -7,6 +7,35 @@ Sftp Server implementation based on SSHServer library based heavily on [FxSsh](h
 All basic Sftp command are now implemented except handling symbolic links. However some implementations such as returning correct file attributes are not finalized. Server was tested with FileZilla client only. There are probably some bugs left to fix. 
 You are welcome to create PR's. The planned work is described in the [technical roadmap](docs/ROADMAP.md).
 
+## Quick start (local test server)
+
+From a download to an SFTP login, with no configuration file:
+
+```sh
+# 1. Add a user. The root directory is created if it does not exist. The password is read from stdin
+#    (or asked for without echo on a terminal), never from an argument.
+echo "a-password" | ServerConsoleApp user add alice --root ./alice-files --password-stdin
+
+# 2. Start the server (port 22; add --port 2222 to use another port).
+ServerConsoleApp --port 2222
+```
+
+Then connect: `sftp -P 2222 alice@localhost`. The server reads users from the database at every login, so you can
+add users while it runs.
+
+`user add` and the other `user` commands use the same settings database as the server start (the SQLite file
+`freesftpsharp.db` next to the app, or what `ConnectionStrings:Settings` says), do their work and exit. They do not
+start the server. The rules are the same as in the admin UI (the same service): the user name has no spaces, `:`,
+`/` or `\`, a user name is unique in any letter case, and a password has at least 8 characters.
+
+| Command | What it does |
+| --- | --- |
+| `ServerConsoleApp user add <name> --root <dir> [--password-stdin \| --public-key <file>]` | Adds a user. `--public-key` takes an OpenSSH `ssh-rsa` line (an `id_rsa.pub` file) or a PEM public key; only RSA keys are supported. Without either option on a terminal, it asks for the password twice. |
+| `ServerConsoleApp user list` | Lists the users: name, login kind (`password`, `key`) and root directory. It never shows hashes or keys. |
+| `ServerConsoleApp user remove <name>` | Removes a user. The files in the root directory are not deleted. |
+
+Exit codes: 0 = done, 1 = the operation failed (the reason is on stderr), 2 = wrong arguments (the usage is on stderr).
+
 ## Admin web UI (FxSshSftpServer)
 
 `FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
