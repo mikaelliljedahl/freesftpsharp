@@ -82,7 +82,7 @@ public sealed partial class AdminUiAuthenticationTests : IClassFixture<AdminUiFa
 
         var home = await browser.GetAsync("/", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, home.StatusCode);
-        Assert.Contains("blazor.server.js", await home.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Contains("blazor.web.js", await home.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         var negotiate = await browser.PostAsync("/_blazor/negotiate?negotiateVersion=1", null, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, negotiate.StatusCode);

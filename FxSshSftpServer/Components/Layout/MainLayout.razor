@@ -1,0 +1,49 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <header class="navbar navbar-expand-lg app-topbar border-bottom sticky-top px-3">
+        <button class="btn btn-outline-secondary d-lg-none me-2" type="button" aria-label="Toggle navigation"
+                aria-expanded="@menuOpen" @onclick="ToggleMenu">
+            <i class="bi bi-list"></i>
+        </button>
+        <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="">
+            <i class="bi bi-hdd-network text-primary"></i> FreeSftpSharp
+            <span class="badge text-bg-secondary fw-normal d-none d-sm-inline">admin</span>
+        </a>
+        <div class="ms-auto d-flex align-items-center gap-2">
+            <AuthorizeView>
+                <span class="text-body-secondary small d-none d-md-inline"><i class="bi bi-person-circle"></i> @context.User.Identity?.Name</span>
+            </AuthorizeView>
+            <button type="button" class="btn btn-outline-secondary btn-sm" title="Toggle dark mode" aria-label="Toggle dark mode"
+                    onclick="window.fxTheme.toggle()">
+                <i class="bi bi-circle-half"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="app-body">
+        <nav class="app-sidebar border-end @(menuOpen ? "show" : null)" aria-label="Main navigation">
+            <NavMenu OnNavigate="CloseMenu" />
+        </nav>
+        @if (menuOpen)
+        {
+            <div class="app-sidebar-backdrop d-lg-none" @onclick="CloseMenu"></div>
+        }
+
+        <main class="app-main">
+            <div class="container-xxl py-4">
+                @Body
+            </div>
+        </main>
+    </div>
+</div>
+
+<ToastHost />
+
+@code {
+    private bool menuOpen;
+
+    private void ToggleMenu() => menuOpen = !menuOpen;
+
+    private void CloseMenu() => menuOpen = false;
+}

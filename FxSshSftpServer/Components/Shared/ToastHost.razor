@@ -1,0 +1,61 @@
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3 toast-stack" aria-live="polite" aria-atomic="true">
+    @foreach (var message in Toasts.Messages)
+    {
+        <div class="toast show align-items-center border-0 @CssClass(message.Level)" role="@(message.Level == ToastLevel.Error ? "alert" : "status")">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi @Icon(message.Level) me-1"></i> @message.Text
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Close" @onclick="() => Toasts.Dismiss(message.Id)"></button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly TimeSpan DisplayTime = TimeSpan.FromSeconds(5);
+    private readonly HashSet<Guid> scheduled = new();
+
+    protected override void OnInitialized() => Toasts.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+        foreach (var message in Toasts.Messages.Where(m => m.Level != ToastLevel.Error))
+        {
+            lock (scheduled)
+            {
+                if (!scheduled.Add(message.Id))
+                    continue;
+            }
+            _ = DismissLaterAsync(message.Id);
+        }
+    }
+
+    private async Task DismissLaterAsync(Guid id)
+    {
+        await Task.Delay(DisplayTime);
+        Toasts.Dismiss(id);
+    }
+
+    private static string CssClass(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "text-bg-success",
+        ToastLevel.Error => "text-bg-danger",
+        ToastLevel.Warning => "text-bg-warning",
+        _ => "text-bg-primary",
+    };
+
+    private static string Icon(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "bi-check-circle",
+        ToastLevel.Error => "bi-x-octagon",
+        ToastLevel.Warning => "bi-exclamation-triangle",
+        _ => "bi-info-circle",
+    };
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+}

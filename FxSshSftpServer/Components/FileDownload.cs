@@ -1,32 +1,22 @@
-﻿using FxSsh.SshServerModule;
-using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
-using Radzen;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using System.Threading.Tasks;
 
 namespace FxSshSftpServer.Components
 {
-
     public static class FileDownload
     {
-
-        public static async Task SaveFile(this IJSRuntime JSRuntime, byte[] file, string fileName)
+        /// <summary>Lets the browser save <paramref name="file"/> (BlazorDownloadFile in wwwroot/js/site.js). False when the browser call failed.</summary>
+        public static async Task<bool> SaveFile(this IJSRuntime jsRuntime, byte[] file, string fileName)
         {
-            string contentType = "application/octet-stream";
-
-            // Check if the IJSRuntime is the WebAssembly implementation of the JSRuntime
-            
-                // Fall back to the slow method if not in WebAssembly
-            await JSRuntime.InvokeVoidAsync("BlazorDownloadFile", fileName, contentType, file);
-           
+            try
+            {
+                await jsRuntime.InvokeVoidAsync("BlazorDownloadFile", fileName, "application/octet-stream", file);
+                return true;
+            }
+            catch (JSException)
+            {
+                return false;
+            }
         }
     }
 }
-
