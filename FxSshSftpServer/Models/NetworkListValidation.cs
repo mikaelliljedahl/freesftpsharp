@@ -17,7 +17,7 @@ namespace FxSshSftpServer.Models
                 .ToList();
 
         public static string Format(IEnumerable<string> entries) =>
-            string.Join(Environment.NewLine, (entries ?? Enumerable.Empty<string>()).Where(e => !string.IsNullOrWhiteSpace(e)));
+            string.Join("\n", (entries ?? Enumerable.Empty<string>()).Where(e => !string.IsNullOrWhiteSpace(e)));
     }
 
     /// <summary>Every entry must be a network in CIDR notation or a single address (<see cref="CidrNotation"/>).</summary>

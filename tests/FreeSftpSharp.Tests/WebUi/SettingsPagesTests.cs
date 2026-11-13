@@ -19,7 +19,7 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         Assert.Equal("2222", page.Find("#listen-port").GetAttribute("value"));
         Assert.Equal("MyServer", page.Find("#server-banner").GetAttribute("value"));
         Assert.Equal("300", page.Find("#idle-timeout").GetAttribute("value"));
-        Assert.Equal("127.0.0.1" + Environment.NewLine + "::1", page.Find("#bind-addresses").GetAttribute("value"));
+        Assert.Equal("127.0.0.1\n::1", page.Find("#bind-addresses").GetAttribute("value"));
         Assert.Empty(page.FindAll(".override-note"));
     }
 
