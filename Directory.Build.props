@@ -2,5 +2,7 @@
   <PropertyGroup>
     <!-- New warnings fail the build. The vendored upstream code under external/ is not ours to fix. -->
     <TreatWarningsAsErrors Condition="!$(MSBuildProjectDirectory.Contains('external'))">true</TreatWarningsAsErrors>
+    <!-- Reproducible restores: lock files are committed, CI restores in locked mode. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>
