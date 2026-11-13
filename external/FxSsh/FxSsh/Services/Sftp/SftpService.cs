@@ -385,8 +385,32 @@ namespace FxSsh.Services.Sftp
                 // Single mapping point: a backend failure becomes a status
                 // response, never an exception escaping into the session.
                 var (code, message) = MapException(ex);
-                Log.Fail($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex}");
+                LogFailedRequest(packetType, requestId, ex);
                 SendStatus(requestId, code, message, "en");
+            }
+        }
+
+        /// <summary>
+        /// Log a failed request at a level that matches its cause. Errors
+        /// that clients cause in normal use (a missing path, denied access,
+        /// an existing target, a malformed request) are not server faults:
+        /// clients probe paths with STAT, so logging them at Fail with a
+        /// stack trace floods the log. Only unexpected exceptions are
+        /// logged at Fail, with the exception.
+        /// </summary>
+        private static void LogFailedRequest(byte packetType, uint requestId, Exception ex)
+        {
+            switch (ex)
+            {
+                case FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException or ArgumentException:
+                    Log.Debug($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex.GetType().Name}: {ex.Message}");
+                    break;
+                case IOException:
+                    Log.Info($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex.GetType().Name}: {ex.Message}");
+                    break;
+                default:
+                    Log.Fail($"SFTP request failed (type 0x{packetType:X}, id {requestId}).", ex);
+                    break;
             }
         }
 
