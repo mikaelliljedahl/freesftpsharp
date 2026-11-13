@@ -1,0 +1,71 @@
+name: "Build and test"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore FreeSftpSharp.sln
+
+      - name: Build
+        run: dotnet build FreeSftpSharp.sln --no-restore -c Release
+
+      - name: Test
+        run: >-
+          dotnet test FreeSftpSharp.sln --no-build -c Release
+          --logger "trx;LogFilePrefix=${{ matrix.os }}"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.os }}
+          path: TestResults/**/*.trx
+          if-no-files-found: warn
+
+      # The package graph is the same on every OS, so the check runs once.
+      # `dotnet list package --vulnerable` exits 0 even when it finds
+      # vulnerable packages, so the output is parsed instead.
+      - name: Check for vulnerable packages
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          report=$(dotnet list FreeSftpSharp.sln package --vulnerable --include-transitive 2>&1)
+          echo "$report"
+          if grep -q "has the following vulnerable packages" <<< "$report"; then
+            echo "::error::Vulnerable NuGet packages found (see the report above)."
+            exit 1
+          fi
