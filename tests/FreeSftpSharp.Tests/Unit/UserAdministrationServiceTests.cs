@@ -128,7 +128,9 @@ public sealed class UserAdministrationServiceTests : IDisposable
 
         Assert.Null(user.HashedPassword);
         using var csp = new RSACryptoServiceProvider();
-        csp.ImportCspBlob(Convert.FromBase64String(_repository.GetUser("keyuser").RsaPublicKey));
+        var storedKey = _repository.GetUser("keyuser").RsaPublicKey;
+        Assert.NotNull(storedKey);
+        csp.ImportCspBlob(Convert.FromBase64String(storedKey));
         var imported = csp.ExportParameters(false);
         Assert.Equal(parameters.Modulus, imported.Modulus);
         Assert.Equal(parameters.Exponent, imported.Exponent);
