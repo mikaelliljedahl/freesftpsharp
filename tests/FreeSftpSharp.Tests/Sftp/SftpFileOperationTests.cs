@@ -115,11 +115,12 @@ public sealed class SftpFileOperationTests : SftpEngineTestBase
     [Fact]
     public void MakeDirectory_applies_the_permissions()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "POSIX permissions");
+        if (OperatingSystem.IsWindows())
+            Assert.Skip("POSIX permissions");
 
         Assert.Equal(SSH_FX_OK, Client.MakeDirectory("/private", new SftpFileAttributes { Permissions = 0x41C0 })); // drwx------
 
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, File.GetUnixFileMode(Physical("/private")));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, UnixMode(Physical("/private")));
     }
 
     // ---- RENAME ----
@@ -351,24 +352,26 @@ public sealed class SftpFileOperationTests : SftpEngineTestBase
     [Fact]
     public void SetStat_permissions_change_the_file_mode()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "POSIX permissions");
+        if (OperatingSystem.IsWindows())
+            Assert.Skip("POSIX permissions");
         File.WriteAllText(Physical("/a.txt"), "a");
 
         Assert.Equal(SSH_FX_OK, Client.SetStat("/a.txt", new SftpFileAttributes { Permissions = 0x8000 | 0x1A0 })); // rw-r-----
 
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead, File.GetUnixFileMode(Physical("/a.txt")));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead, UnixMode(Physical("/a.txt")));
         Assert.Equal(0x81A0u, Client.Stat("/a.txt").Permissions);
     }
 
     [Fact]
     public void SetStat_permissions_ignore_setuid_setgid_and_sticky_bits()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "POSIX permissions");
+        if (OperatingSystem.IsWindows())
+            Assert.Skip("POSIX permissions");
         File.WriteAllText(Physical("/a.txt"), "a");
 
         Assert.Equal(SSH_FX_OK, Client.SetStat("/a.txt", new SftpFileAttributes { Permissions = 0xFED })); // rwsr-sr-t
 
-        Assert.Equal((UnixFileMode)0x1ED, File.GetUnixFileMode(Physical("/a.txt")));
+        Assert.Equal((UnixFileMode)0x1ED, UnixMode(Physical("/a.txt")));
     }
 
     [Fact]
@@ -479,4 +482,8 @@ public sealed class SftpFileOperationTests : SftpEngineTestBase
         Assert.Equal("data", File.ReadAllText(Physical("/a.txt"))); // flushed
         Assert.Equal(SSH_FX_FAILURE, Client.Write(handle, 0, [1]));
     }
+
+    /// <summary>The POSIX mode of a file on disk. The tests that call it are skipped on Windows.</summary>
+    private static UnixFileMode UnixMode(string path)
+        => OperatingSystem.IsWindows() ? throw new PlatformNotSupportedException() : File.GetUnixFileMode(path);
 }
