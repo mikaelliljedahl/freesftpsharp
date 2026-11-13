@@ -17,6 +17,8 @@ Feature parity with the leading open-source servers in this space (for example S
 
 ## Architecture principles
 
+The binding rules for the code structure are in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 1. **One storage abstraction.** Every backend implements the asynchronous, handle-based `IFileSystem`
    (`SshServer.Interfaces`) and is created by `IFileSystemFactory`. Backends never leak SDK or `System.IO`
    exceptions; they throw `FileSystemException` with an error code that protocols map 1:1. One conformance
