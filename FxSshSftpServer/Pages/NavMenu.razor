@@ -22,11 +22,20 @@
                 <span class="oi oi-plus" aria-hidden="true"></span> Users
             </NavLink>
         </li>
-
+        <li class="nav-item px-3">
+            <a class="nav-link" href="Logout" @onclick="LogOut" @onclick:preventDefault>
+                <span class="oi oi-account-logout" aria-hidden="true"></span> Log out
+            </a>
+        </li>
     </ul>
 </div>
 
+@inject NavigationManager Navigation
+
 @code {
+    // Logout is a Razor page, not a Blazor route: load it with a full page request.
+    private void LogOut() => Navigation.NavigateTo("Logout", forceLoad: true);
+
     private bool collapseNavMenu = true;
 
     private string NavMenuCssClass => collapseNavMenu ? "collapse" : null;

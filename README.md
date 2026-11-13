@@ -7,6 +7,54 @@ Sftp Server implementation based on SSHServer library based heavily on [FxSsh](h
 All basic Sftp command are now implemented except handling symbolic links. However some implementations such as returning correct file attributes are not finalized. Server was tested with FileZilla client only. There are probably some bugs left to fix. 
 You are welcome to create PR's
 
+## Admin web UI (FxSshSftpServer)
+
+`FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
+The UI has one local admin account. It is separate from the SFTP users.
+
+### Set the admin password
+
+1. Create a password hash (salted PBKDF2-SHA256, 600,000 iterations). The command asks for the password twice
+   and prints the configuration value; the password itself is not stored or printed:
+
+   ```sh
+   dotnet run --project FxSshSftpServer -- --hash-admin-password
+   # or, for a published build:
+   FxSshSftpServer --hash-admin-password
+   ```
+
+   It also reads one line from stdin when the input is redirected (`echo "..." | FxSshSftpServer --hash-admin-password`).
+
+2. Put the user name and the hash in the configuration. Use one of these (do not commit a hash to the repository):
+
+   - Environment variables: `AdminAuth__UserName=admin` and `AdminAuth__PasswordHash=PBKDF2-SHA256.600000....`
+   - User secrets (development): `dotnet user-secrets --project FxSshSftpServer set "AdminAuth:PasswordHash" "PBKDF2-SHA256.600000...."`
+   - `appsettings.json` / `appsettings.Production.json` next to the executable:
+     `"AdminAuth": { "UserName": "admin", "PasswordHash": "PBKDF2-SHA256.600000...." }`
+
+3. Restart the server. A plaintext password in `AdminAuth:PasswordHash` is not accepted.
+
+If no valid admin credential is configured, the UI is closed: every request gets `503 Service Unavailable` with a
+short help text, and the log has an error that tells what is missing. The SSH server still runs.
+
+All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy).
+The login form has an antiforgery token. After 5 failed logins from one IP address, that address is locked out
+for 15 minutes (`AdminAuth:MaxFailedLogins`, `AdminAuth:LockoutMinutes`). Use "Log out" in the menu to end the
+session; a session expires after 8 hours without use.
+
+### Expose the UI
+
+By default the UI listens only on `http://localhost:5000` (`Kestrel:Endpoints:Http:Url` in `appsettings.json`).
+To reach it from another machine, prefer an SSH tunnel (`ssh -L 5000:localhost:5000 server`) or a reverse proxy
+with HTTPS on the same host. If you must bind Kestrel to another address, use HTTPS, because the login and the
+session cookie are otherwise sent in clear text, for example:
+
+```sh
+Kestrel__Endpoints__Https__Url=https://0.0.0.0:5001
+Kestrel__Endpoints__Https__Certificate__Path=/path/cert.pfx
+Kestrel__Endpoints__Https__Certificate__Password=...
+```
+
 ## FxSsh
 
 FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server side application as SSH reinforcement of [GitCandy](https://github.com/Aimeast/GitCandy). 
