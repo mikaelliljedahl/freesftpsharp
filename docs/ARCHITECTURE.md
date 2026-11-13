@@ -38,7 +38,7 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 
 A storage backend is a plug-in. Use this structure:
 
-1. **One project per backend.** Examples: `SshServer.Storage.LocalDisk`, `SshServer.Storage.S3`,
+1. **One project per backend.** Examples: `SshServer.Filesystem.LocalDisk`, `SshServer.Storage.S3`,
    `SshServer.Storage.AzureBlob`. Only the backend project references the cloud SDK.
 2. **One provider class per backend.** The class implements `IStorageProvider`. It has a unique name
    (for example `"s3"`), one typed options record, options validation, and a method that creates an
@@ -64,7 +64,7 @@ Permissions, path filters, quotas, bandwidth limits and events wrap an `IFileSys
 `IFileSystem` themselves.
 
 - One decorator handles one rule.
-- The storage factory builds the decorator chain in one place, in a documented order.
+- The storage factory (`StorageFileSystemFactory`) builds the decorator chain in one place, in a documented order.
 - Protocols never repeat a rule. SFTP, WebDAV, FTP and the web client get it from the chain.
 - Test each decorator alone with `InMemoryFileSystem`.
 
