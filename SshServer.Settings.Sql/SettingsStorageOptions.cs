@@ -57,7 +57,7 @@ public sealed class SettingsStorageOptions
         string liteDbPath;
         if (!string.IsNullOrWhiteSpace(configuredLiteDbPath))
         {
-            liteDbPath = Path.GetFullPath(configuredLiteDbPath, baseDirectory);
+            liteDbPath = ResolvePath(configuredLiteDbPath, baseDirectory);
         }
         else
         {
@@ -98,8 +98,15 @@ public sealed class SettingsStorageOptions
         if (string.IsNullOrWhiteSpace(dataSource))
             builder.DataSource = Path.Combine(baseDirectory, DefaultSqliteFileName);
         else if (!inMemory && !dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-            builder.DataSource = Path.GetFullPath(dataSource, baseDirectory);
+            builder.DataSource = ResolvePath(dataSource, baseDirectory);
 
         return builder.ToString();
+    }
+
+    // A fully qualified path is kept as it is. Path.GetFullPath(path, basePath) throws
+    // when basePath is not fully qualified, also when path itself is absolute.
+    private static string ResolvePath(string path, string baseDirectory)
+    {
+        return Path.IsPathFullyQualified(path) ? Path.GetFullPath(path) : Path.GetFullPath(path, baseDirectory);
     }
 }
