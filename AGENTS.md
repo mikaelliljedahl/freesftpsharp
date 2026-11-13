@@ -4,6 +4,9 @@ Conventions for all contributors to this repository, human or AI agent.
 
 For the project overview, features and usage samples, read [README.md](README.md).
 
+For the structure of the code (plug-in points, storage backends, decorators), follow
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every change must keep to these rules.
+
 ## Test-driven development
 
 Use test-driven development (TDD) when it is practical:

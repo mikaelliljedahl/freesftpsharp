@@ -260,6 +260,78 @@ namespace SshServer.Filesystem.LocalDisk
             return new FileInfo(GetPhysicalPath(path)).LastAccessTimeUtc;
         }
 
+        public FileSystemEntryInfo? GetInfo(string path)
+        {
+            var physicalPath = GetPhysicalPath(path);
+
+            var dir = new DirectoryInfo(physicalPath);
+            if (dir.Exists)
+                return new FileSystemEntryInfo(ResourceType.Folder, 0, dir.LastAccessTimeUtc, dir.LastWriteTimeUtc, GetPermissions(dir));
+
+            var file = new FileInfo(physicalPath);
+            if (file.Exists)
+                return new FileSystemEntryInfo(ResourceType.File, (ulong)file.Length, file.LastAccessTimeUtc, file.LastWriteTimeUtc, GetPermissions(file));
+
+            return null;
+        }
+
+        private static uint GetPermissions(FileSystemInfo info)
+        {
+            if (!OperatingSystem.IsWindows())
+                return (uint)info.UnixFileMode & 0x1FF;
+
+            if (info is DirectoryInfo)
+                return 0x1ED; // rwxr-xr-x
+            return ((FileInfo)info).IsReadOnly ? 0x124u : 0x1A4u; // r--r--r-- or rw-r--r--
+        }
+
+        public Stream OpenFile(string path, FileMode mode, FileAccess access)
+        {
+            return new FileStream(GetPhysicalPath(path), mode, access, FileShare.ReadWrite | FileShare.Delete);
+        }
+
+        public void SetFileLength(string path, long length)
+        {
+            using var stream = new FileStream(GetPhysicalPath(path), FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            stream.SetLength(length);
+        }
+
+        public void SetTimes(string path, DateTime? lastAccessUtc, DateTime? lastWriteUtc)
+        {
+            var physicalPath = GetPhysicalPath(path);
+            FileSystemInfo info = Directory.Exists(physicalPath) ? new DirectoryInfo(physicalPath) : new FileInfo(physicalPath);
+            if (!info.Exists)
+                throw new FileNotFoundException($"No such file: {path}");
+
+            if (lastAccessUtc is { } accessed)
+                info.LastAccessTimeUtc = accessed;
+            if (lastWriteUtc is { } written)
+                info.LastWriteTimeUtc = written;
+        }
+
+        public void SetPermissions(string path, uint mode)
+        {
+            var physicalPath = GetPhysicalPath(path);
+            if (string.Equals(physicalPath, _userRootDirectory, PathComparison))
+                throw new UnauthorizedAccessException("The permissions of the user root directory cannot be changed.");
+
+            if (Directory.Exists(physicalPath))
+            {
+                if (!OperatingSystem.IsWindows())
+                    File.SetUnixFileMode(physicalPath, (UnixFileMode)(mode & 0x1FF));
+                return; // Windows has no permissions for a directory that we can map
+            }
+
+            var file = new FileInfo(physicalPath);
+            if (!file.Exists)
+                throw new FileNotFoundException($"No such file: {path}");
+
+            if (OperatingSystem.IsWindows())
+                file.IsReadOnly = (mode & 0x80) == 0; // like Win32-OpenSSH: no owner write bit gives a read-only file
+            else
+                File.SetUnixFileMode(physicalPath, (UnixFileMode)(mode & 0x1FF));
+        }
+
         private static string CombineVirtualPath(string virtualDirectory, string name)
         {
             return virtualDirectory == "/" ? "/" + name : virtualDirectory + "/" + name;

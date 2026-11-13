@@ -179,29 +179,66 @@ namespace FxSsh.Services.Sftp
         {
             ArgumentNullException.ThrowIfNull(channel);
 
-            channel.DataReceived += (_, data) => OnData(data);
-            channel.EofReceived += (_, _) =>
-            {
-                // Peer finished sending (RFC 4254 6.2): echo EOF, then close
-                // our side carrying exit-status 0 (RFC 4254 6.10) so clients
-                // such as scp observe a successful subsystem exit instead of
-                // an unknown (-1) status. The engine's OnClose ->
-                // CloseReceived(0) path then finds the channel already closed.
-                channel.SendEof();
-                channel.SendClose(0);
-            };
-            channel.CloseReceived += (_, _) => OnClose();
+            // Outbound packets go through one queue and one pump task, so
+            // they reach the channel whole and in order. SendDataAsync waits
+            // while the peer's window is full; the WINDOW_ADJUST arrives on
+            // the same receive loop that runs OnData, so the loop must not
+            // wait. With one fire-and-forget send per packet, the senders
+            // woken by the same WINDOW_ADJUST interleaved their chunks and
+            // corrupted the SFTP stream.
+            var outbound = System.Threading.Channels.Channel.CreateUnbounded<byte[]>(
+                new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
 
-            DataReceived += async (_, packet) =>
+            channel.DataReceived += (_, data) => OnData(data);
+            // Peer finished sending (RFC 4254 6.2): the pump sends the
+            // queued responses, then echoes EOF and closes our side carrying
+            // exit-status 0 (RFC 4254 6.10) so clients such as scp observe a
+            // successful subsystem exit instead of an unknown (-1) status.
+            channel.EofReceived += (_, _) => outbound.Writer.TryComplete();
+            channel.CloseReceived += (_, _) => OnClose();
+            // A lost connection force-closes the channel without a peer
+            // CLOSE: release the open handles here, or the files stay open
+            // until the garbage collector finalizes them.
+            channel.ForceClosed += (_, _) =>
             {
-                // Fire-and-forget with teardown swallowing: after the peer
-                // disconnects, SendDataAsync throws ObjectDisposedException,
-                // which must not escape onto the thread pool.
-                try { await channel.SendDataAsync(packet); }
-                catch (ObjectDisposedException) { }
-                catch (Exception) { }
+                outbound.Writer.TryComplete();
+                CloseAllHandles();
             };
-            CloseReceived += (_, exitCode) => channel.SendClose(exitCode);
+
+            DataReceived += (_, packet) => outbound.Writer.TryWrite(packet);
+            CloseReceived += (_, exitCode) =>
+            {
+                outbound.Writer.TryComplete();
+                channel.SendClose(exitCode);
+            };
+
+            _ = PumpAsync(channel, outbound.Reader);
+        }
+
+        private static async Task PumpAsync(SessionChannel channel, System.Threading.Channels.ChannelReader<byte[]> outbound)
+        {
+            try
+            {
+                await foreach (var packet in outbound.ReadAllAsync())
+                {
+                    // After our CLOSE no data may follow (RFC 4254 5.3).
+                    if (channel.ServerClosed || channel.IsForceClosed)
+                        return;
+                    await channel.SendDataAsync(packet);
+                }
+
+                if (!channel.ServerClosed && !channel.IsForceClosed)
+                {
+                    channel.SendEof();
+                    channel.SendClose(0);
+                }
+            }
+            catch (Exception)
+            {
+                // Teardown: after the peer disconnects, SendDataAsync throws
+                // ObjectDisposedException, which must not escape onto the
+                // thread pool.
+            }
         }
 
         /// <summary>
@@ -284,8 +321,13 @@ namespace FxSsh.Services.Sftp
         {
             lock (_mapOfHandle)
             {
+                // Teardown must release every handle, also when one of them
+                // fails to close (for example a flush on a full disk).
                 foreach (var entry in _mapOfHandle.Values)
-                    entry.Dispose();
+                {
+                    try { entry.Dispose(); }
+                    catch (Exception ex) { Log.Warn($"SFTP: closing a handle failed: {ex.Message}"); }
+                }
                 _mapOfHandle.Clear();
             }
         }
@@ -343,8 +385,32 @@ namespace FxSsh.Services.Sftp
                 // Single mapping point: a backend failure becomes a status
                 // response, never an exception escaping into the session.
                 var (code, message) = MapException(ex);
-                Log.Fail($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex}");
+                LogFailedRequest(packetType, requestId, ex);
                 SendStatus(requestId, code, message, "en");
+            }
+        }
+
+        /// <summary>
+        /// Log a failed request at a level that matches its cause. Errors
+        /// that clients cause in normal use (a missing path, denied access,
+        /// an existing target, a malformed request) are not server faults:
+        /// clients probe paths with STAT, so logging them at Fail with a
+        /// stack trace floods the log. Only unexpected exceptions are
+        /// logged at Fail, with the exception.
+        /// </summary>
+        private static void LogFailedRequest(byte packetType, uint requestId, Exception ex)
+        {
+            switch (ex)
+            {
+                case FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException or ArgumentException:
+                    Log.Debug($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex.GetType().Name}: {ex.Message}");
+                    break;
+                case IOException:
+                    Log.Info($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex.GetType().Name}: {ex.Message}");
+                    break;
+                default:
+                    Log.Fail($"SFTP request failed (type 0x{packetType:X}, id {requestId}).", ex);
+                    break;
             }
         }
 

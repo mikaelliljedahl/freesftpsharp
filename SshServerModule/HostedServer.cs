@@ -1,5 +1,6 @@
 ﻿using FxSsh.Logging;
 using FxSsh.Services;
+using FxSsh.Services.Sftp;
 using FxSsh.SshServerModule.Security;
 using FxSsh.SshServerModule.Services;
 using Microsoft.Extensions.Hosting;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Net;
-using SshServerModule.Services;
+using SshServerModule.Sftp;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -270,8 +271,8 @@ namespace FxSsh.SshServerModule
             if (user == null)
                 return;
 
-            var sftp = new SftpSubsystem(_logger, _fileSystemFactory.GetFileSystem(username), user.Username);
-            SftpChannelBridge.Attach(e.AttachedUserAuthArgs.Session, e.Channel, sftp, _logger);
+            var fileSystem = new SftpFileSystemAdapter(_fileSystemFactory.GetFileSystem(username), _logger, user.Username);
+            new SftpService(fileSystem).Attach(e.Channel);
             e.Agreed = true;
         }
 

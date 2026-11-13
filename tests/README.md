@@ -28,8 +28,12 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | Folder / class | Kind | What it tests |
 | --- | --- | --- |
 | `Unit/LocalFileSystemTests` | unit | `NormalizeVirtualPath` and `GetPhysicalPath` with traversal inputs (`/../../etc/passwd`, `..\..\config.db`, `/a/b/../../../../c`, `//double//slash`, `/.../x`, empty, `.`), a sibling directory with the same prefix as the root, the root cannot be removed or moved |
-| `Unit/SftpSubsystemNormalizePathTests` | unit | `SftpSubsystem.NormalizePath` (the SSH_FXP_REALPATH canonical path) |
-| `Unit/SftpFramingTests` | unit | `SftpSubsystem.OnInput` framing: one packet split over several calls, several packets in one call, a partial packet at the end; one response for each request |
+| `Sftp/SftpFramingTests` | unit (SFTP packets) | framing of the upstream `SftpService`: one packet split over several calls, several packets in one call, a partial packet at the end, invalid lengths; one response for each request, in order |
+| `Sftp/SftpRealPathTests` | unit (SFTP packets) | `SftpFileSystemAdapter.NormalizePath` and SSH_FXP_REALPATH: the canonical path, `..` stays at the root, `~` is the root |
+| `Sftp/SftpFileOperationTests` | unit (SFTP packets, temp dir) | every request through `SftpService` + `SftpFileSystemAdapter` + `LocalFileSystem`: status codes of the failure cases (REMOVE of a missing file gives NO_SUCH_FILE, REMOVE of a directory, RMDIR of a file/root/non-empty directory, MKDIR of an existing path or without parent, RENAME to an existing file, open flags), READ limit, FSTAT, SETSTAT/FSETSTAT size, times and permissions, READDIR with `.`/`..` in batches, unsupported requests, `OnClose` closes the handles |
+| `Sftp/SftpPathTraversalTests` | unit (SFTP packets, temp dir) | no request reaches the secret file next to the root; writes, renames and mkdir to `..` paths land in the root; status messages never contain the physical path; UnauthorizedAccessException gives PERMISSION_DENIED |
+| `Sftp/SftpFailureLoggingTests` | unit (captures the static FxSsh log, runs alone) | failed SFTP requests are logged at Debug (missing path, denied access) or Info (FAILURE of a file operation), an unexpected exception at Fail with the exception |
+| `Sftp/SftpFileAttributesTests` | unit | the ATTRS wire format of the upstream `SftpFileAttributes`, also with only uid, only gid, only atime or only mtime |
 | `Settings/SqlSettingsRepositoryTests` | unit (in-memory SQLite) | default settings of a new database, update of settings, add/get/update/remove of users with all fields, unknown users, case-insensitive duplicate usernames, persistence in a file, a database of the previous schema is migrated (new columns get their defaults, the stored values stay) |
 | `Settings/LiteDbImportTests` | unit (temp files) | a `config.db` made with the LiteDB repository is imported into a new SQLite database (settings, host key, users), the file is not changed, no second import, no `config.db` gives new defaults |
 | `Settings/SettingsConfigurationTests` | unit | `Settings:Provider`, `ConnectionStrings:Settings` and `Settings:LiteDbPath`: defaults, paths relative to the app directory, LiteDb selection, unknown provider, `AddSshServerSettings` registrations |
@@ -45,7 +49,8 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `EndToEnd/IdleTimeoutTests` | end-to-end | with `IdleTimeout` = 1 s, a client that sends nothing and an idle SFTP session are disconnected |
 | `EndToEnd/SshNetFileOperationTests` | end-to-end (SSH.NET) | mkdir, 3 MB upload/download with byte compare, list, stat of file and directory, missing paths, overwrite with a smaller file, empty file, append, rename, delete, rmdir, the session survives a failed open |
 | `EndToEnd/SshNetPathTraversalTests` | end-to-end (SSH.NET) | `/../config.db` cannot be read, an upload to `/../x` lands in the user root, `ListDirectory("/..")` lists the root |
-| `EndToEnd/OpenSshSftpTests` | end-to-end (OpenSSH `sftp`) | put/get of 2 MB, 200 B and 0 B files, ls, rename, rm, rmdir, `cd ../..` + `pwd`, overwrite 2 MB with 200 B, `get ../../config.db` fails, sftp exits by itself, connect with the OpenSSH default algorithms (no `+ssh-rsa`), a known_hosts entry with the old `ssh-rsa` key still matches, only-weak-algorithm clients cannot connect |
+| `EndToEnd/SftpSessionTeardownTests` | end-to-end (SSH.NET, Linux) | a lost connection (no CHANNEL_CLOSE) closes the files that the SFTP session has open |
+| `EndToEnd/OpenSshSftpTests` | end-to-end (OpenSSH `sftp`) | put/get of 2 MB, 200 B and 0 B files, get of 8 MB with 256 requests in flight over a slow connection (the responses stay whole and in order when the channel window is full), ls, rename, rm, rmdir, `cd ../..` + `pwd`, overwrite 2 MB with 200 B, `get ../../config.db` fails, sftp exits by itself, connect with the OpenSSH default algorithms (no `+ssh-rsa`), a known_hosts entry with the old `ssh-rsa` key still matches, only-weak-algorithm clients cannot connect |
 | `Unit/PasswordHasherTests`, `Unit/AdminCredentialValidatorTests` | unit | the shared PBKDF2 password hash (`SshServer.Interfaces.Security.PasswordHasher`): round trip, wrong password, tampered salt/key/iterations, malformed and plaintext values; admin user name check |
 | `Unit/UserPasswordVerificationTests` | unit | SFTP user passwords (`UserLogics.VerifyUserPassword`): PBKDF2 and old SHA-256 hashes, correct and wrong passwords, tampered hashes, the old hash is upgraded to PBKDF2 once and the upgrade is logged without the password |
 | `Unit/CidrNotationTests` | unit | the shared CIDR helper: IPv4/IPv6 networks and single addresses, host bits, IPv4-mapped IPv6, invalid input (prefix out of range, host names, scope ids, short IPv4 forms), matching |
@@ -61,6 +66,7 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `WebUi/SettingsPagesTests` | bUnit | server settings page: loads and saves (other settings stay), port and bind address validation, the override notes for `SshServer:Port` / `SshServer:BindToAddress`, host key fingerprints without the private key, direct-tcpip warning; IP access page: saves blacklist, whitelist and auto-ban settings, rejects invalid CIDR entries, lists the active bans and unbans one, expired bans |
 | `WebUi/UsersPageTests` | bUnit | users page: list and search, create with a hashed password and a whitelist, invalid CIDR, user name and password are rejected, missing root directory warning, edit keeps the password, last login and key fingerprint, delete only after confirmation, key generation (stored public key, downloaded private key), key removal |
 | `WebUi/AdminUiPagesTests` | in-memory web host | after a login every page renders (prerendered) with the stored users, settings and bans; `/access` needs a login; the local Bootstrap, icon and script files are served without a login; `blazor.web.js` is served; Radzen is not referenced; with `SshServer:Port` / `SshServer:BindToAddress` configured, the settings page and the dashboard show the override |
+| `EndToEnd/ZeroConfigStartTests` | end-to-end (process, SSH.NET) | the built `ServerConsoleApp` starts from a copy of its build output in an empty temp directory with only `--port`: it creates `freesftpsharp.db` with the RSA and ECDSA host keys and the log file itself, there is no default user, a user added with `SqlSettingsRepository.AddUser` can connect with SSH.NET, upload and list a file, and the start logs no Error or Fatal (console and log file). The comment of the class says what a new local user has to do |
 | `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
 
 Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the `Skip` when the bug is fixed.
@@ -80,6 +86,11 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
 - `WebUi/AdminUiComponentContext` is the bUnit context for the admin UI pages: an `InMemorySettingsRepository`, the
   real `LoginBanTracker` with a `FakeTimeProvider` (`Ban(address)` bans an address), the toast service and the listen
   options. JavaScript interop is in loose mode.
+- `Infrastructure/SlowDownstreamProxy` is a TCP proxy that slows down the data from the server to the client, so
+  the server's channel window fills up. Disposing it drops the connection without an SSH close.
+- `Sftp/SftpEngineClient` drives the upstream SFTP engine (`SftpService`) with our `SftpFileSystemAdapter` without
+  SSH: it builds SFTP v3 packets and parses the responses. `Sftp/SftpEngineTestBase` gives it a `LocalFileSystem`
+  on a temporary root with a secret file next to it.
 - `WebUi/AdminUiFactory` hosts the FxSshSftpServer admin UI in memory. It removes the SSH `HostedServer` and
   replaces the LiteDB repository with `InMemorySettingsRepository`, so no port is opened and no `config.db` is
   written. It sets the admin credential `admin` / `AdminUiFactory.AdminPassword` through configuration.
@@ -105,7 +116,8 @@ reason "OpenSSH sftp is not on PATH". GitHub Actions `ubuntu-latest` has it. On 
 The password comes from a generated `SSH_ASKPASS` script with `SSH_ASKPASS_REQUIRE=force` and `DISPLAY=:0`.
 The commands go to stdin, because `sftp -b` turns off password authentication. The harness adds a final `lpwd`
 and waits for its output; if sftp then does not exit by itself within a short time, the harness stops the
-process, so a server bug cannot hang the suite. `OpenSshSftp.RunWithOptionsAsync` adds extra `-o` options.
+process, so a server bug cannot hang the suite. `OpenSshSftp.RunWithOptionsAsync` adds extra `-o` options, and
+`RunWithArgumentsAsync` adds other sftp arguments (for example `-R`, `-B`) and connects to another port (a proxy).
 
 On Windows the OpenSSH tests are skipped by default, because the `.cmd` askpass path is not verified there.
 Set `FREESFTPSHARP_OPENSSH_ON_WINDOWS=1` to run them. Set `FREESFTPSHARP_SFTP_LOGLEVEL=DEBUG3` to see the

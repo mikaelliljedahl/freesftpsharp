@@ -86,11 +86,20 @@ namespace FxSsh.Services.Sftp
 
             writer.Write(Flags);
             if (Size != null) writer.Write(Size.Value);
-            if (UserId != null) writer.Write(UserId.Value);
-            if (GroupId != null) writer.Write(GroupId.Value);
+            // UIDGID and ACMODTIME each announce two fields: when only one
+            // of a pair is set, write 0 for the other so the fields match
+            // the flags (section 5).
+            if (UserId != null || GroupId != null)
+            {
+                writer.Write(UserId ?? 0);
+                writer.Write(GroupId ?? 0);
+            }
             if (Permissions != null) writer.Write(Permissions.Value);
-            if (AccessTime != null) writer.Write(AccessTime.Value);
-            if (ModificationTime != null) writer.Write(ModificationTime.Value);
+            if (AccessTime != null || ModificationTime != null)
+            {
+                writer.Write(AccessTime ?? 0);
+                writer.Write(ModificationTime ?? 0);
+            }
             if (Extended != null && Extended.Length > 0)
             {
                 writer.Write((uint)Extended.Length);
