@@ -41,6 +41,7 @@ internal sealed class SftpEngineClient : IDisposable
     public const byte SSH_FXP_DATA = 103;
     public const byte SSH_FXP_NAME = 104;
     public const byte SSH_FXP_ATTRS = 105;
+    public const byte SSH_FXP_EXTENDED_REPLY = 201;
 
     public const uint SSH_FX_OK = 0;
     public const uint SSH_FX_EOF = 1;
@@ -52,9 +53,9 @@ internal sealed class SftpEngineClient : IDisposable
 
     private uint _nextId = 100;
 
-    public SftpEngineClient(IFileSystem fileSystem)
+    public SftpEngineClient(IFileSystem fileSystem, bool readOnly = false)
     {
-        Service = new SftpService(new SftpFileSystemAdapter(fileSystem, NullLogger.Instance, "test_person"));
+        Service = new SftpService(new SftpFileSystemAdapter(fileSystem, NullLogger.Instance, "test_person"), readOnly);
         Service.DataReceived += (_, packet) => Responses.Add(packet);
     }
 
@@ -180,6 +181,13 @@ internal sealed class SftpEngineClient : IDisposable
         w.Write(oldPath, Encoding.UTF8);
         w.Write(newPath, Encoding.UTF8);
     }).StatusCode;
+
+    /// <summary>SSH_FXP_EXTENDED with the extension name and the fields that <paramref name="writeFields"/> writes.</summary>
+    public Response Extended(string name, Action<SshDataWriter>? writeFields = null) => Send(SSH_FXP_EXTENDED, w =>
+    {
+        w.Write(name, Encoding.ASCII);
+        writeFields?.Invoke(w);
+    });
 
     public string RealPath(string path) => Assert.Single(SendPath(SSH_FXP_REALPATH, path).Names()).Name;
 

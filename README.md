@@ -127,6 +127,16 @@ OpenSSH connects with its default settings.
   connects it to our `IFileSystem`, so each user stays inside his own root directory (`LocalFileSystem`
   maps the virtual paths and checks that they stay inside the root). SETSTAT applies size, times and
   permissions (rwxrwxrwx; on Windows only the read-only attribute of a file).
+- OpenSSH SFTP extensions (announced in SSH_FXP_VERSION): `posix-rename@openssh.com` (rename that replaces
+  an existing file atomically; OpenSSH `sftp rename` and SSH.NET `RenameFile(..., isPosix: true)` use it),
+  `statvfs@openssh.com` (`df` in OpenSSH sftp, SSH.NET `GetStatus`; the space of the disk of the user root,
+  in 4 KiB blocks), `fsync@openssh.com` (`put -f`), `limits@openssh.com` (64 KiB reads and writes, 1 MiB
+  packets) and `expand-path@openssh.com` ("~" is the user root "/"; only virtual paths are returned, never
+  the physical path). `hardlink@openssh.com` is not offered (OP_UNSUPPORTED).
+- Links are not supported: SSH_FXP_SYMLINK and SSH_FXP_READLINK give SSH_FX_OP_UNSUPPORTED. OpenSSH sends
+  the two SYMLINK arguments in the opposite order of the draft (target path first, then link path); the
+  server does not have to choose an order, because it refuses the request in both cases. If links are
+  supported later (#25), the server must read the arguments in the OpenSSH order, like OpenSSH sftp-server.
 - Running commands remotely is disabled by default (code is commented out but will later be a setting per user)
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
 - Server settings and users are saved in a SQLite database (EF Core). See [Settings storage](#settings-storage).
