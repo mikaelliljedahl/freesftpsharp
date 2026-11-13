@@ -11,8 +11,8 @@ using Serilog;
 using FxSsh.SshServerModule;
 
 using SshServer.Interfaces;
-using SshServer.Interfaces.Storage;
 using SshServer.Filesystem.LocalDisk;
+using SshServerModule.Storage;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
@@ -49,7 +49,8 @@ await new HostBuilder()
         configure.AddSerilog(Log.Logger);
     });
     services.AddSshServerSettings(hostContext.Configuration);
-    services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
+    services.AddSshServerStorage();
+    services.AddLocalDiskStorage();
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
     services.AddSshServerListenOptions();

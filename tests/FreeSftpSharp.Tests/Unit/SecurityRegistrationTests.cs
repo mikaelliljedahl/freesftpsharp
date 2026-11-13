@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
-using SshServer.Interfaces.Storage;
+using SshServerModule.Storage;
 
 namespace FreeSftpSharp.Tests.Unit;
 
@@ -20,7 +20,8 @@ public sealed class SecurityRegistrationTests
         var services = new ServiceCollection()
             .AddLogging()
             .AddSingleton<ISettingsRepository>(repository)
-            .AddSingleton<IFileSystemFactory>(new LocalFileSystemFactory(repository))
+            .AddSshServerStorage()
+            .AddLocalDiskStorage()
             .AddSingleton<HostedServer>()
             .AddSshServerSecurity();
 
