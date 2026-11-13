@@ -5,7 +5,7 @@ Sftp Server implementation based on SSHServer library based heavily on [FxSsh](h
 
 ## Current status
 All basic Sftp command are now implemented except handling symbolic links. However some implementations such as returning correct file attributes are not finalized. Server was tested with FileZilla client only. There are probably some bugs left to fix. 
-You are welcome to create PR's
+You are welcome to create PR's. The planned work is described in the [technical roadmap](docs/ROADMAP.md).
 
 ## Admin web UI (FxSshSftpServer)
 
