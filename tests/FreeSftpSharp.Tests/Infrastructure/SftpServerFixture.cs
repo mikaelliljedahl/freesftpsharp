@@ -20,7 +20,7 @@ namespace FreeSftpSharp.Tests.Infrastructure;
 /// Each fixture has its own free TCP port, so test classes can run in parallel.
 /// Use it with <c>IClassFixture&lt;SftpServerFixture&gt;</c>.
 /// </summary>
-public sealed class SftpServerFixture : IAsyncLifetime
+public class SftpServerFixture : IAsyncLifetime
 {
     public const string Host = "127.0.0.1";
     public const string SecretContent = "SECRET-CONFIG-DB-CONTENT-must-never-be-readable";
@@ -28,6 +28,10 @@ public sealed class SftpServerFixture : IAsyncLifetime
     private HostedServer? _server;
 
     public int Port { get; private set; }
+    /// <summary>The settings of the running server. Add users here (for example with a public key).</summary>
+    public InMemorySettingsRepository Repository { get; private set; } = null!;
+    /// <summary><c>ServerSettings.IdleTimeout</c> in seconds. Override it in a derived fixture.</summary>
+    protected virtual int IdleTimeoutSeconds => 600;
     public string TempDirectory { get; }
     public string UserRoot { get; }
     public string SecretFilePath { get; }
@@ -102,10 +106,6 @@ public sealed class SftpServerFixture : IAsyncLifetime
         var client = new SftpClient(Host, Port, Username, password ?? Password);
         client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(15);
         client.OperationTimeout = TimeSpan.FromSeconds(30);
-        // Known product bug: the server never sends SSH_MSG_CHANNEL_CLOSE back, so SSH.NET waits for
-        // ChannelCloseTimeout (default 1 s) on every Disconnect. A short timeout keeps the suite fast.
-        // SshNetAuthenticationTests.Disconnect_does_not_wait_for_a_timeout documents the bug.
-        client.ConnectionInfo.ChannelCloseTimeout = TimeSpan.FromMilliseconds(100);
         return client;
     }
 
@@ -138,7 +138,7 @@ public sealed class SftpServerFixture : IAsyncLifetime
             ServerRsaKey = TestCredentials.HostKey,
             ListenToPort = port,
             ServerBanner = "FreeSftpSharpTests",
-            IdleTimeout = 600,
+            IdleTimeout = IdleTimeoutSeconds,
             BindToAddress = new List<string>(),
             BlacklistedIps = new List<string>(),
             EnableCommand = false,
@@ -155,6 +155,7 @@ public sealed class SftpServerFixture : IAsyncLifetime
             WhitelistedIps = new List<string>(),
         });
 
+        Repository = repository;
         return new HostedServer(NullLogger<HostedServer>.Instance, new LocalFileSystemFactory(repository), repository);
     }
 

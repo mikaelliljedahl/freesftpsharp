@@ -155,9 +155,7 @@ public sealed class OpenSshSftpTests : IClassFixture<SftpServerFixture>
         Assert.DoesNotContain(SftpServerFixture.SecretContent, result.AllOutput);
     }
 
-    [Fact(Skip = "Product bug: the server does not close the SFTP channel after the client sends SSH_MSG_CHANNEL_EOF, " +
-                 "so OpenSSH sftp does not exit after its last command (it waits for the idle timeout). " +
-                 "Remove this Skip when the bug is fixed.")]
+    [Fact]
     public async Task Sftp_exits_by_itself_after_the_last_command()
     {
         SkipIfUnavailable();
@@ -167,6 +165,100 @@ public sealed class OpenSshSftpTests : IClassFixture<SftpServerFixture>
         AssertSessionCompleted(result);
         Assert.True(result.ExitedByItself, result.ToString());
         Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task OpenSsh_connects_with_its_default_algorithms_and_a_sha2_or_ecdsa_host_key()
+    {
+        SkipIfUnavailable();
+
+        // No HostKeyAlgorithms=+ssh-rsa: the OpenSSH defaults must work.
+        var result = await RunWithOptionsAsync(_server, CreateLocalDirectory(), new[] { "LogLevel=DEBUG" }, "pwd");
+
+        AssertSessionCompleted(result);
+        var hostKey = DebugValue(result, "kex: host key algorithm: ");
+        Assert.True(hostKey is "ecdsa-sha2-nistp256" or "rsa-sha2-512" or "rsa-sha2-256", $"host key algorithm: {hostKey}{Environment.NewLine}{result}");
+        Assert.DoesNotContain("connection is not using a post-quantum key exchange", result.AllOutput);
+    }
+
+    [Fact]
+    public async Task OpenSsh_that_knows_the_old_rsa_host_key_still_accepts_the_server()
+    {
+        SkipIfUnavailable();
+        // A client that connected to an older version has the RSA key as "ssh-rsa" in known_hosts.
+        // The key did not change; only the signature is SHA-2 now, so strict host key checking passes.
+        var knownHosts = Path.Combine(_server.TempDirectory, "known_hosts-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(knownHosts, $"[{SftpServerFixture.Host}]:{_server.Port} ssh-rsa {SshRsaPublicKey(TestCredentials.HostKey)}\n");
+
+        var result = await RunWithOptionsAsync(_server, CreateLocalDirectory(),
+            new[] { "StrictHostKeyChecking=yes", "UserKnownHostsFile=" + knownHosts, "LogLevel=DEBUG" }, "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.StartsWith("rsa-sha2-", DebugValue(result, "kex: host key algorithm: "));
+    }
+
+    /// <summary>The base64 "ssh-rsa" public key blob (RFC 4253 section 6.6) of a base64 CSP blob.</summary>
+    private static string SshRsaPublicKey(string cspBlob)
+    {
+        using var csp = new RSACryptoServiceProvider();
+        csp.ImportCspBlob(Convert.FromBase64String(cspBlob));
+        var parameters = csp.ExportParameters(false);
+        using var blob = new MemoryStream();
+        foreach (var part in new[] { "ssh-rsa"u8.ToArray(), Mpint(parameters.Exponent!), Mpint(parameters.Modulus!) })
+        {
+            blob.Write(new[] { (byte)(part.Length >> 24), (byte)(part.Length >> 16), (byte)(part.Length >> 8), (byte)part.Length });
+            blob.Write(part);
+        }
+        return Convert.ToBase64String(blob.ToArray());
+
+        static byte[] Mpint(byte[] value) => (value[0] & 0x80) != 0 ? new byte[] { 0 }.Concat(value).ToArray() : value;
+    }
+
+    [Fact]
+    public async Task OpenSsh_cannot_connect_when_it_allows_only_ssh_rsa_sha1_signatures()
+    {
+        SkipIfUnavailable();
+
+        var result = await RunWithOptionsAsync(_server, CreateLocalDirectory(), new[] { "HostKeyAlgorithms=ssh-rsa" }, "pwd");
+
+        AssertNegotiationFailed(result);
+    }
+
+    [Theory]
+    [InlineData("KexAlgorithms=diffie-hellman-group1-sha1")]
+    [InlineData("KexAlgorithms=diffie-hellman-group14-sha1")]
+    [InlineData("MACs=hmac-md5,hmac-sha1")]
+    [InlineData("Ciphers=aes128-cbc,aes256-cbc,3des-cbc")]
+    public async Task OpenSsh_cannot_connect_with_only_weak_algorithms(string option)
+    {
+        SkipIfUnavailable();
+
+        // MACs only matter for a non-AEAD cipher.
+        var options = option.StartsWith("MACs=", StringComparison.Ordinal)
+            ? new[] { option, "Ciphers=aes256-ctr" }
+            : new[] { option };
+        var result = await RunWithOptionsAsync(_server, CreateLocalDirectory(), options, "pwd");
+
+        AssertNegotiationFailed(result);
+    }
+
+    /// <summary>
+    /// The server closes the connection when no algorithm matches (OpenSSH then prints "Connection closed",
+    /// or "Unable to negotiate ..." when it sees the mismatch first). The password prompt is never reached.
+    /// </summary>
+    private static void AssertNegotiationFailed(Result result)
+    {
+        Assert.DoesNotContain(SessionEndMarker, result.StandardOutput);
+        Assert.True(result.ExitedByItself && result.ExitCode != 0, result.ToString());
+        Assert.True(result.StandardError.Contains("Connection closed", StringComparison.Ordinal) ||
+                    result.StandardError.Contains("Unable to negotiate", StringComparison.Ordinal), result.ToString());
+        Assert.DoesNotContain("Permission denied", result.StandardError);
+    }
+
+    private static string? DebugValue(Result result, string prefix)
+    {
+        var line = result.StandardError.Split('\n').FirstOrDefault(l => l.Contains(prefix, StringComparison.Ordinal));
+        return line?[(line.IndexOf(prefix, StringComparison.Ordinal) + prefix.Length)..].Trim();
     }
 
     private string CreateLocalDirectory()

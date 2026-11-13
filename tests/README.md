@@ -30,16 +30,23 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Unit/LocalFileSystemTests` | unit | `NormalizeVirtualPath` and `GetPhysicalPath` with traversal inputs (`/../../etc/passwd`, `..\..\config.db`, `/a/b/../../../../c`, `//double//slash`, `/.../x`, empty, `.`), a sibling directory with the same prefix as the root, the root cannot be removed or moved |
 | `Unit/SftpSubsystemNormalizePathTests` | unit | `SftpSubsystem.NormalizePath` (the SSH_FXP_REALPATH canonical path) |
 | `Unit/SftpFramingTests` | unit | `SftpSubsystem.OnInput` framing: one packet split over several calls, several packets in one call, a partial packet at the end; one response for each request |
-| `EndToEnd/SshNetAuthenticationTests` | end-to-end (SSH.NET) | connect, wrong password is rejected |
+| `Unit/HostKeysTests` | unit | the stored RSA host key (base64 CSP blob or PEM) converts to PEM with the same key, a public-only blob is rejected, host key algorithms are ecdsa-sha2-nistp256, rsa-sha2-512, rsa-sha2-256 (no ssh-rsa), an ECDSA key is made once and saved |
+| `Unit/UserLogicsTests` | unit | public key check by SHA-256 fingerprint, password check, IP whitelist (also for IPv4-mapped IPv6 addresses) |
+| `Unit/SessionTimeoutsTests` | unit | `IdleTimeout` gives an inactivity timeout, or keepalive probes when it is 0 |
+| `EndToEnd/SshNetAuthenticationTests` | end-to-end (SSH.NET) | connect, wrong password is rejected, `Disconnect` does not wait for a timeout |
+| `EndToEnd/PublicKeyAndWhitelistTests` | end-to-end (SSH.NET) | public key login, another key and a user without a key are rejected, unknown user, IP whitelist allows and rejects |
+| `EndToEnd/AlgorithmNegotiationTests` | end-to-end (raw KEXINIT, SSH.NET) | the server's KEXINIT has no weak algorithms (ssh-rsa, *-sha1 kex, CBC, hmac-md5/sha1) and has curve25519, AES-GCM/CTR, hmac-sha2(-etm); SSH.NET connects with each host key algorithm and fails with only ssh-rsa or group1-sha1 |
+| `EndToEnd/IdleTimeoutTests` | end-to-end | with `IdleTimeout` = 1 s, a client that sends nothing and an idle SFTP session are disconnected |
 | `EndToEnd/SshNetFileOperationTests` | end-to-end (SSH.NET) | mkdir, 3 MB upload/download with byte compare, list, stat of file and directory, missing paths, overwrite with a smaller file, empty file, append, rename, delete, rmdir, the session survives a failed open |
 | `EndToEnd/SshNetPathTraversalTests` | end-to-end (SSH.NET) | `/../config.db` cannot be read, an upload to `/../x` lands in the user root, `ListDirectory("/..")` lists the root |
-| `EndToEnd/OpenSshSftpTests` | end-to-end (OpenSSH `sftp`) | put/get of 2 MB, 200 B and 0 B files, ls, rename, rm, rmdir, `cd ../..` + `pwd`, overwrite 2 MB with 200 B, `get ../../config.db` fails |
+| `EndToEnd/OpenSshSftpTests` | end-to-end (OpenSSH `sftp`) | put/get of 2 MB, 200 B and 0 B files, ls, rename, rm, rmdir, `cd ../..` + `pwd`, overwrite 2 MB with 200 B, `get ../../config.db` fails, sftp exits by itself, connect with the OpenSSH default algorithms (no `+ssh-rsa`), a known_hosts entry with the old `ssh-rsa` key still matches, only-weak-algorithm clients cannot connect |
 
 Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the `Skip` when the bug is fixed.
 
 ## Infrastructure
 
-- `Infrastructure/SftpServerFixture` starts the real `HostedServer` in-process. It picks a free port,
+- `Infrastructure/SftpServerFixture` starts the real `HostedServer` in-process (derive from it and override
+  `IdleTimeoutSeconds` for other settings; `Repository` gives the settings, for example to add users). It picks a free port,
   creates `<temp>/root` (the user root, `/` for the client) and `<temp>/config.db` (a secret file outside the
   root, `SecretFilePath` / `SecretContent`), creates the user `test_person` / `1234`, and waits until the port
   sends the SSH identification line. It stops the server and deletes the directory afterwards.
@@ -67,9 +74,9 @@ reason "OpenSSH sftp is not on PATH". GitHub Actions `ubuntu-latest` has it. On 
 `sudo apt-get install openssh-client`.
 
 The password comes from a generated `SSH_ASKPASS` script with `SSH_ASKPASS_REQUIRE=force` and `DISPLAY=:0`.
-The commands go to stdin, because `sftp -b` turns off password authentication. Because of a known server bug
-(the server does not close the SFTP channel after the client's EOF), sftp does not exit by itself; the harness
-waits for the output of a final `lpwd` and then stops the process.
+The commands go to stdin, because `sftp -b` turns off password authentication. The harness adds a final `lpwd`
+and waits for its output; if sftp then does not exit by itself within a short time, the harness stops the
+process, so a server bug cannot hang the suite. `OpenSshSftp.RunWithOptionsAsync` adds extra `-o` options.
 
 On Windows the OpenSSH tests are skipped by default, because the `.cmd` askpass path is not verified there.
 Set `FREESFTPSHARP_OPENSSH_ON_WINDOWS=1` to run them. Set `FREESFTPSHARP_SFTP_LOGLEVEL=DEBUG3` to see the
