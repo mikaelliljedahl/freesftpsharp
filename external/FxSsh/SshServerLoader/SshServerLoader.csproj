@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+  </PropertyGroup>
+
+  <!-- NativeAOT build option: dotnet publish -c Aot -r <rid>
+       (e.g. win-x64 / linux-x64 / linux-arm64). The default Release
+       configuration stays a regular managed JIT build. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Aot'">
+    <PublishAot>true</PublishAot>
+    <!-- SSH wire data is UTF-8/ASCII only; invariant globalization avoids
+         pulling ICU data into the native binary. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FxSsh\FxSsh.csproj" />
+  </ItemGroup>
+
+</Project>

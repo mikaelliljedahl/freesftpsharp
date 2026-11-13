@@ -1,0 +1,10 @@
+﻿<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+    <File Path="README_zh-cn.md" />
+  </Folder>
+  <Project Path="FxSsh/FxSsh.csproj" />
+  <Project Path="FxSsh.IntegrationTests/FxSsh.IntegrationTests.csproj" />
+  <Project Path="FxSsh.Tests/FxSsh.Tests.csproj" />
+  <Project Path="SshServerLoader/SshServerLoader.csproj" />
+</Solution>
