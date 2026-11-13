@@ -7,9 +7,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 using Serilog;
-using Serilog.Events;
-using Serilog.Sinks.File;
-using Serilog.Sinks.HtmlFile;
 
 using FxSsh.SshServerModule;
 
@@ -17,31 +14,28 @@ using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Settings.Sql;
 
-Log.Logger = new LoggerConfiguration()
-                      .WriteTo.Console(theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-                      //.MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-                      //.MinimumLevel.Override("System", LogEventLevel.Warning)
-                      .Enrich.FromLogContext()
-                      //.WriteTo.File("FxSshServer.txt", rollingInterval: RollingInterval.Day)
-                      .WriteTo.File("FxSshServer.txt", rollOnFileSizeLimit: true, fileSizeLimitBytes: 10_000_000)
-                      .WriteTo.HtmlFile(path: "logsHtml/FxSshServer.html", fileSizeLimitBytes: 10_000_000)
-                  //.Enrich.WithExceptionDetails(new DestructuringOptionsBuilder()
-                  //.WithDefaultDestructurers()
-                  //.WithDestructurers(new[] { new DbUpdateExceptionDestructurer() }))
-                  .CreateLogger();
+// The bootstrap logger reports errors that happen before the real logger is configured from appsettings.json.
+Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
 
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args, SshServerOptions.SwitchMappings)
+    .Build();
+
+Log.Logger = new LoggerConfiguration()
+                      .ReadFrom.Configuration(LogFilePaths.MakeAbsolute(configuration))
+                      .Enrich.FromLogContext()
+                      .CreateLogger();
 
 await new HostBuilder()
 .ConfigureAppConfiguration((hostContext, config) =>
 {
-    config.SetBasePath(AppContext.BaseDirectory)
-        .AddJsonFile("appsettings.json", optional: true)
-        .AddEnvironmentVariables()
-        .AddCommandLine(args, SshServerOptions.SwitchMappings);
+    config.AddConfiguration(configuration);
 })
 .ConfigureServices((hostContext, services) =>
 {
-    services.AddLogging();
     Log.Information("Starting host service");
     services.AddLogging(configure =>
     {
@@ -52,7 +46,5 @@ await new HostBuilder()
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
     services.AddSshServerListenOptions();
-
-
 })
 .RunConsoleAsync();

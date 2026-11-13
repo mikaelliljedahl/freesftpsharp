@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="11.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
     <!-- mtp-off: run through VSTest (xunit.runner.visualstudio), so a plain "dotnet test FreeSftpSharp.sln" works without a global.json. -->
     <PackageReference Include="xunit.v3.mtp-off" Version="4.0.3" />
@@ -36,6 +38,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The real app settings, to check the Serilog configuration (issue #33). -->
+    <Content Include="..\..\FxSshSftpServer\appsettings.json" Link="AppSettings\FxSshSftpServer.appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\ServerConsoleApp\appsettings.json" Link="AppSettings\ServerConsoleApp.appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\..\FxSshSftpServer\Logging\LogFilePaths.cs" Link="Logging\LogFilePaths.cs" />
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

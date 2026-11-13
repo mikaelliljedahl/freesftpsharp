@@ -475,7 +475,7 @@ public class SftpSubsystem : IDisposable
         var path = reader.ReadString(Encoding.UTF8);
         var handle = GenerateHandle();
 
-        _logger.LogInformation($"user {_username} opened dir {path}");
+        _logger.LogDebug($"user {_username} opened dir {path}");
 
         if (!_fileSystem.DirectoryExists(path))
             SendStatus(requestId, SftpStatusType.SSH_FX_NO_SUCH_FILE);
@@ -549,7 +549,7 @@ public class SftpSubsystem : IDisposable
 
             try
             {
-                _logger.LogInformation($"Opening file {path} for writing ({mode}) with handle: {handle}");
+                _logger.LogDebug($"Opening file {path} for writing ({mode}) with handle: {handle}");
 
                 // Open the file now, so that an empty file is created and an existing file is truncated
                 // also when the client sends no SSH_FXP_WRITE.
@@ -580,7 +580,7 @@ public class SftpSubsystem : IDisposable
         {
             try
             {
-                _logger.LogInformation($"Opening file {path} with handle: {handle}");
+                _logger.LogDebug($"Opening file {path} with handle: {handle}");
 
                 var fs = _fileSystem.OpenStreamRead(path);
                 HandleToFileStreamDictionary.Add(handle, fs);
@@ -730,7 +730,7 @@ public class SftpSubsystem : IDisposable
         writer.Write((uint)1); // always count = 1 for realpath
 
         if (path.Length < 150)
-            _logger.LogInformation($"Reading path {path}");
+            _logger.LogDebug($"Reading path {path}");
 
         DateTime lastModified = _fileSystem.GetDirectoryLastModified(path);
         writer.Write(path, Encoding.UTF8);
@@ -752,7 +752,7 @@ public class SftpSubsystem : IDisposable
 
         writer.Write(version); // SFTP protocol version
         sftpversion = Convert.ToInt32(version);
-        _logger.LogInformation($"Init with client version: {sftpversion}");
+        _logger.LogDebug($"Init with client version: {sftpversion}");
         SendPacket(writer.ToByteArray());
     }
     private void SendAttributes(uint requestId, string path, bool isDirectory)

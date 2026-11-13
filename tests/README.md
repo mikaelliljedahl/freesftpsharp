@@ -56,6 +56,7 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `EndToEnd/BindToAddressTests` | end-to-end (raw TCP) | `BindToAddress` = 127.0.0.1 answers on 127.0.0.1 and refuses ::1; without it both answer (the IPv6 checks are skipped when the machine has no ::1) |
 | `Unit/LoginThrottleTests` | unit | lockout after N failed logins, the lockout ends, success clears the failures (`FakeTimeProvider`) |
 | `Unit/AdminPasswordCommandTests` | unit | `--hash-admin-password` prints a hash that verifies, rejects short passwords |
+| `Logging/LoggingConfigurationTests` | unit + in-memory web host | the Serilog section of both `appsettings.json` files loads (default Information, Microsoft/System/Microsoft.AspNetCore = Warning, Microsoft.Hosting.Lifetime = Information), relative log paths go to the app directory; a normal start of the web host logs no Warning or higher (in-memory sink) |
 | `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
 
 Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the `Skip` when the bug is fixed.
