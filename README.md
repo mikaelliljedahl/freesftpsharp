@@ -129,6 +129,33 @@ Settings changes (blacklist, whitelist, ban settings) apply to the next connecti
 
 The old `ServerRootDirectory` setting was never used (each user has `UserRootDirectory`) and has been removed.
 
+## Listen port and bind addresses from configuration
+
+The port and the bind addresses are normally stored in the settings database (`ListenToPort`, `BindToAddress`).
+`ServerConsoleApp` has no web UI, so both can also be set in the configuration. A configured value **overrides** the
+stored setting at runtime. It is never written to the database, and an empty value means "not set".
+
+| Key | Environment variable | Command line | Meaning |
+| --- | --- | --- | --- |
+| `SshServer:Port` | `SshServer__Port` | `--port 2222` | Listen port, 1-65535. An invalid value stops the server at start with a clear error |
+| `SshServer:BindToAddress` | `SshServer__BindToAddress` | `--bind 127.0.0.1,::1` | Addresses to listen on: a comma separated string, or an array (`SshServer:BindToAddress:0`, `SshServer__BindToAddress__0`, a JSON array) |
+
+```sh
+ServerConsoleApp --port 2222 --bind 127.0.0.1
+SshServer__Port=2222 ServerConsoleApp
+```
+
+```json
+{ "SshServer": { "Port": 2222, "BindToAddress": [ "127.0.0.1", "::1" ] } }
+```
+
+Precedence: command line, environment variables, `appsettings.json`, then the settings database. At start the server
+logs the effective port and addresses and whether they come from the configuration or the database. A port below
+1024 needs extra rights on Linux (for example `CAP_NET_BIND_SERVICE`); use a higher port with `--port` instead.
+`FxSshSftpServer` reads `SshServer:Port` and `SshServer:BindToAddress` from `appsettings.json` and environment
+variables (the `--port` and `--bind` shortcuts exist only in `ServerConsoleApp`); its settings page shows when the
+port is overridden.
+
 ## Settings storage
 
 The server settings (port, banner, host key, ...) and the users are stored with EF Core in a SQLite database.
