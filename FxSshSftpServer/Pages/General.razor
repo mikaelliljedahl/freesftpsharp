@@ -10,6 +10,10 @@
 {
     <TwoColumnRow HeaderText="Port:" TooltipText="Changing port requires server restart">
         <RadzenNumeric @bind-Value="@ServerSettings.ListenToPort"></RadzenNumeric>
+        @if (PortOverride != null)
+        {
+            <div>Overridden by configuration: the server listens on port @PortOverride (SshServer:Port).</div>
+        }
     </TwoColumnRow>
 
     <TwoColumnRow HeaderText="Idle timeout:" TooltipText="Time in seconds before client is disconnected. 0 means no timeout">

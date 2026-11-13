@@ -6,6 +6,7 @@ using System.Net;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces.Security;
+using SshServer.Interfaces.Net;
 
 namespace FxSsh.SshServerModule
 {
@@ -22,18 +23,9 @@ namespace FxSsh.SshServerModule
             if (remoteEndpoint is not IPEndPoint endpoint)
                 return false;
 
-            // The server listens dual-stack, so an IPv4 client has an address such as ::ffff:192.168.1.5.
-            var ipaddress = endpoint.Address.IsIPv4MappedToIPv6 ? endpoint.Address.MapToIPv4() : endpoint.Address;
-
-            foreach(var whitelisted in user.WhitelistedIps)
-            {
-                IPNetwork ipnetwork = IPNetwork.Parse(whitelisted); // whitelisted must contain  CIDR e.g. /16
-                var success = ipnetwork.Contains(ipaddress);
-                if (success)
-                    return true;
-            }
-
-            return false;
+            // CIDR entries or single addresses. The server listens dual-stack, so an IPv4 client has an address such
+            // as ::ffff:192.168.1.5; CidrNotation matches it as IPv4. Invalid entries are skipped.
+            return CidrNotation.Contains(CidrNotation.ParseValid(user.WhitelistedIps), endpoint.Address);
         }
 
         /// <summary>

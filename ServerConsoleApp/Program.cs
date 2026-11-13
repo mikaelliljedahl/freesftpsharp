@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FxSsh.SshServerModule.Security;
+using System;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Configuration;
@@ -36,7 +37,7 @@ await new HostBuilder()
     config.SetBasePath(AppContext.BaseDirectory)
         .AddJsonFile("appsettings.json", optional: true)
         .AddEnvironmentVariables()
-        .AddCommandLine(args);
+        .AddCommandLine(args, SshServerOptions.SwitchMappings);
 })
 .ConfigureServices((hostContext, services) =>
 {
@@ -49,6 +50,8 @@ await new HostBuilder()
     services.AddSshServerSettings(hostContext.Configuration);
     services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
     services.AddHostedService<HostedServer>();
+    services.AddSshServerSecurity();
+    services.AddSshServerListenOptions();
 
 
 })

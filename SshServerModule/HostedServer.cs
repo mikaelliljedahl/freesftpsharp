@@ -1,12 +1,16 @@
 ﻿using FxSsh.Logging;
 using FxSsh.Services;
 using FxSsh.Services.Sftp;
+using FxSsh.SshServerModule.Security;
 using FxSsh.SshServerModule.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Net;
 using SshServerModule.Sftp;
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -23,17 +27,27 @@ namespace FxSsh.SshServerModule
         /// </summary>
         internal static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(60);
 
-        private SshServer server;
+        /// <summary>One server for each address in <c>ServerSettings.BindToAddress</c> (one dual-stack server by default).</summary>
+        private readonly List<SshServer> servers = new();
 
         private readonly ILogger _logger;
         private readonly IFileSystemFactory _fileSystemFactory;
         public readonly ISettingsRepository _settingsRepository; // public so that we can access it from Blazor page to edit settings
+        private readonly LoginBanTracker _bans;
+        private readonly IpFilter _ipFilter;
+        private readonly SshServerOptions _options;
 
-        public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository)
+        /// <param name="options">Port and bind addresses from the configuration; they override the stored settings. Null: stored settings only.</param>
+        /// <param name="banTracker">The auto-ban state, shared with the admin UI (AddSshServerSecurity). Null: a private one.</param>
+        public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
+            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null)
         {
+            _options = options?.Value;
             _logger = logger;
             _settingsRepository = settingsRepository;
             _fileSystemFactory = fileSystemFactory;
+            _bans = banTracker ?? new LoginBanTracker(TimeProvider.System);
+            _ipFilter = new IpFilter(logger);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -45,32 +59,62 @@ namespace FxSsh.SshServerModule
             if (!banner.StartsWith("SSH-2.0-", StringComparison.Ordinal))
                 banner = "SSH-2.0-" + banner; // RFC 4253 section 4.2: the identification string must start with SSH-2.0-
 
-            server = new SshServer(new StartingInfo(IPAddress.IPv6Any, settings.ListenToPort, banner));
+            var listen = EffectiveListenSettings.Resolve(settings, _options);
+            _logger.LogInformation("Listen port {Port} (from {PortSource}), bind addresses {BindToAddress} (from {BindSource}).",
+                listen.Port, listen.PortSource, listen.BindToAddress.Count == 0 ? "all" : string.Join(", ", listen.BindToAddress), listen.BindSource);
 
             var timeouts = SessionTimeouts.FromSettings(settings);
-            server.InactivityTimeout = timeouts.InactivityTimeout;
+            var hostKeys = HostKeys.Load(_settingsRepository);
 
-            foreach (var hostKey in HostKeys.Load(_settingsRepository))
-                server.AddHostKey(hostKey.Algorithm, hostKey.Pem);
-
-            server.ConnectionAccepted += OnConnectionAccepted;
-            await server.StartAsync(cancellationToken);
+            try
+            {
+                foreach (var address in ListenAddresses.Resolve(listen.BindToAddress, _logger))
+                {
+                    var server = new SshServer(new StartingInfo(address, listen.Port, banner));
+                    server.InactivityTimeout = timeouts.InactivityTimeout;
+                    foreach (var hostKey in hostKeys)
+                        server.AddHostKey(hostKey.Algorithm, hostKey.Pem);
+                    server.ConnectionAccepted += OnConnectionAccepted;
+                    servers.Add(server);
+                    await server.StartAsync(cancellationToken);
+                    _logger.LogInformation("Listening on {Address} port {Port}.", address, listen.Port);
+                }
+            }
+            catch
+            {
+                await StopServersAsync(); // do not keep a part of the listeners open
+                throw;
+            }
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
-            if (server != null)
+            await StopServersAsync();
+            _settingsRepository.Dispose();
+        }
+
+        private async Task StopServersAsync()
+        {
+            foreach (var server in servers)
             {
                 server.ConnectionAccepted -= OnConnectionAccepted;
                 await server.StopAsync();
                 server.Dispose();
-                server = null;
             }
-            _settingsRepository.Dispose();
+            servers.Clear();
         }
 
         void OnConnectionAccepted(object sender, Session e)
         {
+            var filter = _ipFilter.Check(e.RemoteEndPoint, _settingsRepository.ServerSettings, _bans);
+            if (filter != IpFilterResult.Allowed)
+            {
+                _logger.LogWarning("Refused the connection from {RemoteEndPoint}: {Reason}.", e.RemoteEndPoint, filter);
+                // FxSsh has no "reject" hook. An exception from ConnectionAccepted makes SshServer close the socket
+                // before the session starts: the client gets no identification line and no key exchange.
+                throw new SshConnectionException($"Connection refused: {filter}.", DisconnectReason.HostNotAllowedToConnect);
+            }
+
             _logger.LogInformation("Accepted a client from {RemoteEndPoint}.", e.RemoteEndPoint);
 
             var timeouts = SessionTimeouts.FromSettings(_settingsRepository.ServerSettings);
@@ -87,7 +131,9 @@ namespace FxSsh.SshServerModule
 
             if (e is UserAuthService authService)
             {
-                authService.UserAuth += OnUserAuth;
+                var attempt = new AuthAttempt();
+                authService.UserAuth += (s, args) => OnUserAuth(args, attempt);
+                authService.Succeed += (s, serviceName) => OnUserAuthSucceeded(session, attempt);
             }
             else if (e is ConnectionService connectionService)
             {
@@ -113,9 +159,35 @@ namespace FxSsh.SshServerModule
             tcp.Start();
         }
 
-        void OnUserAuth(object sender, UserAuthArgs e)
+        /// <summary>The user that the last accepted authentication request of a session was for.</summary>
+        private sealed class AuthAttempt
+        {
+            public volatile string AcceptedUsername;
+        }
+
+        void OnUserAuth(UserAuthArgs e, AuthAttempt attempt)
         {
             e.Result = false;
+            attempt.AcceptedUsername = null;
+            Authenticate(e);
+
+            if (e.Result)
+                attempt.AcceptedUsername = e.Username;
+            else if (e.AuthMethod == "password")
+                RecordFailedLogin(e.Session);
+            // Failed public keys are not counted: clients offer each key of their agent, so a user with several keys
+            // would be banned. A wrong public key cannot be guessed like a password.
+        }
+
+        void Authenticate(UserAuthArgs e)
+        {
+            if (e.Session.RemoteEndPoint is IPEndPoint remote && _bans.IsBanned(remote.Address))
+            {
+                // Banned while this session was open: no more attempts on it.
+                _logger.LogInformation("Authentication ({Method}) of {Username} refused: {RemoteEndPoint} is banned.",
+                    e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
+                return;
+            }
 
             var user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
             if (user == null)
@@ -148,6 +220,42 @@ namespace FxSsh.SshServerModule
                 default:
                     _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
                     break;
+            }
+        }
+
+        void RecordFailedLogin(Session session)
+        {
+            if (session.RemoteEndPoint is not IPEndPoint remote)
+                return;
+
+            var settings = _settingsRepository.ServerSettings;
+            if (_bans.RecordFailure(remote.Address, BanPolicy.FromSettings(settings)))
+                _logger.LogWarning("Banned {Address} for {Seconds} s after {Failures} failed logins within {Window} s.",
+                    CidrNotation.Normalize(remote.Address), settings.BanDurationSeconds, settings.MaxLoginAttemptsBeforeBan,
+                    settings.LoginFailureWindowSeconds);
+        }
+
+        /// <summary>Called after the whole authentication succeeded (for a public key: after the signature check).</summary>
+        void OnUserAuthSucceeded(Session session, AuthAttempt attempt)
+        {
+            var username = attempt.AcceptedUsername;
+            if (username == null)
+                return;
+
+            try
+            {
+                var user = _settingsRepository.GetUser(username);
+                if (user == null)
+                    return;
+                user.LastSuccessfulLogin = _bans.Time.GetUtcNow().UtcDateTime;
+                if (!_settingsRepository.UpdateUser(user))
+                    _logger.LogWarning("Could not save the last login time of user {Username}.", username);
+            }
+            catch (Exception ex)
+            {
+                // The login itself is fine; only the time stamp is lost.
+                _logger.LogWarning(ex, "Could not save the last login time of user {Username} from {RemoteEndPoint}.",
+                    username, session.RemoteEndPoint);
             }
         }
 

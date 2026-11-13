@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using FxSsh.SshServerModule;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
@@ -31,6 +32,16 @@ public class SftpServerFixture : IAsyncLifetime
     public int Port { get; private set; }
     /// <summary><c>ServerSettings.IdleTimeout</c> in seconds. Override it in a derived fixture.</summary>
     protected virtual int IdleTimeoutSeconds => 600;
+    /// <summary>Changes the server settings before the server starts. Override it in a derived fixture.</summary>
+    protected virtual void ConfigureSettings(ServerSettings settings)
+    {
+    }
+    /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
+    protected virtual SshServerOptions? CreateListenOptions(int port) => null;
+    /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
+    protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
+    /// <summary>The auto-ban state of the running server.</summary>
+    public LoginBanTracker BanTracker { get; private set; } = null!;
     public string TempDirectory { get; }
     public string UserRoot { get; }
     public string SecretFilePath { get; }
@@ -161,6 +172,7 @@ public class SftpServerFixture : IAsyncLifetime
             EnableCommand = false,
             EnableDirectTcpIp = false,
         };
+        ConfigureSettings(settings);
 
         var repository = new InMemorySettingsRepository(settings);
         repository.AddUser(new User
@@ -172,7 +184,9 @@ public class SftpServerFixture : IAsyncLifetime
             WhitelistedIps = new List<string>(),
         });
 
-        return new HostedServer(NullLogger<HostedServer>.Instance, new LocalFileSystemFactory(repository), repository);
+        BanTracker = new LoginBanTracker(CreateTimeProvider());
+        return new HostedServer(NullLogger<HostedServer>.Instance, new LocalFileSystemFactory(repository), repository, BanTracker,
+            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
     }
 
     private static int GetFreeTcpPort()
@@ -186,6 +200,27 @@ public class SftpServerFixture : IAsyncLifetime
         finally
         {
             listener.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Opens a TCP connection and returns what the server sends first: its SSH identification line, or an
+    /// empty string when the server closes the connection without sending anything.
+    /// </summary>
+    public async Task<string> ReadIdentificationAsync(IPAddress? address = null)
+    {
+        using var tcp = new TcpClient(address?.AddressFamily ?? AddressFamily.InterNetwork);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await tcp.ConnectAsync(address ?? IPAddress.Loopback, Port, cts.Token);
+        var buffer = new byte[256];
+        try
+        {
+            var read = await tcp.GetStream().ReadAsync(buffer, cts.Token);
+            return Encoding.ASCII.GetString(buffer, 0, read);
+        }
+        catch (IOException)
+        {
+            return ""; // connection reset by the server
         }
     }
 

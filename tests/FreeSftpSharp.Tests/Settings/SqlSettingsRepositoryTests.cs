@@ -1,6 +1,7 @@
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using SshServer.Interfaces;
 using SshServer.Settings.Sql;
 
@@ -61,10 +62,14 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         var settings = _repository.ServerSettings;
         settings.ListenToPort = 2222;
         settings.ServerBanner = "banner";
-        settings.ServerRootDirectory = "/srv/sftp";
         settings.BindToAddress = new List<string> { "0.0.0.0", "::" };
         settings.BlacklistedIps = new List<string> { "1.2.3.4" };
-        settings.MaxLoginAttemptsBeforeBan = 5;
+        settings.OnlyWhitelistedIps = true;
+        settings.WhitelistedIps = new List<string> { "10.0.0.0/8", "2001:db8::/32" };
+        settings.MaxLoginAttemptsBeforeBan = 7;
+        settings.LoginFailureWindowSeconds = 60;
+        settings.BanDurationSeconds = 90;
+        settings.ExemptLoopbackFromBan = false;
         settings.IdleTimeout = 300;
         settings.EnableCommand = true;
         settings.EnableDirectTcpIp = true;
@@ -75,13 +80,60 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Equal(TestCredentials.HostKey, stored.ServerRsaKey);
         Assert.Equal(2222, stored.ListenToPort);
         Assert.Equal("banner", stored.ServerBanner);
-        Assert.Equal("/srv/sftp", stored.ServerRootDirectory);
         Assert.Equal(new[] { "0.0.0.0", "::" }, stored.BindToAddress);
         Assert.Equal(new[] { "1.2.3.4" }, stored.BlacklistedIps);
-        Assert.Equal(5, stored.MaxLoginAttemptsBeforeBan);
+        Assert.True(stored.OnlyWhitelistedIps);
+        Assert.Equal(new[] { "10.0.0.0/8", "2001:db8::/32" }, stored.WhitelistedIps);
+        Assert.Equal(7, stored.MaxLoginAttemptsBeforeBan);
+        Assert.Equal(60, stored.LoginFailureWindowSeconds);
+        Assert.Equal(90, stored.BanDurationSeconds);
+        Assert.False(stored.ExemptLoopbackFromBan);
         Assert.Equal(300, stored.IdleTimeout);
         Assert.True(stored.EnableCommand);
         Assert.True(stored.EnableDirectTcpIp);
+    }
+
+    [Fact]
+    public void A_new_database_has_the_default_ban_settings()
+    {
+        var settings = _repository.ServerSettings;
+
+        Assert.Equal(5, settings.MaxLoginAttemptsBeforeBan);
+        Assert.Equal(600, settings.LoginFailureWindowSeconds);
+        Assert.Equal(1800, settings.BanDurationSeconds);
+        Assert.True(settings.ExemptLoopbackFromBan);
+        Assert.False(settings.OnlyWhitelistedIps);
+    }
+
+    [Fact]
+    public void A_database_of_an_older_version_is_upgraded_and_keeps_its_settings()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connection).Options;
+        using (var db = new SettingsDbContext(options))
+        {
+            // The schema before issue #43, with a settings row as an older version wrote it.
+            db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().Migrate("20261113220305_AddServerEcdsaKey");
+            db.Database.ExecuteSqlRaw(
+                "INSERT INTO ServerSettings (ServerRsaKey, ServerBanner, ListenToPort, ServerRootDirectory, BindToAddress, " +
+                "BlacklistedIps, MaxLoginAttemptsBeforeBan, IdleTimeout, EnableCommand, EnableDirectTcpIp) " +
+                "VALUES ('old-key', 'old-banner', 2022, '/srv', '[\"127.0.0.1\"]', '[\"6.6.6.6\"]', 0, 60, 0, 0)");
+        }
+
+        using var repository = new SqlSettingsRepository(options, createHostKey: () => throw new InvalidOperationException("must not be called"));
+
+        var settings = repository.ServerSettings;
+        Assert.Equal("old-key", settings.ServerRsaKey);
+        Assert.Equal(2022, settings.ListenToPort);
+        Assert.Equal(new[] { "127.0.0.1" }, settings.BindToAddress);
+        Assert.Equal(new[] { "6.6.6.6" }, settings.BlacklistedIps);
+        Assert.Equal(0, settings.MaxLoginAttemptsBeforeBan); // the stored value: auto-ban stays off until it is set
+        Assert.Equal(600, settings.LoginFailureWindowSeconds);
+        Assert.Equal(1800, settings.BanDurationSeconds);
+        Assert.True(settings.ExemptLoopbackFromBan);
+        Assert.False(settings.OnlyWhitelistedIps);
+        Assert.Null(settings.WhitelistedIps);
     }
 
     [Fact]

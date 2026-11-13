@@ -76,7 +76,11 @@ namespace FxSsh.SshServerModule
             _serverSettings.IdleTimeout = UpdatedSettings.IdleTimeout;
             _serverSettings.ListenToPort = UpdatedSettings.ListenToPort;
             _serverSettings.MaxLoginAttemptsBeforeBan = UpdatedSettings.MaxLoginAttemptsBeforeBan;
-            _serverSettings.ServerRootDirectory = UpdatedSettings.ServerRootDirectory;
+            _serverSettings.OnlyWhitelistedIps = UpdatedSettings.OnlyWhitelistedIps;
+            _serverSettings.WhitelistedIps = UpdatedSettings.WhitelistedIps;
+            _serverSettings.LoginFailureWindowSeconds = UpdatedSettings.LoginFailureWindowSeconds;
+            _serverSettings.BanDurationSeconds = UpdatedSettings.BanDurationSeconds;
+            _serverSettings.ExemptLoopbackFromBan = UpdatedSettings.ExemptLoopbackFromBan;
             _serverSettings.ServerRsaKey = UpdatedSettings.ServerRsaKey;
             if (!string.IsNullOrWhiteSpace(UpdatedSettings.ServerEcdsaKey)) // never drop the saved key
                 _serverSettings.ServerEcdsaKey = UpdatedSettings.ServerEcdsaKey;
