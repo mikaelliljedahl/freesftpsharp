@@ -10,6 +10,9 @@ namespace FreeSftpSharp.Tests.WebUi;
 /// <summary>The users page: list, search, create, edit, delete with confirmation, key and whitelist (bUnit).</summary>
 public sealed class UsersPageTests : AdminUiComponentContext
 {
+    // Saving a user hashes the password with PBKDF2 (600k iterations); a busy CI runner needs more than 1 s.
+    private static readonly TimeSpan SaveTimeout = TimeSpan.FromSeconds(15);
+
     private readonly TempDirectory _root = new();
 
     private void AddUser(string name, string? password = "secret-password", string? key = null) =>
@@ -52,13 +55,13 @@ public sealed class UsersPageTests : AdminUiComponentContext
         page.Find("#user-whitelist").Change("10.0.0.0/8\n::1");
         page.Find("#user-form").Submit();
 
-        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("carol")));
+        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("carol")), SaveTimeout);
         var user = Repository.GetUser("carol");
         Assert.Equal(_root.Path, user.UserRootDirectory);
         Assert.True(PasswordHasher.Verify("long-enough-1", user.HashedPassword));
         Assert.True(user.OnlyWhitelistedIps);
         Assert.Equal(new[] { "10.0.0.0/8", "::1" }, user.WhitelistedIps);
-        page.WaitForAssertion(() => Assert.Contains("carol", page.Find("#user-table").TextContent));
+        page.WaitForAssertion(() => Assert.Contains("carol", page.Find("#user-table").TextContent), SaveTimeout);
     }
 
     [Fact]
@@ -138,7 +141,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         page.Find("#root-directory").Change(newRoot);
         page.Find("#user-form").Submit();
 
-        page.WaitForAssertion(() => Assert.Equal(newRoot, Repository.GetUser("frank").UserRootDirectory));
+        page.WaitForAssertion(() => Assert.Equal(newRoot, Repository.GetUser("frank").UserRootDirectory), SaveTimeout);
         Assert.Equal(oldHash, Repository.GetUser("frank").HashedPassword);
         Assert.Equal("never", page.Find("#last-login").TextContent);
     }
@@ -200,7 +203,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("judy").RsaPublicKey), TimeSpan.FromSeconds(30));
         var invocation = Assert.Single(download.Invocations);
         Assert.Equal("judy.pem", invocation.Arguments[0]);
-        page.WaitForAssertion(() => Assert.StartsWith("SHA256:", page.Find("#user-key-fingerprint").TextContent));
+        page.WaitForAssertion(() => Assert.StartsWith("SHA256:", page.Find("#user-key-fingerprint").TextContent), SaveTimeout);
     }
 
     [Fact]
