@@ -34,6 +34,7 @@ public class AdminUiComponentContext : BunitContext
         Bans = new LoginBanTracker(Clock);
 
         Services.AddSingleton<ISettingsRepository>(Repository);
+        Services.AddSingleton<SshServer.Interfaces.Users.UserAdministrationService>();
         Services.AddSingleton<IIpBanService>(Bans);
         Services.AddSingleton<TimeProvider>(Clock);
         Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(ListenOptions));

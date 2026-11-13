@@ -1,4 +1,6 @@
 using FxSsh.SshServerModule;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SshServer.Interfaces.Users;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +37,7 @@ namespace SshServer.Settings.Sql
                     throw new InvalidOperationException($"Unsupported settings provider {options.Provider}.");
             }
 
+            services.TryAddSingleton<UserAdministrationService>();
             return services;
         }
 

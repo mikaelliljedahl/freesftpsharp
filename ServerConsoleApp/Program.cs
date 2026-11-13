@@ -13,6 +13,12 @@ using FxSsh.SshServerModule;
 using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Settings.Sql;
+using FxSsh.SshServerModule.Cli;
+using SshServer.Interfaces.Users;
+
+// "user add|list|remove" manages the users in the settings database and exits. It does not start the server.
+if (UserCommand.IsRequested(args))
+    return RunUserCommand(args);
 
 // The bootstrap logger reports errors that happen before the real logger is configured from appsettings.json.
 Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
@@ -48,3 +54,51 @@ await new HostBuilder()
     services.AddSshServerListenOptions();
 })
 .RunConsoleAsync();
+
+return 0;
+
+static int RunUserCommand(string[] args)
+{
+    // The same configuration as the server start (appsettings.json, environment), so the same settings database is used.
+    // The command line is not part of it: "user add ... --root ..." is not configuration.
+    var configuration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile("appsettings.json", optional: true)
+        .AddEnvironmentVariables()
+        .Build();
+
+    try
+    {
+        using var provider = new ServiceCollection().AddSshServerSettings(configuration).BuildServiceProvider();
+        return UserCommand.Run(args, provider.GetRequiredService<UserAdministrationService>(),
+            Console.In, Console.Out, Console.Error,
+            interactive: !Console.IsInputRedirected, promptHidden: ReadHidden);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"The user command failed: {ex.Message}");
+        return 1;
+    }
+}
+
+static string ReadHidden(string prompt)
+{
+    Console.Error.Write(prompt);
+    var builder = new System.Text.StringBuilder();
+    while (true)
+    {
+        var key = Console.ReadKey(intercept: true);
+        if (key.Key == ConsoleKey.Enter)
+            break;
+        if (key.Key == ConsoleKey.Backspace)
+        {
+            if (builder.Length > 0)
+                builder.Length--;
+            continue;
+        }
+        if (!char.IsControl(key.KeyChar))
+            builder.Append(key.KeyChar);
+    }
+    Console.Error.WriteLine();
+    return builder.ToString();
+}
