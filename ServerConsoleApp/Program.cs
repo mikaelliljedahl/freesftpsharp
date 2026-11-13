@@ -11,6 +11,7 @@ using Serilog;
 using FxSsh.SshServerModule;
 
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;

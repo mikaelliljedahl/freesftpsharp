@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Unit;
 

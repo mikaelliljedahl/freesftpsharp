@@ -1,6 +1,7 @@
 using FxSsh.Services.Sftp;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using System;
 using System.Collections.Generic;
 using System.IO;

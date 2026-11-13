@@ -1,4 +1,5 @@
 ﻿using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using System;
 using System.Collections.Generic;
 using System.Linq;

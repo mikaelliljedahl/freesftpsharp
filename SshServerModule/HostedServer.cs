@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Net;
 using SshServerModule.Sftp;
 using System;

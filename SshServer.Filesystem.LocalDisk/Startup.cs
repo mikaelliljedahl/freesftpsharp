@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 
 namespace SshServer.Filesystem.LocalDisk
 {

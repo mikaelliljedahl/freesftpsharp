@@ -3,6 +3,7 @@ using FxSsh;
 using FxSsh.Services.Sftp;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using SshServerModule.Sftp;
 
 namespace FreeSftpSharp.Tests.Sftp;

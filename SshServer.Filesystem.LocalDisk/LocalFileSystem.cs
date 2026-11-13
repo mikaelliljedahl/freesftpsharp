@@ -1,4 +1,5 @@
-﻿using SshServer.Interfaces;
+using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using System.IO;
 
 namespace SshServer.Filesystem.LocalDisk
@@ -499,6 +500,19 @@ namespace SshServer.Filesystem.LocalDisk
                 return null; // for example a UNC path on Windows
             }
         }
+
+        // ---- The asynchronous interface (issue #51); ported in the next step. ----
+
+        public StorageCapabilities Capabilities => throw new NotImplementedException();
+        public ValueTask<FileSystemEntry?> StatAsync(string path, bool followLinks, CancellationToken ct) => throw new NotImplementedException();
+        public IAsyncEnumerable<FileSystemEntry> ListAsync(string path, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask<IFileHandle> OpenAsync(string path, FileOpenFlags flags, FileAttributesUpdate? initial, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask CreateDirectoryAsync(string path, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask DeleteFileAsync(string path, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask DeleteDirectoryAsync(string path, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask RenameAsync(string oldPath, string newPath, RenameFlags flags, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask SetAttributesAsync(string path, FileAttributesUpdate update, CancellationToken ct) => throw new NotImplementedException();
+        public ValueTask<StorageSpace?> GetStorageSpaceAsync(string path, CancellationToken ct) => throw new NotImplementedException();
 
         private static string CombineVirtualPath(string virtualDirectory, string name)
         {
