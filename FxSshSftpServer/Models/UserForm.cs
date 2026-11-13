@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Security;
 using System;
@@ -9,14 +10,14 @@ namespace FxSshSftpServer.Models
     /// <summary>The add/edit form of an SFTP user.</summary>
     public sealed class UserForm : IValidatableObject
     {
-        public const int MinimumPasswordLength = 8;
+        public const int MinimumPasswordLength = UserAdministrationService.MinimumPasswordLength;
 
         /// <summary>True for a user that is not saved yet. The user name of a saved user cannot change (the repository finds users by name).</summary>
         public bool IsNew { get; set; }
 
         [Required(ErrorMessage = "Enter a user name.")]
-        [StringLength(100, ErrorMessage = "The user name can have at most 100 characters.")]
-        [RegularExpression(@"^[^\s:/\\]+$", ErrorMessage = "The user name cannot have spaces, ':', '/' or '\\'.")]
+        [StringLength(UserAdministrationService.MaximumUserNameLength, ErrorMessage = "The user name can have at most 100 characters.")]
+        [RegularExpression(UserAdministrationService.UserNamePattern, ErrorMessage = "The user name cannot have spaces, ':', '/' or '\\'.")]
         public string Username { get; set; } = "";
 
         [Required(ErrorMessage = "Enter the root directory of the user on the server.")]
