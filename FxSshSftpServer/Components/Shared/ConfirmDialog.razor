@@ -1,0 +1,53 @@
+@* A Bootstrap modal rendered by Blazor (no Bootstrap JavaScript). Show it with Open(); it calls OnConfirm on "yes". *@
+
+@if (isOpen)
+{
+    <div class="modal d-block modal-open-backdrop" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@titleId">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="@titleId">@Title</h2>
+                    <button type="button" class="btn-close" aria-label="Cancel" @onclick="Cancel"></button>
+                </div>
+                <div class="modal-body">
+                    @ChildContent
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+                    <button type="button" class="btn @ConfirmButtonClass confirm-button" @onclick="ConfirmAsync">@ConfirmText</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly string titleId = "confirm-" + Guid.NewGuid().ToString("N");
+    private bool isOpen;
+
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+
+    [Parameter] public string ConfirmText { get; set; } = "Delete";
+
+    [Parameter] public string ConfirmButtonClass { get; set; } = "btn-danger";
+
+    [Parameter] public RenderFragment ChildContent { get; set; }
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    public bool IsOpen => isOpen;
+
+    public void Open()
+    {
+        isOpen = true;
+        StateHasChanged();
+    }
+
+    private void Cancel() => isOpen = false;
+
+    private async Task ConfirmAsync()
+    {
+        isOpen = false;
+        await OnConfirm.InvokeAsync();
+    }
+}

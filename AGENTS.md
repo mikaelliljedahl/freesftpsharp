@@ -23,7 +23,7 @@ always necessary. Select the approach from the type of change:
 | New feature | TDD where the behaviour is testable. Otherwise, add tests together with the code. |
 | Refactoring | Do not write new tests first. The existing suite must stay green before and after the change. |
 | Dependency upgrades, build and CI changes, logging, documentation | No new tests are necessary. Run the full suite. |
-| UI layout (Blazor/Radzen) | Tests are optional. Test the logic behind the UI if it changes. |
+| UI layout (Blazor, Bootstrap) | Tests are optional. Test the logic behind the UI if it changes (bUnit or `WebApplicationFactory`). |
 
 In all cases:
 

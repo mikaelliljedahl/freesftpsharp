@@ -57,6 +57,10 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Unit/LoginThrottleTests` | unit | lockout after N failed logins, the lockout ends, success clears the failures (`FakeTimeProvider`) |
 | `Unit/AdminPasswordCommandTests` | unit | `--hash-admin-password` prints a hash that verifies, rejects short passwords |
 | `Logging/LoggingConfigurationTests` | unit + in-memory web host | the Serilog section of both `appsettings.json` files loads (default Information, Microsoft/System/Microsoft.AspNetCore = Warning, Microsoft.Hosting.Lifetime = Information), relative log paths go to the app directory; a normal start of the web host logs no Warning or higher (in-memory sink) |
+| `EndToEnd/ServerInfoTests` | end-to-end (SSH.NET) + unit | `ServerInfo` (admin UI): each host key fingerprint equals the one SSH.NET receives, unreadable keys give an error text, the offered algorithms, user key fingerprints |
+| `WebUi/SettingsPagesTests` | bUnit | server settings page: loads and saves (other settings stay), port and bind address validation, the override notes for `SshServer:Port` / `SshServer:BindToAddress`, host key fingerprints without the private key, direct-tcpip warning; IP access page: saves blacklist, whitelist and auto-ban settings, rejects invalid CIDR entries, lists the active bans and unbans one, expired bans |
+| `WebUi/UsersPageTests` | bUnit | users page: list and search, create with a hashed password and a whitelist, invalid CIDR, user name and password are rejected, missing root directory warning, edit keeps the password, last login and key fingerprint, delete only after confirmation, key generation (stored public key, downloaded private key), key removal |
+| `WebUi/AdminUiPagesTests` | in-memory web host | after a login every page renders (prerendered) with the stored users, settings and bans; `/access` needs a login; the local Bootstrap, icon and script files are served without a login; `blazor.web.js` is served; Radzen is not referenced; with `SshServer:Port` / `SshServer:BindToAddress` configured, the settings page and the dashboard show the override |
 | `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
 
 Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the `Skip` when the bug is fixed.
@@ -73,6 +77,9 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
   format before issue #23) are the only places that know the password hash formats. Change them there when a
   format changes. `SftpServerFixture.AddUser` and `Repository` add users to the running server and read what it stored.
 - `Infrastructure/OpenSshSftp` runs the `sftp` client (see below).
+- `WebUi/AdminUiComponentContext` is the bUnit context for the admin UI pages: an `InMemorySettingsRepository`, the
+  real `LoginBanTracker` with a `FakeTimeProvider` (`Ban(address)` bans an address), the toast service and the listen
+  options. JavaScript interop is in loose mode.
 - `WebUi/AdminUiFactory` hosts the FxSshSftpServer admin UI in memory. It removes the SSH `HostedServer` and
   replaces the LiteDB repository with `InMemorySettingsRepository`, so no port is opened and no `config.db` is
   written. It sets the admin credential `admin` / `AdminUiFactory.AdminPassword` through configuration.

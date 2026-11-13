@@ -1,0 +1,36 @@
+@inject NavigationManager Navigation
+
+<ul class="nav nav-pills flex-column gap-1 p-3">
+    <li class="nav-item">
+        <NavLink class="nav-link" href="" Match="NavLinkMatch.All" @onclick="OnNavigate">
+            <i class="bi bi-speedometer2"></i> Dashboard
+        </NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="users" @onclick="OnNavigate">
+            <i class="bi bi-people"></i> Users
+        </NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="general" @onclick="OnNavigate">
+            <i class="bi bi-gear"></i> Server settings
+        </NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="access" @onclick="OnNavigate">
+            <i class="bi bi-shield-lock"></i> IP access and bans
+        </NavLink>
+    </li>
+    <li class="nav-item mt-3 border-top pt-3">
+        <a class="nav-link" href="Logout" @onclick="LogOut" @onclick:preventDefault>
+            <i class="bi bi-box-arrow-right"></i> Log out
+        </a>
+    </li>
+</ul>
+
+@code {
+    [Parameter] public EventCallback OnNavigate { get; set; }
+
+    // Logout is a Razor page, not a Blazor route: load it with a full page request.
+    private void LogOut() => Navigation.NavigateTo("Logout", forceLoad: true);
+}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    @* Set the color mode before the first paint, so a dark theme does not flash white. *@
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="FxSshSftpServer.styles.css" />
+    <link rel="stylesheet" href="css/site.css" />
+    <link rel="icon" href="favicon.ico" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+
+    <div id="blazor-error-ui" class="alert alert-danger m-0 rounded-0" role="alert">
+        An error has occurred. Reload the page to continue.
+        <a href="" class="reload alert-link">Reload</a>
+        <button type="button" class="dismiss btn-close float-end" aria-label="Close"></button>
+    </div>
+
+    <script src="js/site.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

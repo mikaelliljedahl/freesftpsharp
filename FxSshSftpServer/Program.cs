@@ -40,8 +40,10 @@ Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
 builder.Services.AddAdminDataProtection(builder.Configuration);
 
-Log.Debug("AddServerSideBlazor...");
-builder.Services.AddServerSideBlazor();
+Log.Debug("AddRazorComponents...");
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<FxSshSftpServer.Components.Shared.ToastService>();
 
 Log.Debug("AddHostedService<HostedServer>...");
 builder.Services.AddHostedService<HostedServer>();
@@ -65,24 +67,23 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseExceptionHandler("/Home/Error");
+    app.UseExceptionHandler("/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
 Log.Debug("UseHttpsRedirection()...");
 app.UseHttpsRedirection();
-app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
-Log.Debug("UseEndpoints(...)...");
-app.UseEndpoints(endpoints =>
-{
-    endpoints.MapBlazorHub();
-    endpoints.MapFallbackToPage("/_Host");
-});
+// The CSS, fonts and scripts (wwwroot and _framework/blazor.web.js) are local files; the login page needs them before a login.
+app.MapStaticAssets().AllowAnonymous();
+app.MapRazorPages(); // Login, Logout, Error
+app.MapRazorComponents<FxSshSftpServer.Components.App>()
+    .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
 
 
 try
