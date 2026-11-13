@@ -102,7 +102,7 @@ public sealed class HostKeysTests
     {
         var repository = CreateRepository(ecdsaKey: null);
         using var stored = new RSACryptoServiceProvider();
-        stored.ImportCspBlob(Convert.FromBase64String(repository.ServerSettings.ServerRsaKey));
+        stored.ImportCspBlob(Convert.FromBase64String(repository.ServerSettings.ServerRsaKey ?? throw new InvalidOperationException("No RSA host key.")));
 
         foreach (var hostKey in HostKeys.Load(repository).Where(k => k.Algorithm.StartsWith("rsa-sha2-")))
         {

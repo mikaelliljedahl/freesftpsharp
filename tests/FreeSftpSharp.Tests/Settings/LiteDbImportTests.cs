@@ -55,7 +55,7 @@ public sealed class LiteDbImportTests : IDisposable
             WhitelistedIps = new List<string>(),
         });
 
-        return repository.ServerSettings.ServerRsaKey;
+        return repository.ServerSettings.ServerRsaKey ?? throw new InvalidOperationException("The server RSA key was not stored.");
     }
 
     private string HashOfLiteDbFile() => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(LiteDbPath)));

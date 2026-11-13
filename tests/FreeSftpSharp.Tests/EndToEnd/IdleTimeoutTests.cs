@@ -27,7 +27,7 @@ public sealed class IdleTimeoutTests : IClassFixture<ShortIdleTimeoutServerFixtu
     public async Task Client_that_sends_nothing_is_disconnected_after_the_idle_timeout()
     {
         using var tcp = new TcpClient();
-        await tcp.ConnectAsync(SftpServerFixture.Host, _server.Port);
+        await tcp.ConnectAsync(SftpServerFixture.Host, _server.Port, TestContext.Current.CancellationToken);
         var stream = tcp.GetStream();
         var stopwatch = Stopwatch.StartNew();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));

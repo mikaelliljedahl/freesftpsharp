@@ -48,7 +48,7 @@ namespace SshServer.Interfaces.Users
         public bool Remove(string username) => _repository.RemoveUser(username);
 
         /// <summary>Returns an error text, or null when the name is valid.</summary>
-        public static string ValidateUserName(string username)
+        public static string? ValidateUserName(string? username)
         {
             if (string.IsNullOrWhiteSpace(username))
                 return "Enter a user name.";
@@ -60,7 +60,7 @@ namespace SshServer.Interfaces.Users
         }
 
         /// <summary>Returns an error text, or null when the password is acceptable.</summary>
-        public static string ValidatePassword(string password) =>
+        public static string? ValidatePassword(string? password) =>
             string.IsNullOrEmpty(password) || password.Length < MinimumPasswordLength
                 ? $"The password must have at least {MinimumPasswordLength} characters."
                 : null;
@@ -71,10 +71,10 @@ namespace SshServer.Interfaces.Users
         /// for the operator when the input is not valid.
         /// </summary>
         /// <param name="publicKeyText">The content of an OpenSSH <c>.pub</c> file or a PEM public key (RSA).</param>
-        public User Create(string username, string rootDirectory, string password, string publicKeyText)
+        public User Create(string? username, string? rootDirectory, string? password, string? publicKeyText)
         {
-            username = username?.Trim();
-            var nameError = ValidateUserName(username);
+            var name = username?.Trim() ?? string.Empty;
+            var nameError = ValidateUserName(name);
             if (nameError != null)
                 throw new UserAdministrationException(nameError);
             if (string.IsNullOrWhiteSpace(rootDirectory))
@@ -90,8 +90,8 @@ namespace SshServer.Interfaces.Users
 
             var publicKey = publicKeyText == null ? null : ConvertPublicKey(publicKeyText);
 
-            if (_repository.GetAllUsers().Any(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase)))
-                throw new UserAdministrationException($"The user '{username}' already exists.");
+            if (_repository.GetAllUsers().Any(u => string.Equals(u.Username, name, StringComparison.OrdinalIgnoreCase)))
+                throw new UserAdministrationException($"The user '{name}' already exists.");
 
             string root;
             try
@@ -106,7 +106,7 @@ namespace SshServer.Interfaces.Users
 
             var user = new User
             {
-                Username = username,
+                Username = name,
                 UserRootDirectory = root,
                 HashedPassword = password == null ? null : PasswordHasher.Hash(password),
                 RsaPublicKey = publicKey,
@@ -114,7 +114,7 @@ namespace SshServer.Interfaces.Users
                 WhitelistedIps = new List<string>(),
             };
             if (!TryAdd(user))
-                throw new UserAdministrationException($"The user '{username}' could not be created.");
+                throw new UserAdministrationException($"The user '{name}' could not be created.");
             return user;
         }
 
@@ -151,7 +151,7 @@ namespace SshServer.Interfaces.Users
 
         private static RSAParameters ParseOpenSshRsaKey(string line)
         {
-            var parts = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 2 || parts[0] != "ssh-rsa")
                 throw new FormatException("Not an ssh-rsa key.");
             var blob = Convert.FromBase64String(parts[1]);

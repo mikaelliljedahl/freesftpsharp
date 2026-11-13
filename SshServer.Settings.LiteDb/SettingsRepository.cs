@@ -10,7 +10,7 @@ namespace FxSsh.SshServerModule
 {
     public class ServerSettingsWithObjectId : ServerSettings
     {
-        public new ObjectId Id { get; set; }
+        public new ObjectId Id { get; set; } = ObjectId.Empty;
         public ServerSettings MapToServerSettings()
         {
             var user = (ServerSettings)this;
@@ -21,7 +21,7 @@ namespace FxSsh.SshServerModule
 
     public class UserWithObjectId : User
     {
-        public new ObjectId Id { get; set; }
+        public new ObjectId Id { get; set; } = ObjectId.Empty;
 
         public User MapToUser()
         {

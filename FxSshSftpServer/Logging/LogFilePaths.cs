@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,7 +13,7 @@ internal static class LogFilePaths
 {
     public static IConfiguration MakeAbsolute(IConfiguration configuration)
     {
-        var overrides = new Dictionary<string, string>();
+        var overrides = new Dictionary<string, string?>();
         foreach (var sink in configuration.GetSection("Serilog:WriteTo").GetChildren())
         {
             var key = sink.Path + ":Args:path";

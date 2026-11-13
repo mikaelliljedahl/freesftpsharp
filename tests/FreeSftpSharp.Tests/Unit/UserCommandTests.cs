@@ -54,6 +54,7 @@ public sealed class UserCommandTests : IDisposable
         Assert.True(PasswordHasher.Verify("my secret pw", user.HashedPassword));
         Assert.Equal(root, user.UserRootDirectory);
         Assert.DoesNotContain("my secret pw", result.Output + result.Error);
+        Assert.NotNull(user.HashedPassword);
         Assert.DoesNotContain(user.HashedPassword, result.Output + result.Error);
     }
 
@@ -219,7 +220,9 @@ public sealed class UserCommandTests : IDisposable
         Assert.Contains("key", bob);
         Assert.DoesNotContain("password", bob);
         Assert.DoesNotContain("PBKDF2", result.Output);
-        Assert.DoesNotContain(_repository.GetUser("bob").RsaPublicKey, result.Output);
+        var storedKey = _repository.GetUser("bob").RsaPublicKey;
+        Assert.NotNull(storedKey);
+        Assert.DoesNotContain(storedKey, result.Output);
     }
 
     [Fact]

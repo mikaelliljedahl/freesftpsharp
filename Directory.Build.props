@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- New warnings fail the build. The vendored upstream code under external/ is not ours to fix. -->
+    <TreatWarningsAsErrors Condition="!$(MSBuildProjectDirectory.Contains('external'))">true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>
