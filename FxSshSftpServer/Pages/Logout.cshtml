@@ -1,0 +1,27 @@
+@page
+@model FxSshSftpServer.Pages.LogoutModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log out - FxSshSftpServer</title>
+    <link rel="stylesheet" href="~/css/bootstrap/bootstrap.min.css" />
+    <link href="~/css/site.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="container" style="max-width: 24rem; margin-top: 4rem;">
+        <h1 class="h3 mb-3">Log out</h1>
+        <p>Logged in as @User.Identity?.Name.</p>
+        <form method="post">
+            <button type="submit" class="btn btn-primary">Log out</button>
+            <a class="btn btn-link" href="~/">Cancel</a>
+        </form>
+    </div>
+</body>
+</html>

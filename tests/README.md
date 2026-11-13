@@ -37,6 +37,10 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `EndToEnd/SshNetFileOperationTests` | end-to-end (SSH.NET) | mkdir, 3 MB upload/download with byte compare, list, stat of file and directory, missing paths, overwrite with a smaller file, empty file, append, rename, delete, rmdir, the session survives a failed open |
 | `EndToEnd/SshNetPathTraversalTests` | end-to-end (SSH.NET) | `/../config.db` cannot be read, an upload to `/../x` lands in the user root, `ListDirectory("/..")` lists the root |
 | `EndToEnd/OpenSshSftpTests` | end-to-end (OpenSSH `sftp`) | put/get of 2 MB, 200 B and 0 B files, ls, rename, rm, rmdir, `cd ../..` + `pwd`, overwrite 2 MB with 200 B, `get ../../config.db` fails |
+| `Unit/AdminPasswordHasherTests`, `Unit/AdminCredentialValidatorTests` | unit | admin UI password hash: round trip, wrong password, tampered salt/key/iterations, malformed and plaintext values, user name check |
+| `Unit/LoginThrottleTests` | unit | lockout after N failed logins, the lockout ends, success clears the failures (`FakeTimeProvider`) |
+| `Unit/AdminPasswordCommandTests` | unit | `--hash-admin-password` prints a hash that verifies, rejects short passwords |
+| `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
 
 Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the `Skip` when the bug is fixed.
 
@@ -50,6 +54,10 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
 - `Infrastructure/TestCredentials.HashPassword` is the only place that knows the password hash format. Change it
   there when the format changes.
 - `Infrastructure/OpenSshSftp` runs the `sftp` client (see below).
+- `WebUi/AdminUiFactory` hosts the FxSshSftpServer admin UI in memory. It removes the SSH `HostedServer` and
+  replaces the LiteDB repository with `InMemorySettingsRepository`, so no port is opened and no `config.db` is
+  written. It sets the admin credential `admin` / `AdminUiFactory.AdminPassword` through configuration.
+  The web UI test classes share one xUnit collection, because `Program` sets the static Serilog logger.
 
 ## Add a test
 

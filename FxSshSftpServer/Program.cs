@@ -15,6 +15,13 @@ using FxSsh.SshServerModule;
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
 
+using FxSshSftpServer.Security;
+
+if (AdminPasswordCommand.IsRequested(args))
+{
+    return AdminPasswordCommand.RunOnConsole();
+}
+
 var builder = WebApplication.CreateBuilder(args);
 Log.Logger = new LoggerConfiguration()
                       //.MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
@@ -35,6 +42,9 @@ Log.Information("Starting host service");
 Log.Information("AddRazorPages...");
 builder.Services.AddRazorPages();
 
+Log.Information("AddAdminAuthentication...");
+builder.Services.AddAdminAuthentication(builder.Configuration);
+
 Log.Information("AddServerSideBlazor...");
 builder.Services.AddServerSideBlazor();
 
@@ -49,6 +59,8 @@ builder.Services.AddLocalFileSystemHosting();
 Log.Warning("builder.Build()...");
 var app = builder.Build();
 
+// Without an admin credential the whole UI answers 503 (the SSH server still runs).
+app.UseAdminUiRequiresCredential();
 
 if (app.Environment.IsDevelopment())
 {
@@ -65,6 +77,8 @@ Log.Warning("UseHttpsRedirection()...");
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 
 Log.Warning("UseEndpoints(...)...");
 app.UseEndpoints(endpoints =>
@@ -91,3 +105,6 @@ finally
     Log.CloseAndFlush();
 }
 
+
+/// <summary>Visible to the tests (WebApplicationFactory&lt;Program&gt;).</summary>
+public partial class Program { }
