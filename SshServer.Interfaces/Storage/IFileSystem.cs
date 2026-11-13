@@ -36,7 +36,7 @@ public interface IFileSystem
     /// Opens a file. Throws <see cref="FileSystemError.NoSuchFile"/> when the file (without <see cref="FileOpenFlags.Create"/>)
     /// or its parent directory does not exist, <see cref="FileSystemError.AlreadyExists"/> for
     /// <see cref="FileOpenFlags.Exclusive"/> and an existing file, and <see cref="FileSystemError.IsADirectory"/> for a
-    /// directory. <paramref name="initial"/> is applied only when the open creates the file. Other handles can read,
+    /// directory. The permissions in <paramref name="initial"/> are applied only when the open creates the file; its other values are ignored. Other handles can read,
     /// write, rename and delete the file while it is open.
     /// </summary>
     ValueTask<IFileHandle> OpenAsync(string path, FileOpenFlags flags, FileAttributesUpdate? initial, CancellationToken ct);
