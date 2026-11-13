@@ -108,6 +108,9 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             return false;
 
         stored.ServerRsaKey = updatedSettings.ServerRsaKey;
+        // Never drop the saved ECDSA host key: a caller that does not know the field sends it empty.
+        if (!string.IsNullOrWhiteSpace(updatedSettings.ServerEcdsaKey))
+            stored.ServerEcdsaKey = updatedSettings.ServerEcdsaKey;
         stored.ServerBanner = updatedSettings.ServerBanner;
         stored.ListenToPort = updatedSettings.ListenToPort;
         stored.ServerRootDirectory = updatedSettings.ServerRootDirectory;

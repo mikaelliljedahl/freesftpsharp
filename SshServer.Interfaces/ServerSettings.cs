@@ -8,6 +8,8 @@ namespace SshServer.Interfaces
     {
         public int Id{ get; set; }
         public string ServerRsaKey { get; set; }
+        /// <summary>ECDSA P-256 host key, PKCS#8 PEM. Empty in older config files; the server then makes one and saves it.</summary>
+        public string ServerEcdsaKey { get; set; }
         public string ServerBanner { get; set; }
 
         public int ListenToPort { get; set; }

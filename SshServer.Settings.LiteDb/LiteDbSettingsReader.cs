@@ -38,6 +38,7 @@ public static class LiteDbSettingsReader
                 settings = new ServerSettings
                 {
                     ServerRsaKey = stored.ServerRsaKey,
+                    ServerEcdsaKey = stored.ServerEcdsaKey, // only in files written by a version with ECDSA host keys
                     ServerBanner = stored.ServerBanner,
                     ListenToPort = stored.ListenToPort,
                     ServerRootDirectory = stored.ServerRootDirectory,

@@ -25,6 +25,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("ServerSettings");
             b.HasKey(s => s.Id);
             b.Property(s => s.ServerRsaKey).IsRequired(false);
+            b.Property(s => s.ServerEcdsaKey).IsRequired(false);
             b.Property(s => s.ServerBanner).IsRequired(false);
             b.Property(s => s.ServerRootDirectory).IsRequired(false);
             b.PrimitiveCollection(s => s.BindToAddress).IsRequired(false);

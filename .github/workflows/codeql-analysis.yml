@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # C# is compiled: build the solution explicitly with the .NET 10 SDK.
+          # C# is compiled: build the solution explicitly with the .NET 11 SDK.
           - language: csharp
             build-mode: manual
           # The Blazor admin UI has hand-written JavaScript in
@@ -42,7 +42,7 @@ jobs:
         if: matrix.language == 'csharp'
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4

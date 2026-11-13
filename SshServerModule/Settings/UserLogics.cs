@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces.Security;
 
@@ -18,10 +19,11 @@ namespace FxSsh.SshServerModule
             if (!user.OnlyWhitelistedIps || user.WhitelistedIps == null || user.WhitelistedIps.Count == 0) // No check needed
                 return true;
 
-            var endpoint = remoteEndpoint as IPEndPoint;
+            if (remoteEndpoint is not IPEndPoint endpoint)
+                return false;
 
-            // https://github.com/lduchosal/ipnetwork
-            var ipaddress = IPAddress.Parse(endpoint.Address.ToString());
+            // The server listens dual-stack, so an IPv4 client has an address such as ::ffff:192.168.1.5.
+            var ipaddress = endpoint.Address.IsIPv4MappedToIPv6 ? endpoint.Address.MapToIPv4() : endpoint.Address;
 
             foreach(var whitelisted in user.WhitelistedIps)
             {
@@ -34,15 +36,36 @@ namespace FxSsh.SshServerModule
             return false;
         }
 
-        internal static bool VerifyUserKey(User user, byte[] key, string fingerprint, string keyAlgorithm)
+        /// <summary>
+        /// Public key authentication by fingerprint. <see cref="User.RsaPublicKey"/> is a base64 CSP blob
+        /// (made by the admin UI). The fingerprint is the base64 SHA-256 of the SSH public key blob, as FxSsh
+        /// gives it in <c>UserAuthArgs.Fingerprint</c> (OpenSSH shows it as "SHA256:...", without padding).
+        /// </summary>
+        internal static bool VerifyUserKey(User user, string fingerprint)
         {
-            var savedkey = Convert.FromBase64String(user.RsaPublicKey);
-            var keyAlg = new Algorithms.RsaKey(null);            
-            keyAlg.ImportKey(savedkey);
-            var fingprint2 = keyAlg.GetFingerprint();
+            if (string.IsNullOrWhiteSpace(user.RsaPublicKey) || string.IsNullOrEmpty(fingerprint))
+                return false;
 
-            return fingerprint == fingprint2;
+            string savedFingerprint;
+            try
+            {
+                savedFingerprint = GetRsaPublicKeyFingerprint(user.RsaPublicKey);
+            }
+            catch (Exception ex) when (ex is FormatException or CryptographicException)
+            {
+                return false;
+            }
 
+            return string.Equals(fingerprint, savedFingerprint, StringComparison.Ordinal);
+        }
+
+        /// <summary>The base64 SHA-256 fingerprint of an RSA public key that is stored as a base64 CSP blob.</summary>
+        internal static string GetRsaPublicKeyFingerprint(string base64CspBlob)
+        {
+            using var csp = new RSACryptoServiceProvider();
+            csp.ImportCspBlob(Convert.FromBase64String(base64CspBlob));
+            var key = new FxSsh.Algorithms.RsaKey(256, csp.ExportSubjectPublicKeyInfoPem());
+            return key.GetFingerprint();
         }
 
         internal static byte[] ConvertFingerprintToByteArray(string fingerprint)

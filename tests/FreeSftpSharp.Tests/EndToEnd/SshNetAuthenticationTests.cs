@@ -31,8 +31,7 @@ public sealed class SshNetAuthenticationTests : IClassFixture<SftpServerFixture>
         Assert.False(client.IsConnected);
     }
 
-    [Fact(Skip = "Product bug: the server does not answer SSH_MSG_CHANNEL_CLOSE (or EOF) with its own CHANNEL_CLOSE, " +
-                 "so SSH.NET Disconnect waits about 1 second for a timeout. Remove this Skip when the bug is fixed.")]
+    [Fact]
     public void Disconnect_does_not_wait_for_a_timeout()
     {
         using var client = _server.CreateClient();

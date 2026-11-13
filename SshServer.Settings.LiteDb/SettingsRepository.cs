@@ -78,6 +78,8 @@ namespace FxSsh.SshServerModule
             _serverSettings.MaxLoginAttemptsBeforeBan = UpdatedSettings.MaxLoginAttemptsBeforeBan;
             _serverSettings.ServerRootDirectory = UpdatedSettings.ServerRootDirectory;
             _serverSettings.ServerRsaKey = UpdatedSettings.ServerRsaKey;
+            if (!string.IsNullOrWhiteSpace(UpdatedSettings.ServerEcdsaKey)) // never drop the saved key
+                _serverSettings.ServerEcdsaKey = UpdatedSettings.ServerEcdsaKey;
 
             return serversettings.Update(_serverSettings);
         }

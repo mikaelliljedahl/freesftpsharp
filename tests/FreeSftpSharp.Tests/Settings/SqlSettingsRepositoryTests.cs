@@ -85,6 +85,30 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void The_ecdsa_host_key_is_stored_and_an_empty_value_does_not_remove_it()
+    {
+        Assert.Null(_repository.ServerSettings.ServerEcdsaKey); // a new database has none; HostedServer makes it
+
+        var settings = _repository.ServerSettings;
+        settings.ServerEcdsaKey = "ecdsa-pem";
+        Assert.True(_repository.UpdateServerSettings(settings));
+        Assert.Equal("ecdsa-pem", _repository.ServerSettings.ServerEcdsaKey);
+
+        // A caller that does not know the field (for example an older admin page) sends it empty.
+        var withoutKey = _repository.ServerSettings;
+        withoutKey.ServerEcdsaKey = null!;
+        withoutKey.ListenToPort = 2200;
+        Assert.True(_repository.UpdateServerSettings(withoutKey));
+        Assert.Equal("ecdsa-pem", _repository.ServerSettings.ServerEcdsaKey);
+        Assert.Equal(2200, _repository.ServerSettings.ListenToPort);
+
+        var replaced = _repository.ServerSettings;
+        replaced.ServerEcdsaKey = "new-ecdsa-pem";
+        Assert.True(_repository.UpdateServerSettings(replaced));
+        Assert.Equal("new-ecdsa-pem", _repository.ServerSettings.ServerEcdsaKey);
+    }
+
+    [Fact]
     public void An_added_user_can_be_read_with_all_fields()
     {
         var user = NewUser("alice");

@@ -23,12 +23,13 @@ public sealed class LiteDbImportTests : IDisposable
         new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_temp.SqliteConnectionString()).Options;
 
     /// <summary>Makes a config.db like an old installation: settings with a host key and two users.</summary>
-    private string CreateLiteDb()
+    private string CreateLiteDb(string? ecdsaKey = null)
     {
         using var liteDb = new SettingsRepository(LiteDbPath);
         ISettingsRepository repository = liteDb;
 
         var settings = repository.ServerSettings;
+        settings.ServerEcdsaKey = ecdsaKey!;
         settings.ListenToPort = 2022;
         settings.IdleTimeout = 120;
         settings.BindToAddress = new List<string> { "127.0.0.1" };
@@ -58,6 +59,26 @@ public sealed class LiteDbImportTests : IDisposable
     }
 
     private string HashOfLiteDbFile() => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(LiteDbPath)));
+
+    [Fact]
+    public void The_ecdsa_host_key_is_imported_when_config_db_has_one()
+    {
+        CreateLiteDb(ecdsaKey: "ecdsa-pem");
+
+        using var repository = new SqlSettingsRepository(SqliteOptions, legacyLiteDbPath: LiteDbPath);
+
+        Assert.Equal("ecdsa-pem", repository.ServerSettings.ServerEcdsaKey);
+    }
+
+    [Fact]
+    public void A_config_db_without_an_ecdsa_host_key_imports_without_one()
+    {
+        CreateLiteDb();
+
+        using var repository = new SqlSettingsRepository(SqliteOptions, legacyLiteDbPath: LiteDbPath);
+
+        Assert.True(string.IsNullOrEmpty(repository.ServerSettings.ServerEcdsaKey));
+    }
 
     [Fact]
     public void A_new_SQLite_database_imports_settings_host_key_and_users_from_config_db()

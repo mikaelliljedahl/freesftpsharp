@@ -71,7 +71,7 @@ namespace FxSshSftpServer.Pages
 
         private async Task CreateKeyForUser()
         {
-            var csp = new System.Security.Cryptography.RSACryptoServiceProvider(1024);
+            var csp = new System.Security.Cryptography.RSACryptoServiceProvider(4096);
 
             var rsakeyparam = csp.ExportParameters(true);
 

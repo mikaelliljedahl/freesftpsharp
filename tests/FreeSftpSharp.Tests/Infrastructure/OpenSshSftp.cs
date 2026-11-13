@@ -61,18 +61,32 @@ public static class OpenSshSftp
     /// Runs sftp with <paramref name="commands"/> (one per line) and the local working directory
     /// <paramref name="localDirectory"/>.
     ///
-    /// Known product bug: the server does not close the SFTP channel when the client sends
-    /// SSH_MSG_CHANNEL_EOF, so ssh (and with it sftp) waits until the idle timeout after "quit" or the end of
-    /// stdin. To keep the tests fast, RunAsync adds "lpwd" after the commands, waits for its output (then all
-    /// commands are done, because sftp runs them in order), gives sftp <paramref name="exitGracePeriod"/>
-    /// to exit, and then stops the process tree. <see cref="Result.ExitedByItself"/> tells which case happened.
+    /// RunAsync adds "lpwd" after the commands and waits for its output (then all commands are done, because
+    /// sftp runs them in order). sftp normally exits by itself at the end of stdin; if it does not exit within
+    /// <paramref name="exitGracePeriod"/>, the harness stops the process tree, so a server that does not close
+    /// the channel cannot hang the suite. <see cref="Result.ExitedByItself"/> tells which case happened.
     /// </summary>
     public static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, params string[] commands)
     {
         return await RunAsync(server, localDirectory, DefaultExitGracePeriod, commands);
     }
 
-    public static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, params string[] commands)
+    public static Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, params string[] commands)
+    {
+        return RunAsync(server, localDirectory, exitGracePeriod, Array.Empty<string>(), commands);
+    }
+
+    /// <summary>
+    /// Like <see cref="RunAsync(SftpServerFixture, string, string[])"/>, with extra ssh options such as
+    /// "HostKeyAlgorithms=ssh-rsa" or "LogLevel=DEBUG". They come before the default options, so they win
+    /// (ssh uses the first value of an option).
+    /// </summary>
+    public static Task<Result> RunWithOptionsAsync(SftpServerFixture server, string localDirectory, string[] sshOptions, params string[] commands)
+    {
+        return RunAsync(server, localDirectory, DefaultExitGracePeriod, sshOptions, commands);
+    }
+
+    private static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, string[] sshOptions, string[] commands)
     {
         var askPass = CreateAskPassScript(server);
 
@@ -85,13 +99,18 @@ public static class OpenSshSftp
             UseShellExecute = false,
         };
 
+        foreach (var option in sshOptions)
+        {
+            startInfo.ArgumentList.Add("-o");
+            startInfo.ArgumentList.Add(option);
+        }
+
         foreach (var argument in new[]
                  {
                      "-F", "none", // do not read the user's ~/.ssh/config
                      "-P", server.Port.ToString(),
                      "-o", "StrictHostKeyChecking=no",
                      "-o", "UserKnownHostsFile=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"),
-                     "-o", "HostKeyAlgorithms=+ssh-rsa",
                      "-o", "PreferredAuthentications=password",
                      "-o", "PubkeyAuthentication=no",
                      "-o", "NumberOfPasswordPrompts=1",

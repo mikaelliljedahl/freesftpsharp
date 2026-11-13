@@ -1,4 +1,5 @@
-﻿using FxSsh.Services;
+﻿using FxSsh.Logging;
+using FxSsh.Services;
 using FxSsh.SshServerModule.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -6,7 +7,6 @@ using SshServer.Interfaces;
 using SshServerModule.Services;
 using System;
 using System.Net;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,8 +15,15 @@ namespace FxSsh.SshServerModule
 {
     public class HostedServer : IHostedService
     {
+        /// <summary>
+        /// Interval of the server keepalive probe (keepalive@openssh.com) when no idle timeout is set.
+        /// After three unanswered probes the session is closed, so a dead client is removed after about
+        /// four minutes.
+        /// </summary>
+        internal static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(60);
+
         private SshServer server;
-        
+
         private readonly ILogger _logger;
         private readonly IFileSystemFactory _fileSystemFactory;
         public readonly ISettingsRepository _settingsRepository; // public so that we can access it from Blazor page to edit settings
@@ -30,241 +37,150 @@ namespace FxSsh.SshServerModule
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
+            FxSshLogSink.Configure(_logger);
 
-            var port = _settingsRepository.ServerSettings.ListenToPort;
+            var settings = _settingsRepository.ServerSettings;
+            var banner = string.IsNullOrWhiteSpace(settings.ServerBanner) ? "SSH-2.0-FreeSftpSharp" : settings.ServerBanner;
+            if (!banner.StartsWith("SSH-2.0-", StringComparison.Ordinal))
+                banner = "SSH-2.0-" + banner; // RFC 4253 section 4.2: the identification string must start with SSH-2.0-
 
-            server = new SshServer(new SshServerSettings 
-            { 
-                Port = port, 
-                ServerBanner = _settingsRepository.ServerSettings.ServerBanner, 
-                IdleTimeout = _settingsRepository.ServerSettings.IdleTimeout 
-            });
-            server.AddHostKey("ssh-rsa", _settingsRepository.ServerSettings.ServerRsaKey);
+            server = new SshServer(new StartingInfo(IPAddress.IPv6Any, settings.ListenToPort, banner));
 
-            // TODO also generate and add key of type "ssh-dss"
+            var timeouts = SessionTimeouts.FromSettings(settings);
+            server.InactivityTimeout = timeouts.InactivityTimeout;
 
-            //server.AddHostKey("ssh-rsa", rfc);
-            //server.AddHostKey("ssh-dss", publickey);
+            foreach (var hostKey in HostKeys.Load(_settingsRepository))
+                server.AddHostKey(hostKey.Algorithm, hostKey.Pem);
 
-            //server.AddHostKey("ssh-rsa", "BwIAAACkAABSU0EyAAQAAAEAAQADKjiW5UyIad8ITutLjcdtejF4wPA1dk1JFHesDMEhU9pGUUs+HPTmSn67ar3UvVj/1t/+YK01FzMtgq4GHKzQHHl2+N+onWK4qbIAMgC6vIcs8u3d38f3NFUfX+lMnngeyxzbYITtDeVVXcLnFd7NgaOcouQyGzYrHBPbyEivswsnqcnF4JpUTln29E1mqt0a49GL8kZtDfNrdRSt/opeexhCuzSjLPuwzTPc6fKgMc6q4MBDBk53vrFY2LtGALrpg3tuydh3RbMLcrVyTNT+7st37goubQ2xWGgkLvo+TZqu3yutxr1oLSaPMSmf9bTACMi5QDicB3CaWNe9eU73MzhXaFLpNpBpLfIuhUaZ3COlMazs7H9LCJMXEL95V6ydnATf7tyO0O+jQp7hgYJdRLR3kNAKT0HU8enE9ZbQEXG88hSCbpf1PvFUytb1QBcotDy6bQ6vTtEAZV+XwnUGwFRexERWuu9XD6eVkYjA4Y3PGtSXbsvhwgH0mTlBOuH4soy8MV4dxGkxM8fIMM0NISTYrPvCeyozSq+NDkekXztFau7zdVEYmhCqIjeMNmRGuiEo8ppJYj4CvR1hc8xScUIw7N4OnLISeAdptm97ADxZqWWFZHno7j7rbNsq5ysdx08OtplghFPx4vNHlS09LwdStumtUel5oIEVMYv+yWBYSPPZBcVY5YFyZFJzd0AOkVtUbEbLuzRs5AtKZG01Ip/8+pZQvJvdbBMLT1BUvHTrccuRbY03SHIaUM3cTUc=");
-            //server.AddHostKey("ssh-dss", "BwIAAAAiAABEU1MyAAQAAG+6KQWB+crih2Ivb6CZsMe/7NHLimiTl0ap97KyBoBOs1amqXB8IRwI2h9A10R/v0BHmdyjwe0c0lPsegqDuBUfD2VmsDgrZ/i78t7EJ6Sb6m2lVQfTT0w7FYgVk3J1Deygh7UcbIbDoQ+refeRNM7CjSKtdR+/zIwO3Qub2qH+p6iol2iAlh0LP+cw+XlH0LW5YKPqOXOLgMIiO+48HZjvV67pn5LDubxru3ZQLvjOcDY0pqi5g7AJ3wkLq5dezzDOOun72E42uUHTXOzo+Ct6OZXFP53ZzOfjNw0SiL66353c9igBiRMTGn2gZ+au0jMeIaSsQNjQmWD+Lnri39n0gSCXurDaPkec+uaufGSG9tWgGnBdJhUDqwab8P/Ipvo5lS5p6PlzAQAAACqx1Nid0Ea0YAuYPhg+YolsJ/ce");
             server.ConnectionAccepted += OnConnectionAccepted;
-            server.Start();
-            await Task.Delay(1);
-           
+            await server.StartAsync(cancellationToken);
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
-            server.ConnectionAccepted -= OnConnectionAccepted;
-            server.Stop();
-            server.Dispose();
+            if (server != null)
+            {
+                server.ConnectionAccepted -= OnConnectionAccepted;
+                await server.StopAsync();
+                server.Dispose();
+                server = null;
+            }
             _settingsRepository.Dispose();
-            await Task.Delay(1);
-           
         }
 
         void OnConnectionAccepted(object sender, Session e)
         {
-            _logger.LogInformation("Accepted a client.");
+            _logger.LogInformation("Accepted a client from {RemoteEndPoint}.", e.RemoteEndPoint);
+
+            var timeouts = SessionTimeouts.FromSettings(_settingsRepository.ServerSettings);
+            if (timeouts.KeepaliveInterval is { } keepalive)
+                e.ConfigureKeepalive(keepalive);
 
             e.ServiceRegistered += OnServiceRegistered;
         }
 
-        
         void OnServiceRegistered(object sender, SshService e)
         {
             var session = (Session)sender;
-            _logger.LogInformation("Session {0} requesting {1}.",
-                BitConverter.ToString(session.SessionId).Replace("-", ""), e.GetType().Name);
+            _logger.LogDebug("Session {RemoteEndPoint} requesting {Service}.", session.RemoteEndPoint, e.GetType().Name);
 
-            if (e is UserAuthService)
+            if (e is UserAuthService authService)
             {
-                var service = (UserAuthService)e;
-                service.UserAuth += OnUserAuth;
+                authService.UserAuth += OnUserAuth;
             }
-            else if (e is ConnectionService)
+            else if (e is ConnectionService connectionService)
             {
-                var service = (ConnectionService)e;
-                
-
-                service.SessionRequest += OnSessionRequestOpened; // adding SFTP session initiation support
+                connectionService.SubsystemRequested += OnSubsystemRequested;
 
                 if (_settingsRepository.ServerSettings.EnableCommand)
-                    service.CommandOpened += OnServiceCommandOpened;
+                    connectionService.CommandOpened += OnServiceCommandOpened;
                 if (_settingsRepository.ServerSettings.EnableDirectTcpIp)
-                {
-                    service.TcpForwardRequest += OnDirectTcpIpReceived;
-                    //service.DirectTcpIpReceived += OnDirectTcpIpReceived;
-                }
-
+                    connectionService.TcpForwardRequest += OnDirectTcpIpReceived;
             }
         }
 
-        
-
-        static void OnDirectTcpIpReceived(object sender, TcpRequestArgs e)
+        void OnDirectTcpIpReceived(object sender, TcpRequestArgs e)
         {
-            Console.WriteLine("Received a request to forward data to {0}:{1}", e.Host, e.Port);
+            _logger.LogInformation("Received a request to forward data to {Host}:{Port}", e.Host, e.Port);
 
-            var allow = true;  // func(e.Host, e.Port, e.AttachedUserauthArgs);
-
-            if (!allow)
-                return;
-            
             var tcp = new TcpForwardService(e.Host, e.Port, e.OriginatorIP, e.OriginatorPort);
-            e.Channel.DataReceived += (ss, ee) => tcp.OnData(ee);
+            e.Channel.DataReceived += (ss, ee) => tcp.OnData(ee.ToArray());
             e.Channel.CloseReceived += (ss, ee) => tcp.OnClose();
-            tcp.DataReceived += (ss, ee) => e.Channel.SendData(ee);
+            // TcpForwardService reuses its receive buffer, so send a copy.
+            tcp.DataReceived += (ss, ee) => e.Channel.SendData((byte[])ee.Clone());
             tcp.CloseReceived += (ss, ee) => e.Channel.SendClose();
             tcp.Start();
         }
 
         void OnUserAuth(object sender, UserAuthArgs e)
         {
+            e.Result = false;
 
-            var user = _settingsRepository.GetUser(e.Username);
+            var user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
             if (user == null)
             {
-                if (e is PasswordUserAuthArgs)
+                if (e.AuthMethod == "password")
                     UserLogics.SimulatePasswordCheck(); // same time as for a real user
-                e.Result = false;
+                _logger.LogInformation("Authentication ({Method}) failed for unknown user {Username} from {RemoteEndPoint}.",
+                    e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
                 return;
             }
 
-            e.Result = UserLogics.VerifyUserIpWhitelisted(user, e.Session.RemoteEndpoint);
-
-            if (!e.Result)
+            if (!UserLogics.VerifyUserIpWhitelisted(user, e.Session.RemoteEndPoint))
             {
-                _logger.LogInformation("Client {0} IP-banned: {2}", e.Session.RemoteEndpoint);
+                _logger.LogInformation("Client {RemoteEndPoint} is not in the IP whitelist of user {Username}.",
+                    e.Session.RemoteEndPoint, e.Username);
                 return;
-
             }
 
-            if (e is PKUserAuthArgs)
+            switch (e.AuthMethod)
             {
-                var pk = e as PKUserAuthArgs;
-                //  verify key against user data
-                e.Result = UserLogics.VerifyUserKey(user, pk.Key, pk.Fingerprint, pk.KeyAlgorithm);
-
-
-                _logger.LogInformation("Client {0} fingerprint: {1}. Successful: {2}", pk.KeyAlgorithm, pk.Fingerprint, e.Result);
-            }
-            else if (e is PasswordUserAuthArgs)
-            {
-                var pw = e as PasswordUserAuthArgs;
-
-                // verify password against user data
-              
-                e.Result = UserLogics.VerifyUserPassword(user, pw.Password, _settingsRepository, _logger);
-
-
-                //e.Password 
-                _logger.LogInformation("Client {0} password length: {1}. Successful: {2}", pw.Username, pw.Password?.Length, e.Result);
-            }
-
-        }
-
-
-
-        void OnSessionRequestOpened(object sender, SessionRequestedArgs e)
-        {
-            
-            _logger.LogInformation("Channel {0} requested session: \"{1}\".", e.Channel.ServerChannelId, e.CommandText);
-
-            if (e.SubSystemName == "sftp")
-            {
-                
-                InitializeSftp(e.Channel, e.AttachedUserAuthArgs.Username);
-
-            }
-            else
-            {
-                e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
-                e.Channel.SendClose();
+                case "publickey":
+                    e.Result = UserLogics.VerifyUserKey(user, e.Fingerprint);
+                    _logger.LogInformation("Public key authentication of {Username}, {KeyAlgorithm} SHA256:{Fingerprint}. Successful: {Result}",
+                        e.Username, e.KeyAlgorithm, e.Fingerprint, e.Result);
+                    break;
+                case "password":
+                    e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
+                    _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
+                    break;
+                default:
+                    _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
+                    break;
             }
         }
 
-        private void InitializeSftp(SessionChannel channel, string username)
+        void OnSubsystemRequested(object sender, SubsystemRequestedArgs e)
         {
+            _logger.LogInformation("Channel {ChannelId} requested subsystem \"{Name}\".", e.Channel.ServerChannelId, e.Name);
+
+            if (e.Name != "sftp" || !e.AttachedUserAuthArgs.Result)
+                return; // Agreed stays false: the server answers SSH_MSG_CHANNEL_FAILURE
+
+            var username = e.AttachedUserAuthArgs.Username;
             var user = _settingsRepository.GetUser(username);
-            if (user != null)
-            {
-                // check IP user.WhitelistedIps
-                
+            if (user == null)
+                return;
 
-                SftpSubsystem sftpsub = new SftpSubsystem(_logger, _fileSystemFactory.GetFileSystem(username), user.Username);
-                channel.DataReceived += (ss, ee) => sftpsub.OnInput(ee);
-                sftpsub.OnOutput += (ss, ee) => channel.SendData(ee);
-               
-
-                channel.CloseReceived += (ss, ee) =>
-                {
-                    channel.DataReceived -= (ss, ee) => sftpsub.OnInput(ee);
-                    sftpsub.OnOutput -= (ss, ee) => channel.SendData(ee);
-                    
-                    //sftpsub.OnClose -= (ss, ee) => channel.SendClose(null);
-                    sftpsub.Dispose();
-                };
-
-            }
+            var sftp = new SftpSubsystem(_logger, _fileSystemFactory.GetFileSystem(username), user.Username);
+            SftpChannelBridge.Attach(e.AttachedUserAuthArgs.Session, e.Channel, sftp, _logger);
+            e.Agreed = true;
         }
 
         /// <summary>
-        /// The function is called when a user opens a service channel. The function checks if the user is
-        /// authorized to use the service. If the user is authorized, the function initializes the sftp service
+        /// Shell and exec requests. Running commands is not implemented; when EnableCommand is set, the
+        /// server only echoes the command and closes the channel.
         /// </summary>
-        /// <param name="sender">The object that raised the event.</param>
-        /// <param name="CommandRequestedArgs"></param>
         void OnServiceCommandOpened(object sender, CommandRequestedArgs e)
         {
+            if (!e.AttachedUserAuthArgs.Result || e.ShellType == "subsystem")
+                return; // subsystems are handled in OnSubsystemRequested
 
-            Console.WriteLine($"Channel {e.Channel.ServerChannelId} runs {e.SubSystemName}: \"{e.CommandText}\".");
+            _logger.LogInformation("Channel {ChannelId} runs {ShellType}: \"{CommandText}\".", e.Channel.ServerChannelId, e.ShellType, e.CommandText);
 
-            // var allow = true;  // func(e.ShellType, e.CommandText, e.AttachedUserauthArgs);
-
-            if (!e.AttachedUserAuthArgs.Result) // TODO - check access rights per service
-                return;
-
-            if (e.SubSystemName == "shell")
-            {
-                // requirements: Windows 10 RedStone 5, 1809
-                // also, you can call powershell.exe
-                //var terminal = new Terminal("cmd.exe", windowWidth, windowHeight);
-
-                //e.Channel.DataReceived += (ss, ee) => terminal.OnInput(ee);
-                //e.Channel.CloseReceived += (ss, ee) => terminal.OnClose();
-                //terminal.DataReceived += (ss, ee) => e.Channel.SendData(ee);
-                //terminal.CloseReceived += (ss, ee) => e.Channel.SendClose(ee);
-
-                //terminal.Run();
-            }
-            else if (e.SubSystemName == "exec")
-            {
-                //var parser = new Regex(@"(?<cmd>git-receive-pack|git-upload-pack|git-upload-archive) \'/?(?<proj>.+)\.git\'");
-                //var match = parser.Match(e.CommandText);
-                //var command = match.Groups["cmd"].Value;
-                //var project = match.Groups["proj"].Value;
-
-            }
-            else if (e.SubSystemName == "sftp")
-            {
-                // do something more
-                if (e.AttachedUserAuthArgs.Result)
-                    InitializeSftp(e.Channel, e.AttachedUserAuthArgs.Username);
-
-                return;
-            }
-
-
-            _logger.LogInformation($"Channel {e.Channel.ServerChannelId} runs command: \"{e.CommandText}\". on subsystem: {e.SubSystemName}");
-
+            e.Agreed = true;
             e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));
-            e.Channel.SendClose();
+            e.Channel.SendClose(0);
         }
-
-
-
-
     }
 }
