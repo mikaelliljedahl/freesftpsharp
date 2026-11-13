@@ -46,6 +46,12 @@ In all cases:
 - The end-to-end tests start the server in-process on a free port.
   They use SSH.NET and, if it is installed, the OpenSSH `sftp` client.
 
+## NuGet lock files
+
+Every project has a committed `packages.lock.json` (enabled in `Directory.Build.props`),
+and CI restores with `--locked-mode`. After you add, remove or update a package, or add a
+project, run `dotnet restore --force-evaluate` and commit the changed lock files.
+
 ## Commits and pull requests
 
 - Write commits, pull requests and issues in English.

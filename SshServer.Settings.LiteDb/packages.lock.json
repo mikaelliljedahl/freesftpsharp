@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net11.0": {
+      "LiteDB": {
+        "type": "Direct",
+        "requested": "[5.0.21, )",
+        "resolved": "5.0.21",
+        "contentHash": "ykJ7ffFl7P9YQKR/PLci6zupiLrsSCNkOTiw6OtzntH7d2kCYp5L1+3a/pksKgTEHcJBoPXFtg7VZSGVBseN9w=="
+      },
+      "sshserver.interfaces": {
+        "type": "Project"
+      }
+    }
+  }
+}
