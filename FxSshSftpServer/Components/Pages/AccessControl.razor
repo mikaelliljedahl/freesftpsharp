@@ -1,0 +1,175 @@
+@page "/access"
+@using System.Globalization
+@inject ISettingsRepository SettingsRepository
+@inject IIpBanService BanService
+@inject TimeProvider Clock
+@inject ToastService Toasts
+
+<PageTitle>IP access and bans - FreeSftpSharp admin</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-0">IP access and bans</h1>
+    <p class="text-body-secondary mb-0">
+        Who may connect. Entries are networks in CIDR notation (<code>10.0.0.0/8</code>, <code>2001:db8::/32</code>) or single
+        addresses (<code>10.1.2.3</code>), one per line. Changes apply to the next connection.
+    </p>
+</div>
+
+<EditForm Model="form" OnValidSubmit="SaveAsync" FormName="access-control" id="access-form">
+    <DataAnnotationsValidator />
+
+    <div class="row g-4">
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold"><i class="bi bi-slash-circle"></i> Blacklist</div>
+                <div class="card-body">
+                    <label class="form-label" for="blacklist">Networks that may not connect</label>
+                    <InputTextArea id="blacklist" class="form-control font-monospace" rows="6" @bind-Value="form.BlacklistedIps" placeholder="203.0.113.0/24" />
+                    <ValidationMessage For="() => form.BlacklistedIps" />
+                    <div class="form-text">The connection is closed right after accept, before the key exchange. The blacklist wins over the whitelist.</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold"><i class="bi bi-check2-circle"></i> Global whitelist</div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        <InputCheckbox id="whitelist-mode" class="form-check-input" @bind-Value="form.OnlyWhitelistedIps" />
+                        <label class="form-check-label" for="whitelist-mode">Only the networks below may connect</label>
+                    </div>
+                    <label class="form-label" for="whitelist">Whitelisted networks</label>
+                    <InputTextArea id="whitelist" class="form-control font-monospace" rows="4" @bind-Value="form.WhitelistedIps" placeholder="192.168.1.0/24" />
+                    <ValidationMessage For="() => form.WhitelistedIps" />
+                    @if (form.OnlyWhitelistedIps && EntryList.Parse(form.WhitelistedIps).Count == 0)
+                    {
+                        <div class="alert alert-info py-2 px-3 mt-2 mb-0 small" id="empty-whitelist-note">
+                            The whitelist is empty, so nothing is checked: every address may connect.
+                        </div>
+                    }
+                    <div class="form-text">Loopback (127.0.0.1, ::1) is not special here. Users can have their own whitelist too.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-hourglass-split"></i> Auto-ban after failed logins</span>
+                    <span class="badge @(form.AutoBanEnabled ? "text-bg-success" : "text-bg-secondary")" id="auto-ban-state">@(form.AutoBanEnabled ? "on" : "off")</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label" for="max-attempts">Failed logins before a ban</label>
+                            <InputNumber id="max-attempts" class="form-control" @bind-Value="form.MaxLoginAttemptsBeforeBan" />
+                            <ValidationMessage For="() => form.MaxLoginAttemptsBeforeBan" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="failure-window">Within (seconds)</label>
+                            <InputNumber id="failure-window" class="form-control" @bind-Value="form.LoginFailureWindowSeconds" />
+                            <ValidationMessage For="() => form.LoginFailureWindowSeconds" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="ban-duration">Ban duration (seconds)</label>
+                            <InputNumber id="ban-duration" class="form-control" @bind-Value="form.BanDurationSeconds" />
+                            <ValidationMessage For="() => form.BanDurationSeconds" />
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mt-3">
+                        <InputCheckbox id="exempt-loopback" class="form-check-input" @bind-Value="form.ExemptLoopbackFromBan" />
+                        <label class="form-check-label" for="exempt-loopback">Never ban loopback addresses (127.0.0.0/8, ::1)</label>
+                    </div>
+                    <div class="form-text">
+                        Failed password logins are counted, also for unknown user names. 0 in one of the numbers turns auto-ban off.
+                        Bans are kept in memory: a restart lifts them.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 my-4">
+        <button type="button" class="btn btn-outline-secondary" @onclick="Load">Reset</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-floppy"></i> Save access settings</button>
+    </div>
+</EditForm>
+
+<div class="card">
+    <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-ban"></i> Active bans <span class="badge text-bg-secondary" id="ban-count">@bans.Count</span></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="RefreshBans" id="refresh-bans"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    </div>
+    @if (bans.Count == 0)
+    {
+        <div class="card-body text-body-secondary" id="no-bans">No address is banned now.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <QuickGrid Items="bans.AsQueryable()" Class="table table-hover align-middle quickgrid-table" id="ban-table">
+                <PropertyColumn Title="Address" Property="@(b => b.Address.ToString())" Sortable="true" />
+                <PropertyColumn Title="Banned at (UTC)" Property="@(b => b.BannedAt.UtcDateTime)" Format="yyyy-MM-dd HH:mm:ss" Sortable="true" Class="d-none d-md-table-cell" />
+                <TemplateColumn Title="Ends">
+                    <span title="@context.ExpiresAt.ToString("u", CultureInfo.InvariantCulture)">@Remaining(context)</span>
+                </TemplateColumn>
+                <PropertyColumn Title="Failed logins" Property="@(b => b.FailedAttempts)" Sortable="true" Class="d-none d-sm-table-cell" />
+                <TemplateColumn Title="" Align="Align.End">
+                    <button type="button" class="btn btn-sm btn-outline-primary unban-button" @onclick="() => Unban(context)">
+                        <i class="bi bi-unlock"></i> Unban
+                    </button>
+                </TemplateColumn>
+            </QuickGrid>
+        </div>
+    }
+</div>
+
+@code {
+    private AccessControlForm form = new();
+    private List<IpBan> bans = new();
+
+    protected override void OnInitialized()
+    {
+        Load();
+        RefreshBans();
+    }
+
+    private void Load() => form = AccessControlForm.From(SettingsRepository.ServerSettings);
+
+    private void RefreshBans() => bans = BanService.GetActiveBans().OrderBy(b => b.ExpiresAt).ToList();
+
+    private Task SaveAsync()
+    {
+        var settings = SettingsRepository.ServerSettings;
+        form.ApplyTo(settings);
+        if (SettingsRepository.UpdateServerSettings(settings))
+        {
+            Toasts.ShowSuccess("The access settings were saved. They apply to the next connection.");
+            Load();
+        }
+        else
+        {
+            Toasts.ShowError("The access settings could not be saved.");
+        }
+        return Task.CompletedTask;
+    }
+
+    private void Unban(IpBan ban)
+    {
+        if (BanService.Unban(ban.Address))
+            Toasts.ShowSuccess($"The ban of {ban.Address} was lifted.");
+        else
+            Toasts.ShowWarning($"{ban.Address} was not banned any more.");
+        RefreshBans();
+    }
+
+    private string Remaining(IpBan ban)
+    {
+        var left = ban.ExpiresAt - Clock.GetUtcNow();
+        if (left <= TimeSpan.Zero)
+            return "now";
+        return left.TotalHours >= 1 ? $"in {(int)left.TotalHours} h {left.Minutes} min"
+            : left.TotalMinutes >= 1 ? $"in {(int)left.TotalMinutes} min"
+            : $"in {left.Seconds} s";
+    }
+}

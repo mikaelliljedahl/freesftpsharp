@@ -31,6 +31,8 @@ public class AdminUiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Production");
+        // Framework files such as _framework/blazor.web.js are in wwwroot only after a publish; the build has a manifest for them.
+        builder.UseStaticWebAssets();
         builder.UseSetting("AdminAuth:UserName", ConfigureAdminCredential ? AdminUserName : "");
         builder.UseSetting("AdminAuth:PasswordHash", ConfigureAdminCredential ? AdminPasswordHash : "");
         // The login tests fail on purpose; the lockout itself is covered by LoginThrottleTests.
@@ -54,4 +56,15 @@ public class AdminUiFactory : WebApplicationFactory<Program>
 public sealed class UnconfiguredAdminUiFactory : AdminUiFactory
 {
     protected override bool ConfigureAdminCredential => false;
+}
+
+/// <summary>The admin UI with <c>SshServer:Port</c> and <c>SshServer:BindToAddress</c> in the configuration.</summary>
+public sealed class ConfiguredListenAdminUiFactory : AdminUiFactory
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseSetting("SshServer:Port", "2200");
+        builder.UseSetting("SshServer:BindToAddress", "127.0.0.1");
+    }
 }

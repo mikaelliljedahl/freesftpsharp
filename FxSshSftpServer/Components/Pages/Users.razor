@@ -1,0 +1,371 @@
+@page "/users"
+@using FxSsh.SshServerModule
+@using System.Globalization
+@inject ISettingsRepository SettingsRepository
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>Users - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Users</h1>
+        <p class="text-body-secondary mb-0">The SFTP accounts. Each user sees only its root directory.</p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-user"><i class="bi bi-person-plus"></i> Add user</button>
+</div>
+
+<div class="row g-4">
+    <div class="@(form is null ? "col-12" : "col-xl-5")">
+        <div class="card">
+            <div class="card-header">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" class="form-control" placeholder="Search users" aria-label="Search users" id="user-search"
+                           @bind="search" @bind:event="oninput" />
+                </div>
+            </div>
+            @if (users.Count == 0)
+            {
+                <div class="card-body text-body-secondary" id="no-users">No users yet. Use "Add user" to create the first one.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <QuickGrid Items="FilteredUsers" Class="table table-hover align-middle quickgrid-table" id="user-table">
+                        <PropertyColumn Title="User name" Property="@(u => u.Username)" Sortable="true" InitialSortDirection="SortDirection.Ascending" IsDefaultSortColumn="true" />
+                        <TemplateColumn Title="Login">
+                            @if (!string.IsNullOrWhiteSpace(context.HashedPassword))
+                            {
+                                <span class="badge text-bg-secondary me-1">password</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(context.RsaPublicKey))
+                            {
+                                <span class="badge text-bg-info me-1">key</span>
+                            }
+                            @if (context.OnlyWhitelistedIps && context.WhitelistedIps is { Count: > 0 })
+                            {
+                                <span class="badge text-bg-warning" title="Only from whitelisted networks">IP</span>
+                            }
+                        </TemplateColumn>
+                        @if (form is null)
+                        {
+                            <TemplateColumn Title="Root directory" SortBy="@(GridSort<User>.ByAscending(u => u.UserRootDirectory))" Class="d-none d-md-table-cell">
+                                <span class="font-monospace-sm">@context.UserRootDirectory</span>
+                            </TemplateColumn>
+                            <TemplateColumn Title="Last login (UTC)" SortBy="@(GridSort<User>.ByAscending(u => u.LastSuccessfulLogin))" Class="d-none d-md-table-cell">
+                                @LastLogin(context.LastSuccessfulLogin)
+                            </TemplateColumn>
+                        }
+                        <TemplateColumn Title="" Align="Align.End">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary edit-user" title="Edit" aria-label="Edit @context.Username" @onclick="() => Edit(context)"><i class="bi bi-pencil"></i></button>
+                                <button type="button" class="btn btn-outline-danger delete-user" title="Delete" aria-label="Delete @context.Username" @onclick="() => AskDelete(context.Username)"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </TemplateColumn>
+                    </QuickGrid>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (form is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>@(form.IsNew ? "New user" : $"Edit {form.Username}")</span>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseForm"></button>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="user-form" id="user-form">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label class="form-label" for="username">User name</label>
+                            <InputText id="username" class="form-control" @bind-Value="form.Username" readonly="@(!form.IsNew)" autocomplete="off" />
+                            <ValidationMessage For="() => form.Username" />
+                            @if (!form.IsNew)
+                            {
+                                <div class="form-text">The user name cannot be changed. Create a new user instead.</div>
+                            }
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="root-directory">Root directory</label>
+                            <InputText id="root-directory" class="form-control font-monospace" @bind-Value="form.UserRootDirectory" placeholder="/srv/sftp/user" />
+                            <ValidationMessage For="() => form.UserRootDirectory" />
+                            @if (!string.IsNullOrWhiteSpace(form.UserRootDirectory) && !System.IO.Directory.Exists(form.UserRootDirectory.Trim()))
+                            {
+                                <div class="form-text text-warning-emphasis" id="root-missing"><i class="bi bi-exclamation-triangle"></i> This directory does not exist on the server. The user cannot work with files until it is created.</div>
+                            }
+                            else
+                            {
+                                <div class="form-text">A directory on the server. The user sees it as <code>/</code> and cannot leave it.</div>
+                            }
+                        </div>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
+                            <div class="small text-body-secondary mb-2">
+                                @if (form.HasPassword)
+                                {
+                                    <span>A password is set. Enter a new one to change it.</span>
+                                }
+                                else
+                                {
+                                    <span>No password is set.</span>
+                                }
+                                Passwords are stored as salted PBKDF2-SHA256 hashes.
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="new-password">New password</label>
+                                    <InputText id="new-password" type="password" class="form-control" @bind-Value="form.NewPassword" autocomplete="new-password" />
+                                    <ValidationMessage For="() => form.NewPassword" />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="confirm-password">Repeat the password</label>
+                                    <InputText id="confirm-password" type="password" class="form-control" @bind-Value="form.ConfirmPassword" autocomplete="new-password" />
+                                    <ValidationMessage For="() => form.ConfirmPassword" />
+                                </div>
+                            </div>
+                            @if (form.HasPassword)
+                            {
+                                <div class="form-check mt-2">
+                                    <InputCheckbox id="remove-password" class="form-check-input" @bind-Value="form.RemovePassword" />
+                                    <label class="form-check-label" for="remove-password">Remove the password (the user then logs in with a key only)</label>
+                                </div>
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Public key</legend>
+                            @if (KeyFingerprint is { } fingerprint)
+                            {
+                                <div class="small mb-2">RSA key <span class="font-monospace-sm" id="user-key-fingerprint">@fingerprint</span></div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(form.RsaPublicKey))
+                            {
+                                <div class="small text-warning-emphasis mb-2">The stored public key cannot be read.</div>
+                            }
+                            else
+                            {
+                                <div class="small text-body-secondary mb-2">No key. Generate one: the server keeps the public key, and your browser downloads the private key (<code>.pem</code>) once.</div>
+                            }
+                            @if (form.IsNew)
+                            {
+                                <div class="small text-body-secondary">Save the user first, then generate a key.</div>
+                            }
+                            else
+                            {
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="GenerateKeyAsync" disabled="@generatingKey" id="generate-key">
+                                        @if (generatingKey)
+                                        {
+                                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                                        }
+                                        <i class="bi bi-key"></i> @(string.IsNullOrWhiteSpace(form.RsaPublicKey) ? "Generate a key" : "Generate a new key")
+                                    </button>
+                                    @if (!string.IsNullOrWhiteSpace(form.RsaPublicKey))
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => removeKeyDialog.Open()" id="remove-key"><i class="bi bi-x-circle"></i> Remove the key</button>
+                                    }
+                                </div>
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">IP whitelist</legend>
+                            <div class="form-check form-switch mb-2">
+                                <InputCheckbox id="user-whitelist-mode" class="form-check-input" @bind-Value="form.OnlyWhitelistedIps" />
+                                <label class="form-check-label" for="user-whitelist-mode">This user may log in only from these networks</label>
+                            </div>
+                            <InputTextArea id="user-whitelist" class="form-control font-monospace" rows="3" @bind-Value="form.WhitelistedIps" placeholder="192.168.1.0/24" />
+                            <ValidationMessage For="() => form.WhitelistedIps" />
+                            <div class="form-text">CIDR networks or single addresses, one per line. With an empty list nothing is checked.</div>
+                        </fieldset>
+
+                        @if (!form.IsNew)
+                        {
+                            <p class="small text-body-secondary mb-3">Last successful login: <span id="last-login">@LastLogin(form.LastSuccessfulLogin)</span></p>
+                        }
+
+                        <div class="d-flex justify-content-between gap-2">
+                            <div>
+                                @if (!form.IsNew)
+                                {
+                                    <button type="button" class="btn btn-outline-danger" @onclick="() => AskDelete(form.Username)"><i class="bi bi-trash"></i> Delete</button>
+                                }
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="save-user"><i class="bi bi-floppy"></i> @(form.IsNew ? "Create user" : "Save user")</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete user" ConfirmText="Delete" OnConfirm="DeleteAsync">
+    Delete the user <strong>@pendingDelete</strong>? The user can no longer log in. The files in the root directory are not deleted.
+</ConfirmDialog>
+
+<ConfirmDialog @ref="removeKeyDialog" Title="Remove the public key" ConfirmText="Remove" OnConfirm="RemoveKey">
+    Remove the public key of <strong>@form?.Username</strong>? Key login stops working for this user.
+</ConfirmDialog>
+
+@code {
+    private List<User> users = new();
+    private string search = "";
+    private UserForm form;
+    private string pendingDelete;
+    private bool generatingKey;
+    private ConfirmDialog deleteDialog;
+    private ConfirmDialog removeKeyDialog;
+
+    private IQueryable<User> FilteredUsers =>
+        users.Where(u => string.IsNullOrWhiteSpace(search)
+                         || (u.Username ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)
+                         || (u.UserRootDirectory ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+             .AsQueryable();
+
+    private string KeyFingerprint => ServerInfo.GetUserKeyFingerprint(form?.RsaPublicKey);
+
+    protected override void OnInitialized() => LoadUsers();
+
+    private void LoadUsers() => users = SettingsRepository.GetAllUsers();
+
+    private void StartNew() => form = UserForm.New();
+
+    private void Edit(User user)
+    {
+        var stored = SettingsRepository.GetUser(user.Username);
+        form = stored is null ? null : UserForm.From(stored);
+    }
+
+    private void CloseForm() => form = null;
+
+    private async Task SaveAsync()
+    {
+        var username = form.Username.Trim();
+        if (form.IsNew)
+        {
+            var user = new User();
+            // Hash off the circuit's synchronization context: PBKDF2 with 600,000 iterations takes a moment.
+            await Task.Run(() => form.ApplyTo(user));
+            if (SettingsRepository.GetUser(username) is not null || !SettingsRepository.AddUser(user))
+            {
+                Toasts.ShowError($"The user {username} could not be created. Is the name already used?");
+                return;
+            }
+            Toasts.ShowSuccess($"The user {username} was created.");
+        }
+        else
+        {
+            var user = SettingsRepository.GetUser(username);
+            if (user is null)
+            {
+                Toasts.ShowError($"The user {username} does not exist any more.");
+                LoadUsers();
+                form = null;
+                return;
+            }
+            await Task.Run(() => form.ApplyTo(user));
+            if (!SettingsRepository.UpdateUser(user))
+            {
+                Toasts.ShowError($"The user {username} could not be saved.");
+                return;
+            }
+            Toasts.ShowSuccess($"The user {username} was saved.");
+        }
+
+        LoadUsers();
+        form = UserForm.From(SettingsRepository.GetUser(username));
+    }
+
+    private void AskDelete(string username)
+    {
+        pendingDelete = username;
+        deleteDialog.Open();
+    }
+
+    private Task DeleteAsync()
+    {
+        if (SettingsRepository.RemoveUser(pendingDelete))
+        {
+            Toasts.ShowSuccess($"The user {pendingDelete} was deleted.");
+            if (form?.Username == pendingDelete)
+                form = null;
+        }
+        else
+        {
+            Toasts.ShowError($"The user {pendingDelete} could not be deleted.");
+        }
+        LoadUsers();
+        return Task.CompletedTask;
+    }
+
+    private async Task GenerateKeyAsync()
+    {
+        var user = SettingsRepository.GetUser(form.Username);
+        if (user is null)
+            return;
+
+        generatingKey = true;
+        try
+        {
+            // The same format as before: a 4096-bit RSA key, the public part as a base64 CSP blob, the private key as PEM.
+            var (publicKey, privateKeyPem) = await Task.Run(() =>
+            {
+                using var csp = new System.Security.Cryptography.RSACryptoServiceProvider(4096);
+                return (Convert.ToBase64String(csp.ExportCspBlob(false)), RSAConverter.ExportPrivateKey(csp));
+            });
+
+            user.RsaPublicKey = publicKey;
+            if (!SettingsRepository.UpdateUser(user))
+            {
+                Toasts.ShowError($"The key of {user.Username} could not be saved.");
+                return;
+            }
+
+            var downloaded = await JS.SaveFile(System.Text.Encoding.UTF8.GetBytes(privateKeyPem), $"{user.Username}.pem");
+            form.RsaPublicKey = publicKey;
+            LoadUsers();
+            if (!downloaded)
+            {
+                Toasts.ShowError($"The new key of {user.Username} was saved, but the browser could not download the private key. Generate a new key.");
+                return;
+            }
+            Toasts.ShowSuccess($"A new key was saved for {user.Username}. Keep the downloaded .pem file safe; it is not stored on the server.");
+        }
+        finally
+        {
+            generatingKey = false;
+        }
+    }
+
+    private void RemoveKey()
+    {
+        var user = SettingsRepository.GetUser(form.Username);
+        if (user is null)
+            return;
+        user.RsaPublicKey = null;
+        if (SettingsRepository.UpdateUser(user))
+        {
+            form.RsaPublicKey = null;
+            LoadUsers();
+            Toasts.ShowSuccess($"The key of {user.Username} was removed.");
+        }
+        else
+        {
+            Toasts.ShowError($"The key of {user.Username} could not be removed.");
+        }
+    }
+
+    private static string LastLogin(DateTime value) =>
+        value == default ? "never" : value.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+}

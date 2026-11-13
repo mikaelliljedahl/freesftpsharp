@@ -11,17 +11,23 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Log out - FxSshSftpServer</title>
-    <link rel="stylesheet" href="~/css/bootstrap/bootstrap.min.css" />
-    <link href="~/css/site.css" rel="stylesheet" />
+    <script src="~/js/theme.js"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
 </head>
-<body>
-    <div class="container" style="max-width: 24rem; margin-top: 4rem;">
-        <h1 class="h3 mb-3">Log out</h1>
-        <p>Logged in as @User.Identity?.Name.</p>
-        <form method="post">
-            <button type="submit" class="btn btn-primary">Log out</button>
-            <a class="btn btn-link" href="~/">Cancel</a>
-        </form>
-    </div>
+<body class="d-flex align-items-center min-vh-100 py-4">
+    <main class="container" style="max-width: 24rem;">
+        <div class="card">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-3">Log out</h1>
+                <p>Logged in as <strong>@User.Identity?.Name</strong>.</p>
+                <form method="post" class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Log out</button>
+                    <a class="btn btn-outline-secondary" href="~/">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </main>
 </body>
 </html>

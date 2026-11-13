@@ -12,6 +12,18 @@ You are welcome to create PR's. The planned work is described in the [technical 
 `FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
 The UI has one local admin account. It is separate from the SFTP users.
 
+The UI is a Blazor Web App (interactive server rendering) with Bootstrap 5.3 and Bootstrap Icons. All CSS, fonts and
+scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It has these pages:
+
+| Page | What it shows and changes |
+| --- | --- |
+| Dashboard (`/`) | The effective listen port and bind addresses (and whether they come from the configuration or the database), the number of users, the active bans, the host key fingerprints |
+| Users (`/users`) | A searchable user list; add, edit and delete (with a confirmation) users: root directory (with a warning when it does not exist), password (salted PBKDF2), a generated RSA key pair (the browser downloads the private key once; the fingerprint is shown), the per-user IP whitelist (CIDR, validated), the last successful login |
+| Server settings (`/general`) | Listen port and bind addresses (with a note when `SshServer:Port` / `SshServer:BindToAddress` override them), server banner, idle timeout, `EnableCommand`, `EnableDirectTcpIp` (with a security warning), the host key fingerprints (never the private keys) and the algorithms the server offers |
+| IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
+
+The UI has a dark mode (the half-circle button in the top bar; it follows the OS by default) and works on phone widths.
+
 ### Set the admin password
 
 1. Create a password hash (salted PBKDF2-SHA256, 600,000 iterations). The command asks for the password twice
@@ -103,8 +115,6 @@ OpenSSH connects with its default settings.
 
 
 ### Features planned for the future
-- whitelist IP/ip-range (CIDR) per account. (Implemented in server but not in the admin UI)
-- Global blacklist/whitelist, `BindToAddress` and the auto-bans in the admin UI (#42; implemented in the server)
 - Option to use cloud Blob storage as sftp root. Filesystem will be an interface in the SFTP engine, then both local file system or blob storage can be used. Controlled using Dependency Injection
 - More settings databases through EF Core (e.g. SQL Server / Azure SQL), selected by configuration
 - SCP subsystem

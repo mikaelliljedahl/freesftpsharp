@@ -1,52 +1,132 @@
-@import url('open-iconic/font/css/open-iconic-bootstrap.min.css');
+/* FreeSftpSharp admin UI. Bootstrap 5.3 does the rest; these rules only build the shell. */
 
-html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+:root {
+    --app-sidebar-width: 15rem;
 }
 
-a, .btn-link {
-    color: #0366d6;
+body {
+    background-color: var(--bs-tertiary-bg);
 }
 
-.btn-primary {
+.app-topbar {
+    background-color: var(--bs-body-bg);
+    min-height: 3.5rem;
+}
+
+.app-body {
+    display: flex;
+    min-height: calc(100vh - 3.5rem);
+}
+
+.app-sidebar {
+    background-color: var(--bs-body-bg);
+    width: var(--app-sidebar-width);
+    flex-shrink: 0;
+}
+
+@media (min-width: 992px) {
+    .app-sidebar > .nav {
+        position: sticky;
+        top: 3.5rem;
+    }
+}
+
+.app-sidebar .nav-link {
+    color: var(--bs-body-color);
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+}
+
+.app-sidebar .nav-link.active {
     color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
 }
 
-.content {
-    padding-top: 1.1rem;
+.app-main {
+    flex-grow: 1;
+    min-width: 0; /* lets wide tables scroll inside their card instead of the page */
 }
 
-.valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
+@media (max-width: 991.98px) {
+    .app-sidebar {
+        position: fixed;
+        top: 3.5rem;
+        bottom: 0;
+        left: 0;
+        z-index: 1040;
+        transform: translateX(-100%);
+        transition: transform .2s ease-in-out;
+        overflow-y: auto;
+    }
+
+    .app-sidebar.show {
+        transform: none;
+    }
+
+    .app-sidebar-backdrop {
+        position: fixed;
+        inset: 3.5rem 0 0 0;
+        z-index: 1030;
+        background-color: rgba(0, 0, 0, .4);
+    }
 }
 
-.invalid {
-    outline: 1px solid red;
+.card {
+    box-shadow: var(--bs-box-shadow-sm);
+}
+
+.font-monospace-sm {
+    font-family: var(--bs-font-monospace);
+    font-size: .85rem;
+    word-break: break-all;
+}
+
+/* Blazor validation state on top of the Bootstrap form controls. */
+.form-control.modified.valid, .form-select.modified.valid {
+    border-color: var(--bs-success);
+}
+
+.form-control.invalid, .form-select.invalid {
+    border-color: var(--bs-danger);
 }
 
 .validation-message {
-    color: red;
+    color: var(--bs-danger);
+    font-size: .875em;
+    margin-top: .25rem;
+}
+
+/* QuickGrid inside a Bootstrap table. */
+.quickgrid-table {
+    margin-bottom: 0;
+}
+
+.quickgrid-table th a.col-title {
+    color: inherit;
+    text-decoration: none;
+}
+
+[data-bs-theme=dark] .quickgrid-table .sort-indicator {
+    filter: invert(1);
+}
+
+.toast-stack {
+    z-index: 1090;
+}
+
+.modal-open-backdrop {
+    background-color: rgba(0, 0, 0, .5);
 }
 
 #blazor-error-ui {
-    background: lightyellow;
-    bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
     display: none;
-    left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
     position: fixed;
+    bottom: 0;
+    left: 0;
     width: 100%;
-    z-index: 1000;
+    z-index: 2000;
 }
 
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 0.75rem;
-        top: 0.5rem;
-    }
-
-
+#blazor-error-ui .reload {
+    margin-left: .5rem;
+}

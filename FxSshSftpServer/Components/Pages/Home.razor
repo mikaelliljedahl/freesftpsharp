@@ -1,0 +1,133 @@
+@page "/"
+@using FxSsh.SshServerModule
+@using Microsoft.Extensions.Options
+@inject ISettingsRepository SettingsRepository
+@inject IIpBanService BanService
+@inject IOptions<SshServerOptions> ListenOptions
+
+<PageTitle>Dashboard - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Dashboard</h1>
+        <p class="text-body-secondary mb-0">The state of the SSH/SFTP server.</p>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <a class="card h-100 text-decoration-none" href="general">
+            <div class="card-body">
+                <div class="text-body-secondary small text-uppercase">Listen port</div>
+                <div class="fs-3 fw-semibold" id="dashboard-port">@(listen?.Port.ToString() ?? "invalid")</div>
+                <div class="small text-body-secondary">
+                    @if (listen is null)
+                    {
+                        <span class="text-danger">@listenError</span>
+                    }
+                    else
+                    {
+                        <span>from the @listen.PortSource</span>
+                    }
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <a class="card h-100 text-decoration-none" href="general">
+            <div class="card-body">
+                <div class="text-body-secondary small text-uppercase">Bind addresses</div>
+                <div class="fs-5 fw-semibold text-truncate">@BindText</div>
+                <div class="small text-body-secondary">@(listen is null ? "" : $"from the {listen.BindSource}")</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <a class="card h-100 text-decoration-none" href="users">
+            <div class="card-body">
+                <div class="text-body-secondary small text-uppercase">SFTP users</div>
+                <div class="fs-3 fw-semibold" id="dashboard-users">@userCount</div>
+                <div class="small text-body-secondary">Manage users</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <a class="card h-100 text-decoration-none" href="access">
+            <div class="card-body">
+                <div class="text-body-secondary small text-uppercase">Active bans</div>
+                <div class="fs-3 fw-semibold" id="dashboard-bans">@banCount</div>
+                <div class="small text-body-secondary">Auto-ban is @(autoBanOn ? "on" : "off")</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-shield-lock"></i> IP access</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span>Blacklisted networks</span><span class="badge text-bg-secondary">@(settings?.BlacklistedIps?.Count ?? 0)</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span>Global whitelist mode</span>
+                    <span class="badge @(settings?.OnlyWhitelistedIps == true ? "text-bg-success" : "text-bg-secondary")">@(settings?.OnlyWhitelistedIps == true ? "on" : "off")</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span>Idle timeout</span><span>@(settings?.IdleTimeout > 0 ? $"{settings.IdleTimeout} s" : "none (keepalive)")</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-key"></i> Host keys</div>
+            <ul class="list-group list-group-flush">
+                @foreach (var key in hostKeys)
+                {
+                    <li class="list-group-item">
+                        <div class="fw-semibold">@key.KeyType</div>
+                        @if (key.Fingerprint != null)
+                        {
+                            <div class="font-monospace-sm">@key.Fingerprint</div>
+                        }
+                        else
+                        {
+                            <div class="small text-warning-emphasis">@key.Error</div>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ServerSettings settings;
+    private EffectiveListenSettings listen;
+    private string listenError;
+    private int userCount;
+    private int banCount;
+    private bool autoBanOn;
+    private IReadOnlyList<HostKeyFingerprint> hostKeys = Array.Empty<HostKeyFingerprint>();
+
+    private string BindText => listen is null ? "-" : listen.BindToAddress.Count == 0 ? "all addresses" : string.Join(", ", listen.BindToAddress);
+
+    protected override void OnInitialized()
+    {
+        settings = SettingsRepository.ServerSettings;
+        try
+        {
+            listen = EffectiveListenSettings.Resolve(settings, ListenOptions.Value);
+        }
+        catch (InvalidOperationException ex)
+        {
+            listenError = ex.Message;
+        }
+        userCount = SettingsRepository.GetAllUsers().Count;
+        banCount = BanService.GetActiveBans().Count;
+        autoBanOn = settings.MaxLoginAttemptsBeforeBan > 0 && settings.LoginFailureWindowSeconds > 0 && settings.BanDurationSeconds > 0;
+        hostKeys = ServerInfo.GetHostKeyFingerprints(settings);
+    }
+}

@@ -1,0 +1,205 @@
+@page "/general"
+@using FxSsh.SshServerModule
+@using Microsoft.Extensions.Options
+@inject ISettingsRepository SettingsRepository
+@inject IOptions<SshServerOptions> ListenOptions
+@inject ToastService Toasts
+
+<PageTitle>Server settings - FreeSftpSharp admin</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-0">Server settings</h1>
+    <p class="text-body-secondary mb-0">The SSH/SFTP server settings that are stored in the settings database.</p>
+</div>
+
+<EditForm Model="form" OnValidSubmit="SaveAsync" FormName="server-settings" id="server-settings-form">
+    <DataAnnotationsValidator />
+
+    <div class="row g-4">
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold"><i class="bi bi-ethernet"></i> Network</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="listen-port">Listen port</label>
+                        <InputNumber id="listen-port" class="form-control" @bind-Value="form.ListenToPort" />
+                        <ValidationMessage For="() => form.ListenToPort" />
+                        <div class="form-text">Change takes effect after a restart of the server.</div>
+                        @if (PortOverride != null)
+                        {
+                            <OverrideNote>
+                                Overridden by the configuration (<code>SshServer:Port</code>): the server listens on port
+                                <strong>@PortOverride</strong>. The stored value is used only when the configuration value is removed.
+                            </OverrideNote>
+                        }
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label" for="bind-addresses">Bind addresses</label>
+                        <InputTextArea id="bind-addresses" class="form-control font-monospace" rows="3" @bind-Value="form.BindToAddress"
+                                       placeholder="Empty: all addresses (IPv4 and IPv6)" />
+                        <ValidationMessage For="() => form.BindToAddress" />
+                        <div class="form-text">
+                            One IP address per line, for example <code>127.0.0.1</code> or <code>::1</code>. Empty or <code>::</code>
+                            listens on all addresses. Change takes effect after a restart.
+                        </div>
+                        @if (BindOverride != null)
+                        {
+                            <OverrideNote>
+                                Overridden by the configuration (<code>SshServer:BindToAddress</code>): the server listens on
+                                <strong>@BindOverride</strong>.
+                            </OverrideNote>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold"><i class="bi bi-sliders"></i> Sessions</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="server-banner">Server banner</label>
+                        <div class="input-group">
+                            <span class="input-group-text font-monospace">SSH-2.0-</span>
+                            <InputText id="server-banner" class="form-control" @bind-Value="form.ServerBanner" placeholder="FreeSftpSharp" />
+                        </div>
+                        <ValidationMessage For="() => form.ServerBanner" />
+                        <div class="form-text">The identification string that clients see. Empty: <code>SSH-2.0-FreeSftpSharp</code>. Change takes effect after a restart.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="idle-timeout">Idle timeout (seconds)</label>
+                        <InputNumber id="idle-timeout" class="form-control" @bind-Value="form.IdleTimeout" />
+                        <ValidationMessage For="() => form.IdleTimeout" />
+                        <div class="form-text">A client that sends nothing for this time is disconnected. 0: no timeout; the server sends keepalive probes instead.</div>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <InputCheckbox id="enable-command" class="form-check-input" @bind-Value="form.EnableCommand" />
+                        <label class="form-check-label" for="enable-command">Accept shell and exec requests</label>
+                        <div class="form-text">Running commands is not implemented; with this on, the server only echoes the command and closes the channel. Applies to new sessions.</div>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        <InputCheckbox id="enable-direct-tcpip" class="form-check-input" @bind-Value="form.EnableDirectTcpIp" />
+                        <label class="form-check-label" for="enable-direct-tcpip">Allow TCP port forwarding (direct-tcpip)</label>
+                    </div>
+                    @if (form.EnableDirectTcpIp)
+                    {
+                        <div class="alert alert-danger d-flex gap-2 py-2 px-3 mt-2 mb-0 small" role="alert" id="direct-tcpip-warning">
+                            <i class="bi bi-exclamation-octagon-fill"></i>
+                            <div>
+                                Security warning: every SFTP user can then open TCP connections from this server to any host, also
+                                into your internal network. Turn it on only when you need it.
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 my-4">
+        <button type="button" class="btn btn-outline-secondary" @onclick="Load">Reset</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-floppy"></i> Save settings</button>
+    </div>
+</EditForm>
+
+<div class="row g-4">
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-key"></i> Host keys</div>
+            <div class="card-body">
+                <p class="small text-body-secondary">The server makes its host keys itself. Only the fingerprints are shown; clients show the same value when they connect the first time.</p>
+                @foreach (var key in hostKeys)
+                {
+                    <div class="border rounded p-3 mb-2 host-key">
+                        <div class="d-flex justify-content-between flex-wrap gap-2">
+                            <span class="fw-semibold">@key.KeyType @(key.KeySize > 0 ? $"({key.KeySize} bit)" : "")</span>
+                            <span>
+                                @foreach (var algorithm in key.Algorithms)
+                                {
+                                    <span class="badge text-bg-secondary ms-1">@algorithm</span>
+                                }
+                            </span>
+                        </div>
+                        @if (key.Fingerprint != null)
+                        {
+                            <div class="font-monospace-sm mt-2">@key.Fingerprint</div>
+                        }
+                        else
+                        {
+                            <div class="small text-warning-emphasis mt-2">@key.Error</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-cpu"></i> Algorithms</div>
+            <div class="card-body">
+                <p class="small text-body-secondary">What the server offers, in order of preference. Weak algorithms (ssh-rsa, SHA-1 key exchange, CBC, MD5/SHA-1 MACs) are not offered.</p>
+                <dl class="row mb-0 small">
+                    @foreach (var (name, values) in AlgorithmGroups)
+                    {
+                        <dt class="col-sm-4">@name</dt>
+                        <dd class="col-sm-8">
+                            @foreach (var value in values)
+                            {
+                                <span class="badge bg-body-secondary text-body border me-1 mb-1 font-monospace fw-normal">@value</span>
+                            }
+                        </dd>
+                    }
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ServerSettingsForm form = new();
+    private IReadOnlyList<HostKeyFingerprint> hostKeys = Array.Empty<HostKeyFingerprint>();
+    private readonly ServerAlgorithms algorithms = ServerInfo.GetAlgorithms();
+
+    private string PortOverride => string.IsNullOrWhiteSpace(ListenOptions.Value?.Port) ? null : ListenOptions.Value.Port.Trim();
+
+    private string BindOverride =>
+        ListenOptions.Value?.BindToAddress is { Count: > 0 } bind && bind.Any(e => !string.IsNullOrWhiteSpace(e))
+            ? string.Join(", ", bind)
+            : null;
+
+    private IEnumerable<(string, IReadOnlyList<string>)> AlgorithmGroups => new (string, IReadOnlyList<string>)[]
+    {
+        ("Host key", algorithms.HostKey),
+        ("Key exchange", algorithms.KeyExchange),
+        ("Encryption", algorithms.Encryption),
+        ("MAC", algorithms.Mac),
+        ("Compression", algorithms.Compression),
+    };
+
+    protected override void OnInitialized() => Load();
+
+    private void Load()
+    {
+        var settings = SettingsRepository.ServerSettings;
+        form = ServerSettingsForm.From(settings);
+        hostKeys = ServerInfo.GetHostKeyFingerprints(settings);
+    }
+
+    private Task SaveAsync()
+    {
+        // Apply the form to the stored settings, so fields of other pages (host keys, IP access) stay as they are.
+        var settings = SettingsRepository.ServerSettings;
+        form.ApplyTo(settings);
+        if (SettingsRepository.UpdateServerSettings(settings))
+        {
+            Toasts.ShowSuccess("The server settings were saved. Port, bind addresses and banner take effect after a restart.");
+            Load();
+        }
+        else
+        {
+            Toasts.ShowError("The server settings could not be saved.");
+        }
+        return Task.CompletedTask;
+    }
+}

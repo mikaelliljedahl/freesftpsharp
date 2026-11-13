@@ -1,0 +1,9 @@
+@* Shown under a setting whose stored value is overridden by the configuration (SshServer:Port, SshServer:BindToAddress). *@
+<div class="alert alert-warning d-flex gap-2 py-2 px-3 mt-2 mb-0 small override-note" role="note">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <div>@ChildContent</div>
+</div>
+
+@code {
+    [Parameter] public RenderFragment ChildContent { get; set; }
+}

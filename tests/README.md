@@ -67,6 +67,10 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Unit/LoginThrottleTests` | unit | lockout after N failed logins, the lockout ends, success clears the failures (`FakeTimeProvider`) |
 | `Unit/AdminPasswordCommandTests` | unit | `--hash-admin-password` prints a hash that verifies, rejects short passwords |
 | `Logging/LoggingConfigurationTests` | unit + in-memory web host | the Serilog section of both `appsettings.json` files loads (default Information, Microsoft/System/Microsoft.AspNetCore = Warning, Microsoft.Hosting.Lifetime = Information), relative log paths go to the app directory; a normal start of the web host logs no Warning or higher (in-memory sink) |
+| `EndToEnd/ServerInfoTests` | end-to-end (SSH.NET) + unit | `ServerInfo` (admin UI): each host key fingerprint equals the one SSH.NET receives, unreadable keys give an error text, the offered algorithms, user key fingerprints |
+| `WebUi/SettingsPagesTests` | bUnit | server settings page: loads and saves (other settings stay), port and bind address validation, the override notes for `SshServer:Port` / `SshServer:BindToAddress`, host key fingerprints without the private key, direct-tcpip warning; IP access page: saves blacklist, whitelist and auto-ban settings, rejects invalid CIDR entries, lists the active bans and unbans one, expired bans |
+| `WebUi/UsersPageTests` | bUnit | users page: list and search, create with a hashed password and a whitelist, invalid CIDR, user name and password are rejected, missing root directory warning, edit keeps the password, last login and key fingerprint, delete only after confirmation, key generation (stored public key, downloaded private key), key removal |
+| `WebUi/AdminUiPagesTests` | in-memory web host | after a login every page renders (prerendered) with the stored users, settings and bans; `/access` needs a login; the local Bootstrap, icon and script files are served without a login; `blazor.web.js` is served; Radzen is not referenced; with `SshServer:Port` / `SshServer:BindToAddress` configured, the settings page and the dashboard show the override |
 | `EndToEnd/ZeroConfigStartTests` | end-to-end (process, SSH.NET) | the built `ServerConsoleApp` starts from a copy of its build output in an empty temp directory with only `--port`: it creates `freesftpsharp.db` with the RSA and ECDSA host keys and the log file itself, there is no default user, a user added with `SqlSettingsRepository.AddUser` can connect with SSH.NET, upload and list a file, and the start logs no Error or Fatal (console and log file). The comment of the class says what a new local user has to do |
 | `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
 
@@ -87,6 +91,9 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
   directory link falls back to a junction (no privilege needed), and a test that needs a file link is skipped.
   On Linux nothing is skipped.
 - `Infrastructure/OpenSshSftp` runs the `sftp` client (see below).
+- `WebUi/AdminUiComponentContext` is the bUnit context for the admin UI pages: an `InMemorySettingsRepository`, the
+  real `LoginBanTracker` with a `FakeTimeProvider` (`Ban(address)` bans an address), the toast service and the listen
+  options. JavaScript interop is in loose mode.
 - `Infrastructure/SlowDownstreamProxy` is a TCP proxy that slows down the data from the server to the client, so
   the server's channel window fills up. Disposing it drops the connection without an SSH close.
 - `Sftp/SftpEngineClient` drives the upstream SFTP engine (`SftpService`) with our `SftpFileSystemAdapter` without

@@ -11,28 +11,35 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Log in - FxSshSftpServer</title>
-    <link rel="stylesheet" href="~/css/bootstrap/bootstrap.min.css" />
-    <link href="~/css/site.css" rel="stylesheet" />
+    <script src="~/js/theme.js"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
 </head>
-<body>
-    <div class="container" style="max-width: 24rem; margin-top: 4rem;">
-        <h1 class="h3 mb-3">FxSshSftpServer admin</h1>
-        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-        {
-            <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
-        }
-        <form method="post">
-            <input type="hidden" asp-for="ReturnUrl" />
-            <div class="form-group">
-                <label asp-for="UserName">User name</label>
-                <input asp-for="UserName" class="form-control" autocomplete="username" autofocus required />
+<body class="d-flex align-items-center min-vh-100 py-4">
+    <main class="container" style="max-width: 24rem;">
+        <div class="card">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-1 d-flex align-items-center gap-2"><i class="bi bi-hdd-network text-primary"></i> FreeSftpSharp</h1>
+                <p class="text-body-secondary mb-4">Log in to the admin UI.</p>
+                @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+                }
+                <form method="post">
+                    <input type="hidden" asp-for="ReturnUrl" />
+                    <div class="mb-3">
+                        <label asp-for="UserName" class="form-label">User name</label>
+                        <input asp-for="UserName" class="form-control" autocomplete="username" autofocus required />
+                    </div>
+                    <div class="mb-4">
+                        <label asp-for="Password" class="form-label">Password</label>
+                        <input asp-for="Password" class="form-control" autocomplete="current-password" required />
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Log in</button>
+                </form>
             </div>
-            <div class="form-group">
-                <label asp-for="Password">Password</label>
-                <input asp-for="Password" class="form-control" autocomplete="current-password" required />
-            </div>
-            <button type="submit" class="btn btn-primary">Log in</button>
-        </form>
-    </div>
+        </div>
+    </main>
 </body>
 </html>
