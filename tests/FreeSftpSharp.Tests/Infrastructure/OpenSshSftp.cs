@@ -83,10 +83,20 @@ public static class OpenSshSftp
     /// </summary>
     public static Task<Result> RunWithOptionsAsync(SftpServerFixture server, string localDirectory, string[] sshOptions, params string[] commands)
     {
-        return RunAsync(server, localDirectory, DefaultExitGracePeriod, sshOptions, commands);
+        return RunAsync(server, localDirectory, DefaultExitGracePeriod, sshOptions.SelectMany(o => new[] { "-o", o }).ToArray(), commands);
     }
 
-    private static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, string[] sshOptions, string[] commands)
+    /// <summary>
+    /// Like <see cref="RunAsync(SftpServerFixture, string, string[])"/>, with extra sftp command line
+    /// arguments such as "-R", "256" (number of requests in flight) or "-B", "32768" (request size), and
+    /// another port than the server port (for example a proxy in front of the server).
+    /// </summary>
+    public static Task<Result> RunWithArgumentsAsync(SftpServerFixture server, string localDirectory, int port, string[] sftpArguments, params string[] commands)
+    {
+        return RunAsync(server, localDirectory, DefaultExitGracePeriod, sftpArguments, commands, port);
+    }
+
+    private static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, string[] extraArguments, string[] commands, int? port = null)
     {
         var askPass = CreateAskPassScript(server);
 
@@ -99,16 +109,13 @@ public static class OpenSshSftp
             UseShellExecute = false,
         };
 
-        foreach (var option in sshOptions)
-        {
-            startInfo.ArgumentList.Add("-o");
-            startInfo.ArgumentList.Add(option);
-        }
+        foreach (var argument in extraArguments)
+            startInfo.ArgumentList.Add(argument);
 
         foreach (var argument in new[]
                  {
                      "-F", "none", // do not read the user's ~/.ssh/config
-                     "-P", server.Port.ToString(),
+                     "-P", (port ?? server.Port).ToString(),
                      "-o", "StrictHostKeyChecking=no",
                      "-o", "UserKnownHostsFile=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"),
                      "-o", "PreferredAuthentications=password",

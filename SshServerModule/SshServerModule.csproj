@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The test project uses SftpSubsystem.NormalizePath, OnInput and OnOutput. -->
+    <!-- The test project uses internal members (for example HostKeys, UserLogics, SessionTimeouts). -->
     <InternalsVisibleTo Include="FreeSftpSharp.Tests" />
   </ItemGroup>
 
