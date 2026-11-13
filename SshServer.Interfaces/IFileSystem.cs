@@ -47,7 +47,28 @@ public interface IFileSystem
     /// permissions applies what it can.
     /// </summary>
     void SetPermissions(string path, uint mode);
+
+    /// <summary>
+    /// Renames a file or directory with POSIX rename semantics: an existing file at <paramref name="newPath"/>
+    /// is replaced, atomically where the storage allows it (SFTP posix-rename@openssh.com). A directory is
+    /// never replaced. Throws <see cref="FileNotFoundException"/> when <paramref name="oldPath"/> does not
+    /// exist, <see cref="IOException"/> when the target cannot be replaced, and
+    /// <see cref="UnauthorizedAccessException"/> for the user root.
+    /// </summary>
+    void RenameReplacing(string oldPath, string newPath);
+
+    /// <summary>
+    /// The size and free space of the storage that holds <paramref name="path"/> (SFTP statvfs@openssh.com),
+    /// or null when the storage cannot tell. Throws <see cref="FileNotFoundException"/> when the path does
+    /// not exist.
+    /// </summary>
+    StorageSpace? GetStorageSpace(string path);
 }
+
+/// <param name="TotalBytes">The size of the storage.</param>
+/// <param name="FreeBytes">The free space.</param>
+/// <param name="AvailableBytes">The free space that this user can use.</param>
+public sealed record StorageSpace(ulong TotalBytes, ulong FreeBytes, ulong AvailableBytes);
 
 /// <param name="Type">File or directory.</param>
 /// <param name="Length">The size in bytes; 0 for a directory.</param>
