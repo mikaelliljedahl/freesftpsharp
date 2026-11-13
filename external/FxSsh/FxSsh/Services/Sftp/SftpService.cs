@@ -179,29 +179,58 @@ namespace FxSsh.Services.Sftp
         {
             ArgumentNullException.ThrowIfNull(channel);
 
+            // Outbound packets go through one queue and one pump task, so
+            // they reach the channel whole and in order. SendDataAsync waits
+            // while the peer's window is full; the WINDOW_ADJUST arrives on
+            // the same receive loop that runs OnData, so the loop must not
+            // wait. With one fire-and-forget send per packet, the senders
+            // woken by the same WINDOW_ADJUST interleaved their chunks and
+            // corrupted the SFTP stream.
+            var outbound = System.Threading.Channels.Channel.CreateUnbounded<byte[]>(
+                new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
+
             channel.DataReceived += (_, data) => OnData(data);
-            channel.EofReceived += (_, _) =>
-            {
-                // Peer finished sending (RFC 4254 6.2): echo EOF, then close
-                // our side carrying exit-status 0 (RFC 4254 6.10) so clients
-                // such as scp observe a successful subsystem exit instead of
-                // an unknown (-1) status. The engine's OnClose ->
-                // CloseReceived(0) path then finds the channel already closed.
-                channel.SendEof();
-                channel.SendClose(0);
-            };
+            // Peer finished sending (RFC 4254 6.2): the pump sends the
+            // queued responses, then echoes EOF and closes our side carrying
+            // exit-status 0 (RFC 4254 6.10) so clients such as scp observe a
+            // successful subsystem exit instead of an unknown (-1) status.
+            channel.EofReceived += (_, _) => outbound.Writer.TryComplete();
             channel.CloseReceived += (_, _) => OnClose();
 
-            DataReceived += async (_, packet) =>
+            DataReceived += (_, packet) => outbound.Writer.TryWrite(packet);
+            CloseReceived += (_, exitCode) =>
             {
-                // Fire-and-forget with teardown swallowing: after the peer
-                // disconnects, SendDataAsync throws ObjectDisposedException,
-                // which must not escape onto the thread pool.
-                try { await channel.SendDataAsync(packet); }
-                catch (ObjectDisposedException) { }
-                catch (Exception) { }
+                outbound.Writer.TryComplete();
+                channel.SendClose(exitCode);
             };
-            CloseReceived += (_, exitCode) => channel.SendClose(exitCode);
+
+            _ = PumpAsync(channel, outbound.Reader);
+        }
+
+        private static async Task PumpAsync(SessionChannel channel, System.Threading.Channels.ChannelReader<byte[]> outbound)
+        {
+            try
+            {
+                await foreach (var packet in outbound.ReadAllAsync())
+                {
+                    // After our CLOSE no data may follow (RFC 4254 5.3).
+                    if (channel.ServerClosed || channel.IsForceClosed)
+                        return;
+                    await channel.SendDataAsync(packet);
+                }
+
+                if (!channel.ServerClosed && !channel.IsForceClosed)
+                {
+                    channel.SendEof();
+                    channel.SendClose(0);
+                }
+            }
+            catch (Exception)
+            {
+                // Teardown: after the peer disconnects, SendDataAsync throws
+                // ObjectDisposedException, which must not escape onto the
+                // thread pool.
+            }
         }
 
         /// <summary>
