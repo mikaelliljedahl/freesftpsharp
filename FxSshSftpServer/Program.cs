@@ -12,7 +12,7 @@ using Serilog.Sinks.HtmlFile;
 
 using FxSsh.SshServerModule;
 
-using SshServer.Settings.LiteDb;
+using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,8 +41,8 @@ builder.Services.AddServerSideBlazor();
 Log.Information("AddHostedService<HostedServer>...");
 builder.Services.AddHostedService<HostedServer>();
 
-Log.Warning("AddSshServerSettingsLiteDb...");
-builder.Services.AddSshServerSettingsLiteDb();
+Log.Warning("AddSshServerSettings...");
+builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Warning("AddLocalFileSystemHosting...");
 builder.Services.AddLocalFileSystemHosting();
 

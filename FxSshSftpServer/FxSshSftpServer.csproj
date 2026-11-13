@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SshServer.Filesystem.LocalDisk\SshServer.Filesystem.LocalDisk.csproj" />
-    <ProjectReference Include="..\SshServer.Settings.LiteDb\SshServer.Settings.LiteDb.csproj" />
+    <ProjectReference Include="..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
   </ItemGroup>
 

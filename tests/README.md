@@ -30,6 +30,9 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Unit/LocalFileSystemTests` | unit | `NormalizeVirtualPath` and `GetPhysicalPath` with traversal inputs (`/../../etc/passwd`, `..\..\config.db`, `/a/b/../../../../c`, `//double//slash`, `/.../x`, empty, `.`), a sibling directory with the same prefix as the root, the root cannot be removed or moved |
 | `Unit/SftpSubsystemNormalizePathTests` | unit | `SftpSubsystem.NormalizePath` (the SSH_FXP_REALPATH canonical path) |
 | `Unit/SftpFramingTests` | unit | `SftpSubsystem.OnInput` framing: one packet split over several calls, several packets in one call, a partial packet at the end; one response for each request |
+| `Settings/SqlSettingsRepositoryTests` | unit (in-memory SQLite) | default settings of a new database, update of settings, add/get/update/remove of users with all fields, unknown users, case-insensitive duplicate usernames, persistence in a file |
+| `Settings/LiteDbImportTests` | unit (temp files) | a `config.db` made with the LiteDB repository is imported into a new SQLite database (settings, host key, users), the file is not changed, no second import, no `config.db` gives new defaults |
+| `Settings/SettingsConfigurationTests` | unit | `Settings:Provider`, `ConnectionStrings:Settings` and `Settings:LiteDbPath`: defaults, paths relative to the app directory, LiteDb selection, unknown provider, `AddSshServerSettings` registrations |
 | `EndToEnd/SshNetAuthenticationTests` | end-to-end (SSH.NET) | connect, wrong password is rejected |
 | `EndToEnd/SshNetFileOperationTests` | end-to-end (SSH.NET) | mkdir, 3 MB upload/download with byte compare, list, stat of file and directory, missing paths, overwrite with a smaller file, empty file, append, rename, delete, rmdir, the session survives a failed open |
 | `EndToEnd/SshNetPathTraversalTests` | end-to-end (SSH.NET) | `/../config.db` cannot be read, an upload to `/../x` lands in the user root, `ListDirectory("/..")` lists the root |
@@ -43,8 +46,7 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
   creates `<temp>/root` (the user root, `/` for the client) and `<temp>/config.db` (a secret file outside the
   root, `SecretFilePath` / `SecretContent`), creates the user `test_person` / `1234`, and waits until the port
   sends the SSH identification line. It stops the server and deletes the directory afterwards.
-- `Infrastructure/InMemorySettingsRepository` replaces the LiteDB `SettingsRepository` (which always opens
-  `config.db` in the current directory).
+- `Infrastructure/InMemorySettingsRepository` replaces the real settings repository in the end-to-end tests.
 - `Infrastructure/TestCredentials.HashPassword` is the only place that knows the password hash format. Change it
   there when the format changes.
 - `Infrastructure/OpenSshSftp` runs the `sftp` client (see below).
