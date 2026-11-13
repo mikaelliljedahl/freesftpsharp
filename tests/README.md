@@ -21,7 +21,7 @@ The suite takes about 10 seconds. It needs no network, no admin rights and no `c
 gets its own server on a free port and its own temporary directory, so the classes run in parallel.
 
 The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). That is why a plain
-`dotnet test FreeSftpSharp.sln` works with the .NET 10 SDK without a `global.json`.
+`dotnet test FreeSftpSharp.sln` works with the .NET 11 SDK without a `global.json`.
 
 ## What is covered
 
