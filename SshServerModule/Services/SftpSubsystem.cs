@@ -267,7 +267,13 @@ public class SftpSubsystem : IDisposable
     {
         uint requestId = reader.ReadUInt32();
         var path = reader.ReadString(Encoding.UTF8);
-        SendAttributes(requestId, path, true);
+
+        if (_fileSystem.FileExists(path))
+            SendAttributes(requestId, path, false);
+        else if (_fileSystem.DirectoryExists(path))
+            SendAttributes(requestId, path, true);
+        else
+            SendStatus(requestId, SftpStatusType.SSH_FX_NO_SUCH_FILE);
     }
 
     private void HandleFStat(SshDataWorker reader)
@@ -661,7 +667,9 @@ public class SftpSubsystem : IDisposable
     private byte[] GetAttributes(string path, bool isDirectory)
     {
         SshDataWorker writer = new SshDataWorker();
-        var attributes = new SftpFileAttributes(_fileSystem.GetDirectoryLastAccessed(path), _fileSystem.GetDirectoryLastModified(path), 0, _username.GetHashCode(), _username.GetHashCode(), isDirectory, null);
+        var lastAccessed = isDirectory ? _fileSystem.GetDirectoryLastAccessed(path) : _fileSystem.GetFileLastAccessed(path);
+        var lastModified = isDirectory ? _fileSystem.GetDirectoryLastModified(path) : _fileSystem.GetFileLastModified(path);
+        var attributes = new SftpFileAttributes(lastAccessed, lastModified, 0, _username.GetHashCode(), _username.GetHashCode(), isDirectory, null);
 
         if (isDirectory)
         {
