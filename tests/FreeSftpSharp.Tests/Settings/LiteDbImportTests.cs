@@ -41,7 +41,7 @@ public sealed class LiteDbImportTests : IDisposable
         {
             Username = "alice",
             UserRootDirectory = "/srv/alice",
-            HashedPassword = TestCredentials.HashPassword("pw"),
+            HashedPassword = TestCredentials.LegacySha256Hash("pw"),
             OnlyWhitelistedIps = true,
             WhitelistedIps = new List<string> { "10.1.2.3" },
             LastSuccessfulLogin = new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc),
@@ -80,7 +80,7 @@ public sealed class LiteDbImportTests : IDisposable
         Assert.Equal(new[] { "alice", "bob" }, repository.GetAllUsers().Select(u => u.Username).OrderBy(n => n));
         var alice = repository.GetUser("alice");
         Assert.Equal("/srv/alice", alice.UserRootDirectory);
-        Assert.Equal(TestCredentials.HashPassword("pw"), alice.HashedPassword);
+        Assert.Equal(TestCredentials.LegacySha256Hash("pw"), alice.HashedPassword);
         Assert.True(alice.OnlyWhitelistedIps);
         Assert.Equal(new[] { "10.1.2.3" }, alice.WhitelistedIps);
         Assert.Equal(new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc), alice.LastSuccessfulLogin.ToUniversalTime());

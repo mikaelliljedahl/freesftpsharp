@@ -1,3 +1,5 @@
+using SshServer.Interfaces.Security;
+
 namespace FxSshSftpServer.Security
 {
     /// <summary>
@@ -10,7 +12,7 @@ namespace FxSshSftpServer.Security
 
         public string UserName { get; set; }
 
-        /// <summary>A hash made by <see cref="AdminPasswordHasher.Hash"/>; never a plaintext password.</summary>
+        /// <summary>A hash made by <see cref="PasswordHasher.Hash"/>; never a plaintext password.</summary>
         public string PasswordHash { get; set; }
 
         /// <summary>Failed logins from one client before it is locked out.</summary>
@@ -19,6 +21,6 @@ namespace FxSshSftpServer.Security
         public int LockoutMinutes { get; set; } = 15;
 
         public bool IsConfigured =>
-            !string.IsNullOrWhiteSpace(UserName) && AdminPasswordHasher.IsWellFormed(PasswordHash);
+            !string.IsNullOrWhiteSpace(UserName) && PasswordHasher.IsWellFormed(PasswordHash);
     }
 }

@@ -2,9 +2,9 @@
 using FxSshSftpServer.Components;
 using Microsoft.AspNetCore.Components;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Security;
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 namespace FxSshSftpServer.Pages
@@ -108,10 +108,7 @@ namespace FxSshSftpServer.Pages
         {
             if (!string.IsNullOrWhiteSpace(newpassword))
             {
-                var sha256 = new SHA256CryptoServiceProvider();
-                var pwhashed = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(newpassword));
-                var base64encoded = Convert.ToBase64String(pwhashed);
-                SelectedUser.HashedPassword = base64encoded;
+                SelectedUser.HashedPassword = PasswordHasher.Hash(newpassword);
             }
 
             if (SelectedUserNotSaved)

@@ -3,7 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using SshServer.Interfaces.Security;
 
 namespace FxSsh.SshServerModule
 {
@@ -49,18 +50,39 @@ namespace FxSsh.SshServerModule
             return fingerprint.Split(':').Select(s => Convert.ToByte(s, 16)).ToArray();
         }
 
-        internal static bool VerifyUserPassword(User user, string password)
+        /// <summary>
+        /// Checks a password against <see cref="User.HashedPassword"/>. A PBKDF2 hash is checked with
+        /// <see cref="PasswordHasher.Verify"/>. An old unsalted SHA-256 hash (before issue #23) is checked in constant
+        /// time; on success the user is saved with a new PBKDF2 hash, so the old hash is used only once.
+        /// Every failed check costs the same key derivation as a real one, so the response time does not tell
+        /// which format a user has or whether the user has a password.
+        /// </summary>
+        internal static bool VerifyUserPassword(User user, string password, ISettingsRepository repository, ILogger logger)
         {
-            var sha256 = new SHA256CryptoServiceProvider();
-            var pwhashed = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(password));
-            var base64encoded = Convert.ToBase64String(pwhashed);
+            var stored = user?.HashedPassword;
 
-            //var testpw = "A6xnQhbz4Vx2HuGl4lXwZ5U2I8iziLRFnhP5eNfIRvQ="; // "1234"
+            if (PasswordHasher.IsWellFormed(stored))
+                return PasswordHasher.Verify(password, stored);
 
-            if (base64encoded == user.HashedPassword)
+            if (PasswordHasher.IsLegacySha256(stored) && PasswordHasher.VerifyLegacySha256(password, stored))
+            {
+                user.HashedPassword = PasswordHasher.Hash(password);
+                if (repository.UpdateUser(user))
+                    logger.LogInformation("Upgraded the password hash of user {Username} from SHA-256 to {Algorithm}.",
+                        user.Username, PasswordHasher.Algorithm);
+                else
+                    logger.LogWarning("Could not save the upgraded password hash of user {Username}.", user.Username);
                 return true;
-            else
-                return false;
+            }
+
+            SimulatePasswordCheck();
+            return false;
         }
+
+        /// <summary>
+        /// Does the work of one password check without a result. Call it for a login with an unknown user name, so
+        /// that the response time does not tell whether the user exists.
+        /// </summary>
+        internal static void SimulatePasswordCheck() => PasswordHasher.BurnEquivalentWork();
     }
 }

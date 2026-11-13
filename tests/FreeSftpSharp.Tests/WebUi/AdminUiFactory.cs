@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Security;
 using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
 using FxSshSftpServer.Security;
@@ -23,7 +24,7 @@ public class AdminUiFactory : WebApplicationFactory<Program>
 
     // The minimum iteration count keeps the login tests fast.
     private static readonly string AdminPasswordHash =
-        AdminPasswordHasher.Hash(AdminPassword, AdminPasswordHasher.MinimumIterations);
+        PasswordHasher.Hash(AdminPassword, PasswordHasher.MinimumIterations);
 
     protected virtual bool ConfigureAdminCredential => true;
 

@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Security;
 using FxSshSftpServer.Security;
 using Microsoft.Extensions.Options;
 
@@ -8,7 +9,7 @@ public sealed class AdminCredentialValidatorTests
     private static AdminCredentialValidator Create(string? userName, string? passwordHash) =>
         new(Options.Create(new AdminAuthOptions { UserName = userName, PasswordHash = passwordHash }));
 
-    private static readonly string Hash = AdminPasswordHasher.Hash("s3cret!", AdminPasswordHasher.MinimumIterations);
+    private static readonly string Hash = PasswordHasher.Hash("s3cret!", PasswordHasher.MinimumIterations);
 
     [Fact]
     public void Correct_user_name_and_password_are_accepted()

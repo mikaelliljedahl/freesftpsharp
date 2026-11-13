@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Security;
 using FxSshSftpServer.Security;
 
 namespace FreeSftpSharp.Tests.Unit;
@@ -23,7 +24,7 @@ public sealed class AdminPasswordCommandTests
         Assert.Equal(0, exitCode);
         var hashLine = output.ToString().Split('\n').Single(l => l.StartsWith("AdminAuth__PasswordHash=", StringComparison.Ordinal));
         var hash = hashLine["AdminAuth__PasswordHash=".Length..].Trim();
-        Assert.True(AdminPasswordHasher.Verify("my admin password", hash));
+        Assert.True(PasswordHasher.Verify("my admin password", hash));
         Assert.DoesNotContain("my admin password", output.ToString());
     }
 

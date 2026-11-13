@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Security;
 using System;
 using Microsoft.Extensions.Options;
 
@@ -26,11 +27,11 @@ namespace FxSshSftpServer.Security
             if (!userMatches)
             {
                 // Same cost as a real check, so the response time does not tell whether the user name exists.
-                AdminPasswordHasher.BurnEquivalentWork(options.PasswordHash);
+                PasswordHasher.BurnEquivalentWork(options.PasswordHash);
                 return false;
             }
 
-            return AdminPasswordHasher.Verify(password ?? "", options.PasswordHash);
+            return PasswordHasher.Verify(password ?? "", options.PasswordHash);
         }
     }
 }

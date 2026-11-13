@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using SshServer.Interfaces.Security;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -15,10 +16,20 @@ public static class TestCredentials
 
     /// <summary>
     /// Creates the value for <c>User.HashedPassword</c>. This is the ONLY place in the tests that knows
-    /// the hash format. It must match <c>UserLogics.VerifyUserPassword</c> in SshServerModule:
-    /// today that is base64(SHA-256(ASCII(password))). Change it here when the format changes (issue #23).
+    /// the hash formats. The current format is the salted PBKDF2-SHA256 hash of
+    /// <c>SshServer.Interfaces.Security.PasswordHasher</c> (issue #23). The tests use the minimum iteration
+    /// count to stay fast; the server makes new hashes with the default count.
     /// </summary>
     public static string HashPassword(string password)
+    {
+        return PasswordHasher.Hash(password, PasswordHasher.MinimumIterations);
+    }
+
+    /// <summary>
+    /// The old, unsalted format from before issue #23: base64(SHA-256(ASCII(password))). Old databases still
+    /// contain it; the server accepts it once and then stores a PBKDF2 hash.
+    /// </summary>
+    public static string LegacySha256Hash(string password)
     {
         return Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(password)));
     }

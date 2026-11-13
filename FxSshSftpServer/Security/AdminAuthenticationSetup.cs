@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Security;
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -79,7 +80,7 @@ namespace FxSshSftpServer.Security
                 "The admin UI is closed: {Reason}. Set AdminAuth:UserName and AdminAuth:PasswordHash " +
                 "(create the hash with 'FxSshSftpServer {Switch}') and restart. The SSH server still runs.",
                 string.IsNullOrWhiteSpace(options.PasswordHash) ? "AdminAuth:PasswordHash is not set"
-                    : !AdminPasswordHasher.IsWellFormed(options.PasswordHash) ? "AdminAuth:PasswordHash is not a valid PBKDF2-SHA256 hash"
+                    : !PasswordHasher.IsWellFormed(options.PasswordHash) ? "AdminAuth:PasswordHash is not a valid PBKDF2-SHA256 hash"
                     : "AdminAuth:UserName is not set",
                 AdminPasswordCommand.Switch);
 
