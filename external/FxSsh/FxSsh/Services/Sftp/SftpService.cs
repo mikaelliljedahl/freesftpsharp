@@ -22,6 +22,12 @@ namespace FxSsh.Services.Sftp
     /// file system abstraction and translates its exceptions into SSH_FX_*
     /// status codes through a single mapping, so a failing backend can never
     /// crash the session.
+    ///
+    /// OpenSSH extensions announced in SSH_FXP_VERSION: limits@openssh.com,
+    /// expand-path@openssh.com, and posix-rename@openssh.com,
+    /// statvfs@openssh.com and fsync@openssh.com when the file system
+    /// implements <see cref="ISftpPosixRenameFileSystem"/>,
+    /// <see cref="ISftpStatVfsFileSystem"/> and <see cref="ISftpFsyncFileSystem"/>.
     /// </summary>
     public sealed class SftpService : IDisposable
     {
@@ -56,6 +62,7 @@ namespace FxSsh.Services.Sftp
         private const byte SSH_FXP_DATA = 103;
         private const byte SSH_FXP_NAME = 104;
         private const byte SSH_FXP_ATTRS = 105;
+        private const byte SSH_FXP_EXTENDED_REPLY = 201;
 
         // Status codes.
         private const uint SSH_FX_OK = 0;
@@ -82,6 +89,23 @@ namespace FxSsh.Services.Sftp
 
         /// <summary>Entries returned per SSH_FXP_READDIR batch (draft allows one or more).</summary>
         private const int ReadDirBatchSize = 128;
+
+        /// <summary>
+        /// WRITE length announced in limits@openssh.com. The engine accepts larger writes up to
+        /// <see cref="MaxPacketLength"/>; the announced value keeps the client's requests at the
+        /// size of the reads.
+        /// </summary>
+        private const int AnnouncedMaxWriteLength = 64 * 1024;
+
+        // OpenSSH extensions (OpenSSH PROTOCOL, section 4).
+        private const string PosixRenameExtension = "posix-rename@openssh.com";
+        private const string StatVfsExtension = "statvfs@openssh.com";
+        private const string FsyncExtension = "fsync@openssh.com";
+        private const string LimitsExtension = "limits@openssh.com";
+        private const string ExpandPathExtension = "expand-path@openssh.com";
+
+        /// <summary>statvfs f_flag: read-only file system.</summary>
+        private const ulong SSH_FXE_STATVFS_ST_RDONLY = 1;
 
         #endregion
 
@@ -158,8 +182,8 @@ namespace FxSsh.Services.Sftp
         /// <summary>
         /// True when the server rejects every mutating SFTP request (OPEN with
         /// write flags, WRITE, REMOVE, RENAME, MKDIR, RMDIR, SETSTAT,
-        /// FSETSTAT) with SSH_FX_PERMISSION_DENIED. Read operations are
-        /// unaffected.
+        /// FSETSTAT, posix-rename and fsync) with SSH_FX_PERMISSION_DENIED.
+        /// Read operations are unaffected; statvfs reports ST_RDONLY.
         /// </summary>
         public bool IsReadOnly { get; }
 
@@ -366,9 +390,9 @@ namespace FxSsh.Services.Sftp
                     case SSH_FXP_RMDIR: ProcessRemoveDir(reader, requestId); break;
                     case SSH_FXP_REALPATH: ProcessRealPath(reader, requestId); break;
                     case SSH_FXP_RENAME: ProcessRename(reader, requestId); break;
+                    case SSH_FXP_EXTENDED: ProcessExtended(reader, requestId); break;
                     case SSH_FXP_READLINK:
                     case SSH_FXP_SYMLINK:
-                    case SSH_FXP_EXTENDED:
                         // Not implemented: draft section 8 requires the server
                         // to answer unknown/unimplemented operations with
                         // SSH_FX_OP_UNSUPPORTED.
@@ -686,6 +710,144 @@ namespace FxSsh.Services.Sftp
 
         #endregion
 
+        #region OpenSSH extensions
+
+        /// <summary>
+        /// The extension pairs of the VERSION reply. limits and expand-path need only the engine;
+        /// the others are announced when the file system implements the capability interface.
+        /// hardlink@openssh.com is not offered.
+        /// </summary>
+        private List<(string Name, string Data)> AnnouncedExtensions()
+        {
+            var extensions = new List<(string, string)>();
+            if (_fileSystem is ISftpPosixRenameFileSystem)
+                extensions.Add((PosixRenameExtension, "1"));
+            if (_fileSystem is ISftpStatVfsFileSystem)
+                extensions.Add((StatVfsExtension, "2"));
+            if (_fileSystem is ISftpFsyncFileSystem)
+                extensions.Add((FsyncExtension, "1"));
+            extensions.Add((LimitsExtension, "1"));
+            extensions.Add((ExpandPathExtension, "1"));
+            return extensions;
+        }
+
+        private void ProcessExtended(SshDataReader reader, uint requestId)
+        {
+            var name = reader.ReadString(Encoding.ASCII);
+            switch (name)
+            {
+                case PosixRenameExtension when _fileSystem is ISftpPosixRenameFileSystem posixRename:
+                    ProcessPosixRename(reader, requestId, posixRename);
+                    break;
+                case StatVfsExtension when _fileSystem is ISftpStatVfsFileSystem statVfs:
+                    ProcessStatVfs(reader, requestId, statVfs);
+                    break;
+                case FsyncExtension when _fileSystem is ISftpFsyncFileSystem fsync:
+                    ProcessFsync(reader, requestId, fsync);
+                    break;
+                case LimitsExtension:
+                    ProcessLimits(requestId);
+                    break;
+                case ExpandPathExtension:
+                    ProcessExpandPath(reader, requestId);
+                    break;
+                default:
+                    // Draft section 8: an unknown extended request gives SSH_FX_OP_UNSUPPORTED.
+                    SendStatus(requestId, SSH_FX_OP_UNSUPPORTED, "Operation not supported.", "en");
+                    break;
+            }
+        }
+
+        private void ProcessPosixRename(SshDataReader reader, uint requestId, ISftpPosixRenameFileSystem fileSystem)
+        {
+            var oldPath = reader.ReadString(Encoding.UTF8);
+            var newPath = reader.ReadString(Encoding.UTF8);
+
+            if (!EnsureWritable(requestId))
+                return;
+
+            fileSystem.PosixRename(oldPath, newPath);
+            SendStatus(requestId, SSH_FX_OK, "", "");
+        }
+
+        private void ProcessStatVfs(SshDataReader reader, uint requestId, ISftpStatVfsFileSystem fileSystem)
+        {
+            var path = reader.ReadString(Encoding.UTF8);
+
+            var stats = fileSystem.GetFileSystemStats(path);
+            var flags = stats.Flags | (IsReadOnly ? SSH_FXE_STATVFS_ST_RDONLY : 0);
+
+            using var writer = new SshDataWriter();
+            writer.Write(0u);
+            writer.Write(SSH_FXP_EXTENDED_REPLY);
+            writer.Write(requestId);
+            writer.Write(stats.BlockSize);
+            writer.Write(stats.FragmentSize);
+            writer.Write(stats.Blocks);
+            writer.Write(stats.FreeBlocks);
+            writer.Write(stats.AvailableBlocks);
+            writer.Write(stats.Files);
+            writer.Write(stats.FreeFiles);
+            writer.Write(stats.AvailableFiles);
+            writer.Write(stats.FileSystemId);
+            writer.Write(flags);
+            writer.Write(stats.MaxNameLength);
+            SendPacket(writer.ToByteArray());
+        }
+
+        private void ProcessFsync(SshDataReader reader, uint requestId, ISftpFsyncFileSystem fileSystem)
+        {
+            var handle = reader.ReadString(Encoding.ASCII);
+
+            if (!EnsureWritable(requestId))
+                return;
+
+            var entry = FindFileHandle(handle, requestId);
+            if (entry == null)
+                return;
+
+            fileSystem.Sync(entry.FileHandle);
+            SendStatus(requestId, SSH_FX_OK, "", "");
+        }
+
+        private void ProcessLimits(uint requestId)
+        {
+            using var writer = new SshDataWriter();
+            writer.Write(0u);
+            writer.Write(SSH_FXP_EXTENDED_REPLY);
+            writer.Write(requestId);
+            writer.Write((ulong)MaxPacketLength);
+            writer.Write((ulong)MaxReadLength);
+            writer.Write((ulong)AnnouncedMaxWriteLength);
+            writer.Write(0ul); // max-open-handles: no own limit
+            SendPacket(writer.ToByteArray());
+        }
+
+        /// <summary>
+        /// expand-path@openssh.com: REALPATH that also expands "~" and "~/..." to the default
+        /// directory "/". "~user" is refused, because the engine knows no other homes.
+        /// </summary>
+        private void ProcessExpandPath(SshDataReader reader, uint requestId)
+        {
+            var path = reader.ReadString(Encoding.UTF8);
+
+            if (path == "~")
+                path = "/";
+            else if (path.StartsWith("~/", StringComparison.Ordinal))
+                path = path[1..];
+            else if (path.StartsWith('~'))
+            {
+                SendStatus(requestId, SSH_FX_NO_SUCH_FILE, "No such user.", "en");
+                return;
+            }
+
+            var realPath = _fileSystem.RealPath(path);
+            var entry = new SftpFileEntry { FileName = realPath, Attributes = new SftpFileAttributes() };
+            SendName(requestId, [entry]);
+        }
+
+        #endregion
+
         #region Handle registry
 
         private string RegisterHandle(HandleEntry entry)
@@ -764,10 +926,15 @@ namespace FxSsh.Services.Sftp
 
         private void SendInit(uint version)
         {
-            using var writer = new SshDataWriter(9);
+            using var writer = new SshDataWriter();
             writer.Write(0u);
             writer.Write(SSH_FXP_VERSION);
             writer.Write(version);
+            foreach (var (name, data) in AnnouncedExtensions())
+            {
+                writer.Write(name, Encoding.ASCII);
+                writer.Write(data, Encoding.ASCII);
+            }
             SendPacket(writer.ToByteArray());
         }
 
