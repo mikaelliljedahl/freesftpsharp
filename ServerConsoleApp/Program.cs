@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,6 +14,7 @@ using FxSsh.SshServerModule;
 
 using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Settings.Sql;
 
 Log.Logger = new LoggerConfiguration()
                       .WriteTo.Console(theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
@@ -29,6 +31,13 @@ Log.Logger = new LoggerConfiguration()
 
 
 await new HostBuilder()
+.ConfigureAppConfiguration((hostContext, config) =>
+{
+    config.SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile("appsettings.json", optional: true)
+        .AddEnvironmentVariables()
+        .AddCommandLine(args);
+})
 .ConfigureServices((hostContext, services) =>
 {
     services.AddLogging();
@@ -37,7 +46,7 @@ await new HostBuilder()
     {
         configure.AddSerilog(Log.Logger);
     });
-    services.AddSingleton<ISettingsRepository, SettingsRepository>();
+    services.AddSshServerSettings(hostContext.Configuration);
     services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
     services.AddHostedService<HostedServer>();
 

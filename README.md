@@ -20,15 +20,56 @@ FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server s
 - SFTP subsystem added. 
 - Running commands remotely is disabled by default (code is commented out but will later be a setting per user)
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
-- Server settings are saved in a LiteDb-database file.
+- Server settings and users are saved in a SQLite database (EF Core). See [Settings storage](#settings-storage).
 
 
 ### Features planned for the future
 - whitelist IP/ip-range (CIDR) per account. (Implemented in server but not in the admin UI)
 - Ban IP, auto-ban on multiple failed attempts to login
 - Option to use cloud Blob storage as sftp root. Filesystem will be an interface in the SFTP engine, then both local file system or blob storage can be used. Controlled using Dependency Injection
-- Different ways to store settings and users (using Dependency Injection). E.g. Azure SQL, SQLite, JSON, LiteDb
+- More settings databases through EF Core (e.g. SQL Server / Azure SQL), selected by configuration
 - SCP subsystem
+
+## Settings storage
+
+The server settings (port, banner, host key, ...) and the users are stored with EF Core in a SQLite database.
+The code is in `SshServer.Settings.Sql` (`SqlSettingsRepository`, `SettingsDbContext`). The schema is created and
+upgraded with EF Core migrations (`SshServer.Settings.Sql/Migrations/Sqlite`) when the server starts.
+
+Configuration (`appsettings.json`, environment variables such as `Settings__Provider`, or the command line):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `Settings:Provider` | `Sqlite` | `Sqlite`, or `LiteDb` for the old LiteDB file (obsolete) |
+| `ConnectionStrings:Settings` | `Data Source=freesftpsharp.db` | The SQLite connection string. A relative path is relative to the application directory (`AppContext.BaseDirectory`), not to the current directory |
+| `Settings:LiteDbPath` | `config.db` in the current directory, else in the application directory | The LiteDB file: imported once by `Sqlite`, used directly by `LiteDb` |
+
+```json
+{
+  "Settings": { "Provider": "Sqlite" },
+  "ConnectionStrings": { "Settings": "Data Source=/var/lib/freesftpsharp/freesftpsharp.db" }
+}
+```
+
+### Upgrade from LiteDB (config.db)
+
+Earlier versions stored everything in a LiteDB file `config.db` in the current directory. When the SQLite
+database is new and a `config.db` exists, the server imports the settings (including the host key, so clients
+do not see a changed host key) and all users from it once, and logs a warning. `config.db` is opened read-only
+and is not changed or deleted; after the import it is no longer used, so you can archive it.
+
+The LiteDB storage (`SshServer.Settings.LiteDb`) is **obsolete**. It is kept for the import and can still be
+selected with `Settings:Provider` = `LiteDb`, but it will be removed in a later version.
+
+### Another database
+
+The model is provider-neutral (lists are JSON text columns). To add an EF Core provider such as SQL Server, add a
+value to `SettingsProvider`, its `Use...` call in `Startup.CreateDbContextOptions`, and its own migrations.
+To change the model, add a SQLite migration:
+
+```sh
+dotnet ef migrations add <Name> --project SshServer.Settings.Sql --output-dir Migrations/Sqlite
+```
 
 ## Sample
 

@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\SshServerModule\SshServerModule.csproj" />
     <ProjectReference Include="..\..\SshServer.Filesystem.LocalDisk\SshServer.Filesystem.LocalDisk.csproj" />
     <ProjectReference Include="..\..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
+    <ProjectReference Include="..\..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
   </ItemGroup>
 
   <ItemGroup>
