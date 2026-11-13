@@ -37,7 +37,7 @@ await new HostBuilder()
     config.SetBasePath(AppContext.BaseDirectory)
         .AddJsonFile("appsettings.json", optional: true)
         .AddEnvironmentVariables()
-        .AddCommandLine(args);
+        .AddCommandLine(args, SshServerOptions.SwitchMappings);
 })
 .ConfigureServices((hostContext, services) =>
 {
@@ -51,6 +51,7 @@ await new HostBuilder()
     services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
+    services.AddSshServerListenOptions();
 
 
 })

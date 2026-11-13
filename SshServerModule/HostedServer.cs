@@ -4,6 +4,7 @@ using FxSsh.SshServerModule.Security;
 using FxSsh.SshServerModule.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Net;
 using SshServerModule.Services;
@@ -33,11 +34,14 @@ namespace FxSsh.SshServerModule
         public readonly ISettingsRepository _settingsRepository; // public so that we can access it from Blazor page to edit settings
         private readonly LoginBanTracker _bans;
         private readonly IpFilter _ipFilter;
+        private readonly SshServerOptions _options;
 
+        /// <param name="options">Port and bind addresses from the configuration; they override the stored settings. Null: stored settings only.</param>
         /// <param name="banTracker">The auto-ban state, shared with the admin UI (AddSshServerSecurity). Null: a private one.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
-            LoginBanTracker banTracker = null)
+            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null)
         {
+            _options = options?.Value;
             _logger = logger;
             _settingsRepository = settingsRepository;
             _fileSystemFactory = fileSystemFactory;
@@ -54,21 +58,25 @@ namespace FxSsh.SshServerModule
             if (!banner.StartsWith("SSH-2.0-", StringComparison.Ordinal))
                 banner = "SSH-2.0-" + banner; // RFC 4253 section 4.2: the identification string must start with SSH-2.0-
 
+            var listen = EffectiveListenSettings.Resolve(settings, _options);
+            _logger.LogInformation("Listen port {Port} (from {PortSource}), bind addresses {BindToAddress} (from {BindSource}).",
+                listen.Port, listen.PortSource, listen.BindToAddress.Count == 0 ? "all" : string.Join(", ", listen.BindToAddress), listen.BindSource);
+
             var timeouts = SessionTimeouts.FromSettings(settings);
             var hostKeys = HostKeys.Load(_settingsRepository);
 
             try
             {
-                foreach (var address in ListenAddresses.Resolve(settings.BindToAddress, _logger))
+                foreach (var address in ListenAddresses.Resolve(listen.BindToAddress, _logger))
                 {
-                    var server = new SshServer(new StartingInfo(address, settings.ListenToPort, banner));
+                    var server = new SshServer(new StartingInfo(address, listen.Port, banner));
                     server.InactivityTimeout = timeouts.InactivityTimeout;
                     foreach (var hostKey in hostKeys)
                         server.AddHostKey(hostKey.Algorithm, hostKey.Pem);
                     server.ConnectionAccepted += OnConnectionAccepted;
                     servers.Add(server);
                     await server.StartAsync(cancellationToken);
-                    _logger.LogInformation("Listening on {Address} port {Port}.", address, settings.ListenToPort);
+                    _logger.LogInformation("Listening on {Address} port {Port}.", address, listen.Port);
                 }
             }
             catch

@@ -17,6 +17,9 @@ namespace FxSshSftpServer.Pages
     {
         [Inject]
         public ISettingsRepository settingsRepository { get; set; }
+        [Inject]
+        public Microsoft.Extensions.Options.IOptions<SshServerOptions> ListenOptions { get; set; }
+        public string PortOverride => string.IsNullOrWhiteSpace(ListenOptions?.Value?.Port) ? null : ListenOptions.Value.Port.Trim();
         public ServerSettings ServerSettings { get; private set; }
         public bool Savesuccess { get; private set; }
 

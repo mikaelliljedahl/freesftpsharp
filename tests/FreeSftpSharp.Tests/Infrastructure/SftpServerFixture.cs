@@ -36,6 +36,8 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual void ConfigureSettings(ServerSettings settings)
     {
     }
+    /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
+    protected virtual SshServerOptions? CreateListenOptions(int port) => null;
     /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
     /// <summary>The auto-ban state of the running server.</summary>
@@ -183,7 +185,8 @@ public class SftpServerFixture : IAsyncLifetime
         });
 
         BanTracker = new LoginBanTracker(CreateTimeProvider());
-        return new HostedServer(NullLogger<HostedServer>.Instance, new LocalFileSystemFactory(repository), repository, BanTracker);
+        return new HostedServer(NullLogger<HostedServer>.Instance, new LocalFileSystemFactory(repository), repository, BanTracker,
+            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
     }
 
     private static int GetFreeTcpPort()
