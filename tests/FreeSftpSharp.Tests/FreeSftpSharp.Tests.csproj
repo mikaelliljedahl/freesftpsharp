@@ -31,6 +31,15 @@
     <ProjectReference Include="..\..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
     <ProjectReference Include="..\..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\..\FxSshSftpServer\FxSshSftpServer.csproj" />
+    <!-- Built for ZeroConfigStartTests, which starts the real ServerConsoleApp as a process. Not referenced as an assembly. -->
+    <ProjectReference Include="..\..\ServerConsoleApp\ServerConsoleApp.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ServerConsoleAppOutput</_Parameter1>
+      <_Parameter2>$([MSBuild]::EnsureTrailingSlash('$(MSBuildThisFileDirectory)..\..\ServerConsoleApp\bin\$(Configuration)\$(TargetFramework)'))</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
