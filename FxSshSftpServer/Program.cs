@@ -1,3 +1,4 @@
+using FxSsh.SshServerModule.Security;
 using System;
 
 using Microsoft.AspNetCore.Builder;
@@ -50,6 +51,7 @@ builder.Services.AddServerSideBlazor();
 
 Log.Information("AddHostedService<HostedServer>...");
 builder.Services.AddHostedService<HostedServer>();
+builder.Services.AddSshServerSecurity(); // auto-ban state, IIpBanService for the admin UI
 
 Log.Warning("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);

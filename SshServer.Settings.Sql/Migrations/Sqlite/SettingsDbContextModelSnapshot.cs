@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261113220305_AddServerEcdsaKey";
+    public override string LastMigrationId => "20261113221412_AddIpFilterAndBanSettings";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -26,6 +26,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
             {
                 b.Property<int>("Id")
                     .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("BanDurationSeconds")
                     .HasColumnType("INTEGER");
 
                 b.PrimitiveCollection<string>("BindToAddress")
@@ -40,13 +43,22 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<bool>("EnableDirectTcpIp")
                     .HasColumnType("INTEGER");
 
+                b.Property<bool>("ExemptLoopbackFromBan")
+                    .HasColumnType("INTEGER");
+
                 b.Property<int>("IdleTimeout")
                     .HasColumnType("INTEGER");
 
                 b.Property<int>("ListenToPort")
                     .HasColumnType("INTEGER");
 
+                b.Property<int>("LoginFailureWindowSeconds")
+                    .HasColumnType("INTEGER");
+
                 b.Property<int>("MaxLoginAttemptsBeforeBan")
+                    .HasColumnType("INTEGER");
+
+                b.Property<bool>("OnlyWhitelistedIps")
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("ServerBanner")
@@ -55,10 +67,10 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("ServerEcdsaKey")
                     .HasColumnType("TEXT");
 
-                b.Property<string>("ServerRootDirectory")
+                b.Property<string>("ServerRsaKey")
                     .HasColumnType("TEXT");
 
-                b.Property<string>("ServerRsaKey")
+                b.PrimitiveCollection<string>("WhitelistedIps")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");

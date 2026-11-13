@@ -30,7 +30,7 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Unit/LocalFileSystemTests` | unit | `NormalizeVirtualPath` and `GetPhysicalPath` with traversal inputs (`/../../etc/passwd`, `..\..\config.db`, `/a/b/../../../../c`, `//double//slash`, `/.../x`, empty, `.`), a sibling directory with the same prefix as the root, the root cannot be removed or moved |
 | `Unit/SftpSubsystemNormalizePathTests` | unit | `SftpSubsystem.NormalizePath` (the SSH_FXP_REALPATH canonical path) |
 | `Unit/SftpFramingTests` | unit | `SftpSubsystem.OnInput` framing: one packet split over several calls, several packets in one call, a partial packet at the end; one response for each request |
-| `Settings/SqlSettingsRepositoryTests` | unit (in-memory SQLite) | default settings of a new database, update of settings, add/get/update/remove of users with all fields, unknown users, case-insensitive duplicate usernames, persistence in a file |
+| `Settings/SqlSettingsRepositoryTests` | unit (in-memory SQLite) | default settings of a new database, update of settings, add/get/update/remove of users with all fields, unknown users, case-insensitive duplicate usernames, persistence in a file, a database of the previous schema is migrated (new columns get their defaults, the stored values stay) |
 | `Settings/LiteDbImportTests` | unit (temp files) | a `config.db` made with the LiteDB repository is imported into a new SQLite database (settings, host key, users), the file is not changed, no second import, no `config.db` gives new defaults |
 | `Settings/SettingsConfigurationTests` | unit | `Settings:Provider`, `ConnectionStrings:Settings` and `Settings:LiteDbPath`: defaults, paths relative to the app directory, LiteDb selection, unknown provider, `AddSshServerSettings` registrations |
 | `Unit/HostKeysTests` | unit | the stored RSA host key (base64 CSP blob or PEM) converts to PEM with the same key, a public-only blob is rejected, host key algorithms are ecdsa-sha2-nistp256, rsa-sha2-512, rsa-sha2-256 (no ssh-rsa), an ECDSA key is made once and saved |
@@ -46,6 +46,12 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `EndToEnd/OpenSshSftpTests` | end-to-end (OpenSSH `sftp`) | put/get of 2 MB, 200 B and 0 B files, ls, rename, rm, rmdir, `cd ../..` + `pwd`, overwrite 2 MB with 200 B, `get ../../config.db` fails, sftp exits by itself, connect with the OpenSSH default algorithms (no `+ssh-rsa`), a known_hosts entry with the old `ssh-rsa` key still matches, only-weak-algorithm clients cannot connect |
 | `Unit/PasswordHasherTests`, `Unit/AdminCredentialValidatorTests` | unit | the shared PBKDF2 password hash (`SshServer.Interfaces.Security.PasswordHasher`): round trip, wrong password, tampered salt/key/iterations, malformed and plaintext values; admin user name check |
 | `Unit/UserPasswordVerificationTests` | unit | SFTP user passwords (`UserLogics.VerifyUserPassword`): PBKDF2 and old SHA-256 hashes, correct and wrong passwords, tampered hashes, the old hash is upgraded to PBKDF2 once and the upgrade is logged without the password |
+| `Unit/CidrNotationTests` | unit | the shared CIDR helper: IPv4/IPv6 networks and single addresses, host bits, IPv4-mapped IPv6, invalid input (prefix out of range, host names, scope ids, short IPv4 forms), matching |
+| `Unit/LoginBanTrackerTests` | unit | auto-ban after N failures in a sliding window, the ban expires, loopback exemption, IPv4-mapped addresses, 0 = off, `Unban`, clean-up of old records, defaults (`FakeTimeProvider`) |
+| `Unit/IpFilterTests` | unit | global blacklist, global whitelist mode (empty list = no check), blacklist wins, banned addresses |
+| `Unit/SecurityRegistrationTests` | unit | `AddSshServerSecurity`: `HostedServer` and `IIpBanService` share one `LoginBanTracker` |
+| `EndToEnd/IpFilterAndBanTests` | end-to-end (SSH.NET, raw TCP) | a blacklisted / not whitelisted client gets no identification line; ban after 3 wrong passwords or unknown users (loopback exemption off), the ban expires (fake clock), `Unban`; `LastSuccessfulLogin` is set only on success |
+| `EndToEnd/BindToAddressTests` | end-to-end (raw TCP) | `BindToAddress` = 127.0.0.1 answers on 127.0.0.1 and refuses ::1; without it both answer (the IPv6 checks are skipped when the machine has no ::1) |
 | `Unit/LoginThrottleTests` | unit | lockout after N failed logins, the lockout ends, success clears the failures (`FakeTimeProvider`) |
 | `Unit/AdminPasswordCommandTests` | unit | `--hash-admin-password` prints a hash that verifies, rejects short passwords |
 | `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
@@ -55,7 +61,7 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
 ## Infrastructure
 
 - `Infrastructure/SftpServerFixture` starts the real `HostedServer` in-process (derive from it and override
-  `IdleTimeoutSeconds` for other settings; `Repository` gives the settings, for example to add users). It picks a free port,
+  `IdleTimeoutSeconds`, `ConfigureSettings` or `CreateTimeProvider` for other settings or a fake clock; `BanTracker` gives the auto-ban state; `Repository` gives the settings, for example to add users). It picks a free port,
   creates `<temp>/root` (the user root, `/` for the client) and `<temp>/config.db` (a secret file outside the
   root, `SecretFilePath` / `SecretContent`), creates the user `test_person` / `1234`, and waits until the port
   sends the SSH identification line. It stops the server and deletes the directory afterwards.
