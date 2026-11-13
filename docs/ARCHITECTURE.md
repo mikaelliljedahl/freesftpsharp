@@ -3,6 +3,23 @@
 These rules keep the server easy to maintain while it grows. They apply to all new code and to every
 roadmap item in [ROADMAP.md](ROADMAP.md). If a change cannot follow a rule, explain why in the pull request.
 
+## Simple by default
+
+Many people use the server only as a simple local test server. That use must stay easy.
+
+- **Zero configuration to start.** `ServerConsoleApp` with no arguments and no configuration file starts an
+  SFTP server on local disk. It creates the SQLite database and the host keys itself.
+- **Every new feature is opt-in.** A new backend, hook, authentication provider, protocol or limit is off
+  until an operator turns it on. A new feature never adds a required setting.
+- **Safe defaults.** A default value works on a developer machine and is secure. If a feature needs a secret
+  (for example the admin password), the feature stays off and the log tells how to turn it on. The server
+  does not stop.
+- **No external services by default.** The default start needs no cloud account, no database server and no
+  container.
+- **Optional packages stay optional.** The core and the console host do not need the cloud SDKs to start.
+- **Tested.** A test starts the server with an empty configuration and connects with an SFTP client. Keep
+  this test green.
+
 ## Plug-in points
 
 The server has a small core and a set of plug-in points. Each plug-in point is an interface in

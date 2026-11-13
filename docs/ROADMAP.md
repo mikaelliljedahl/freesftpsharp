@@ -17,7 +17,8 @@ Feature parity with the leading open-source servers in this space (for example S
 
 ## Architecture principles
 
-The binding rules for the code structure are in [ARCHITECTURE.md](ARCHITECTURE.md).
+The binding rules for the code structure are in [ARCHITECTURE.md](ARCHITECTURE.md). The first rule: the
+server stays a zero-configuration local test server by default, and every new feature is opt-in.
 
 1. **One storage abstraction.** Every backend implements the asynchronous, handle-based `IFileSystem`
    (`SshServer.Interfaces`) and is created by `IFileSystemFactory`. Backends never leak SDK or `System.IO`
