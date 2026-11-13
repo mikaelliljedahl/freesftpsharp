@@ -38,6 +38,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
+builder.Services.AddAdminDataProtection(builder.Configuration);
 
 Log.Debug("AddServerSideBlazor...");
 builder.Services.AddServerSideBlazor();

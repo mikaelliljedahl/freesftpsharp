@@ -35,6 +35,8 @@ public class AdminUiFactory : WebApplicationFactory<Program>
         builder.UseSetting("AdminAuth:PasswordHash", ConfigureAdminCredential ? AdminPasswordHash : "");
         // The login tests fail on purpose; the lockout itself is covered by LoginThrottleTests.
         builder.UseSetting("AdminAuth:MaxFailedLogins", "1000");
+        // No key files on disk in tests. A clean machine (CI) would otherwise log a warning about unencrypted keys.
+        builder.UseSetting("DataProtection:Ephemeral", "true");
 
         builder.ConfigureTestServices(services =>
         {
