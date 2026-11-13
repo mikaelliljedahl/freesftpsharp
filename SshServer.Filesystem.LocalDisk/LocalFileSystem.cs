@@ -80,6 +80,11 @@ namespace SshServer.Filesystem.LocalDisk
             return new DirectoryInfo(GetPhysicalPath(path)).Exists;
         }
 
+        public bool FileExists(string path)
+        {
+            return new FileInfo(GetPhysicalPath(path)).Exists;
+        }
+
         public IEnumerable<Resource> GetFiles(string path)
         {
             var virtualDirectory = NormalizeVirtualPath(path);

@@ -12,6 +12,7 @@ public interface IFileSystem
     bool RemoveDirectory(string pathToRemove);
     bool MakeDirectory(string newPath);
     bool DirectoryExists(string path);
+    bool FileExists(string path);
     Stream OpenStreamRead(string path);
     Stream OpenStreamWrite(string path);
     IEnumerable<Resource> GetFiles(string path);
