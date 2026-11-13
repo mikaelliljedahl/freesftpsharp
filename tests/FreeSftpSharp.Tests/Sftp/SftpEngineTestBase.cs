@@ -32,7 +32,7 @@ public abstract class SftpEngineTestBase : IDisposable
     /// <summary>The file on disk for a virtual path.</summary>
     protected string Physical(string virtualPath) => Path.Combine(Root, virtualPath.TrimStart('/'));
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         Client.Dispose();
         try { Directory.Delete(TempDirectory, recursive: true); } catch { }

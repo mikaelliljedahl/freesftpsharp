@@ -321,21 +321,29 @@ namespace SshServerModule.Sftp
         /// <summary>
         /// Replaces an exception of the file system with one of the same kind for the engine, with only the
         /// virtual path in its message. The original exception, which can contain the physical path, is
-        /// logged at debug level.
+        /// logged here: at debug level when a client can cause it (missing path, denied access, I/O error
+        /// such as an existing target), at error level otherwise. An unexpected exception becomes an
+        /// <see cref="InvalidOperationException"/>, which the engine answers with SSH_FX_FAILURE and logs as
+        /// an error.
         /// </summary>
         private Exception Translate(Exception ex, string path)
         {
             if (ex.Data.Contains(OwnExceptionKey))
                 return ex;
 
-            _logger.LogDebug(ex, "SFTP operation of user {Username} on {Path} failed.", _username, path);
+            if (ex is IOException or UnauthorizedAccessException or ArgumentException)
+                _logger.LogDebug(ex, "SFTP operation of user {Username} on {Path} failed.", _username, path);
+            else
+                _logger.LogError(ex, "SFTP operation of user {Username} on {Path} failed unexpectedly.", _username, path);
+
             return ex switch
             {
                 FileNotFoundException => Own(new FileNotFoundException($"No such file: {path}")),
                 DirectoryNotFoundException => Own(new DirectoryNotFoundException($"No such file: {path}")),
                 UnauthorizedAccessException => Own(new UnauthorizedAccessException($"Permission denied: {path}")),
                 ArgumentException => Own(new ArgumentException($"Bad request: {path}")),
-                _ => Own(new IOException($"Failure: {path}")),
+                IOException => Own(new IOException($"Failure: {path}")),
+                _ => Own(new InvalidOperationException($"Internal error: {path}")),
             };
         }
 

@@ -11,6 +11,8 @@ namespace FreeSftpSharp.Tests.Sftp;
 /// </summary>
 public sealed class SftpPathTraversalTests : SftpEngineTestBase
 {
+    private const string PhysicalPath = "/srv/secret/physical/root";
+
     [Theory]
     [InlineData("/../config.db")]
     [InlineData("../../config.db")]
@@ -106,7 +108,7 @@ public sealed class SftpPathTraversalTests : SftpEngineTestBase
     [Fact]
     public void Access_denied_by_the_file_system_gives_permission_denied_without_the_physical_path()
     {
-        using var client = new SftpEngineClient(new DenyingFileSystem());
+        using var client = new SftpEngineClient(new ThrowingFileSystem(() => new UnauthorizedAccessException($"Access to the path '{PhysicalPath}' is denied.")));
         client.Service.OnData(Init());
 
         var responses = new[]
@@ -121,37 +123,7 @@ public sealed class SftpPathTraversalTests : SftpEngineTestBase
         foreach (var response in responses)
         {
             Assert.Equal(SSH_FX_PERMISSION_DENIED, response.StatusCode);
-            Assert.DoesNotContain(DenyingFileSystem.PhysicalPath, response.StatusMessage);
+            Assert.DoesNotContain(PhysicalPath, response.StatusMessage);
         }
-    }
-
-    /// <summary>A file system that denies everything, like <c>LocalFileSystem.GetPhysicalPath</c> for a path outside the root.</summary>
-    private sealed class DenyingFileSystem : IFileSystem
-    {
-        public const string PhysicalPath = "/srv/secret/physical/root";
-
-        private static UnauthorizedAccessException Denied() => new($"Access to the path '{PhysicalPath}' is denied.");
-
-        public bool RemoveDirectory(string pathToRemove) => throw Denied();
-        public bool MakeDirectory(string newPath) => throw Denied();
-        public bool DirectoryExists(string path) => throw Denied();
-        public bool FileExists(string path) => throw Denied();
-        public Stream OpenStreamRead(string path) => throw Denied();
-        public Stream OpenStreamWrite(string path) => throw Denied();
-        public Stream OpenStreamWrite(string path, FileMode mode) => throw Denied();
-        public IEnumerable<Resource> GetFiles(string path) => throw Denied();
-        public IEnumerable<Resource> GetDirectories(string path) => throw Denied();
-        public bool RemoveFile(string path) => throw Denied();
-        public ulong GetSize(string path) => throw Denied();
-        public DateTime GetDirectoryLastModified(string path) => throw Denied();
-        public DateTime GetDirectoryLastAccessed(string path) => throw Denied();
-        public DateTime GetFileLastModified(string path) => throw Denied();
-        public DateTime GetFileLastAccessed(string path) => throw Denied();
-        public bool MoveFileOrDirectory(string oldpath, string newpath) => throw Denied();
-        public FileSystemEntryInfo? GetInfo(string path) => throw Denied();
-        public Stream OpenFile(string path, FileMode mode, FileAccess access) => throw Denied();
-        public void SetFileLength(string path, long length) => throw Denied();
-        public void SetTimes(string path, DateTime? lastAccessUtc, DateTime? lastWriteUtc) => throw Denied();
-        public void SetPermissions(string path, uint mode) => throw Denied();
     }
 }
