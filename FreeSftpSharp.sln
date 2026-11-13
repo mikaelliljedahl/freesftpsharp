@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Settings.Sql", "S
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Settings.LiteDb", "SshServer.Settings.LiteDb\SshServer.Settings.LiteDb.csproj", "{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FreeSftpSharp.Tests", "tests\FreeSftpSharp.Tests\FreeSftpSharp.Tests.csproj", "{15D5D843-59F7-41CA-83FF-C055F0149337}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -63,9 +67,16 @@ Global
 		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7B1C1AC4-D9AD-45E4-B017-0879FA71363E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{15D5D843-59F7-41CA-83FF-C055F0149337}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{15D5D843-59F7-41CA-83FF-C055F0149337}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{15D5D843-59F7-41CA-83FF-C055F0149337}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{15D5D843-59F7-41CA-83FF-C055F0149337}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{15D5D843-59F7-41CA-83FF-C055F0149337} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BC80F45C-E623-4F1E-AE8E-CF6B9C296BC6}
