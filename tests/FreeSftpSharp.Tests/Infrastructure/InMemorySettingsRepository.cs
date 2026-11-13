@@ -5,7 +5,7 @@ namespace FreeSftpSharp.Tests.Infrastructure;
 
 /// <summary>
 /// An <see cref="ISettingsRepository"/> that keeps everything in memory. The tests use it instead of the
-/// LiteDB SettingsRepository, which always opens "config.db" in the current directory.
+/// real settings repository (SQLite), so the end-to-end tests need no database file.
 /// </summary>
 public sealed class InMemorySettingsRepository : ISettingsRepository
 {

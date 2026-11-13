@@ -7,6 +7,60 @@ Sftp Server implementation based on SSHServer library based heavily on [FxSsh](h
 All basic Sftp command are now implemented except handling symbolic links. However some implementations such as returning correct file attributes are not finalized. Server was tested with FileZilla client only. There are probably some bugs left to fix. 
 You are welcome to create PR's
 
+## Admin web UI (FxSshSftpServer)
+
+`FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
+The UI has one local admin account. It is separate from the SFTP users.
+
+### Set the admin password
+
+1. Create a password hash (salted PBKDF2-SHA256, 600,000 iterations). The command asks for the password twice
+   and prints the configuration value; the password itself is not stored or printed:
+
+   ```sh
+   dotnet run --project FxSshSftpServer -- --hash-admin-password
+   # or, for a published build:
+   FxSshSftpServer --hash-admin-password
+   ```
+
+   It also reads one line from stdin when the input is redirected (`echo "..." | FxSshSftpServer --hash-admin-password`).
+
+2. Put the user name and the hash in the configuration. Use one of these (do not commit a hash to the repository):
+
+   - Environment variables: `AdminAuth__UserName=admin` and `AdminAuth__PasswordHash=PBKDF2-SHA256.600000....`
+   - User secrets (development): `dotnet user-secrets --project FxSshSftpServer set "AdminAuth:PasswordHash" "PBKDF2-SHA256.600000...."`
+   - `appsettings.json` / `appsettings.Production.json` next to the executable:
+     `"AdminAuth": { "UserName": "admin", "PasswordHash": "PBKDF2-SHA256.600000...." }`
+
+3. Restart the server. A plaintext password in `AdminAuth:PasswordHash` is not accepted.
+
+If no valid admin credential is configured, the UI is closed: every request gets `503 Service Unavailable` with a
+short help text, and the log has an error that tells what is missing. The SSH server still runs.
+
+All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy).
+The login form has an antiforgery token. After 5 failed logins from one IP address, that address is locked out
+for 15 minutes (`AdminAuth:MaxFailedLogins`, `AdminAuth:LockoutMinutes`). Use "Log out" in the menu to end the
+session; a session expires after 8 hours without use.
+
+### Expose the UI
+
+By default the UI listens only on `http://localhost:5000` (`Kestrel:Endpoints:Http:Url` in `appsettings.json`).
+To reach it from another machine, prefer an SSH tunnel (`ssh -L 5000:localhost:5000 server`) or a reverse proxy
+with HTTPS on the same host. If you must bind Kestrel to another address, use HTTPS, because the login and the
+session cookie are otherwise sent in clear text, for example:
+
+```sh
+Kestrel__Endpoints__Https__Url=https://0.0.0.0:5001
+Kestrel__Endpoints__Https__Certificate__Path=/path/cert.pfx
+Kestrel__Endpoints__Https__Certificate__Password=...
+```
+
+### SFTP user passwords
+
+SFTP user passwords are stored with the same salted PBKDF2-SHA256 hash as the admin password (600,000 iterations).
+Older versions stored an unsalted SHA-256 hash. Such a user can still log in; after the first successful login
+the server replaces the old hash with a PBKDF2 hash and logs this at Information level.
+
 ## FxSsh
 
 FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server side application as SSH reinforcement of [GitCandy](https://github.com/Aimeast/GitCandy). 
@@ -26,15 +80,56 @@ OpenSSH connects with its default settings.
 - SFTP subsystem added. 
 - Running commands remotely is disabled by default (code is commented out but will later be a setting per user)
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
-- Server settings are saved in a LiteDb-database file.
+- Server settings and users are saved in a SQLite database (EF Core). See [Settings storage](#settings-storage).
 
 
 ### Features planned for the future
 - whitelist IP/ip-range (CIDR) per account. (Implemented in server but not in the admin UI)
 - Ban IP, auto-ban on multiple failed attempts to login
 - Option to use cloud Blob storage as sftp root. Filesystem will be an interface in the SFTP engine, then both local file system or blob storage can be used. Controlled using Dependency Injection
-- Different ways to store settings and users (using Dependency Injection). E.g. Azure SQL, SQLite, JSON, LiteDb
+- More settings databases through EF Core (e.g. SQL Server / Azure SQL), selected by configuration
 - SCP subsystem
+
+## Settings storage
+
+The server settings (port, banner, host key, ...) and the users are stored with EF Core in a SQLite database.
+The code is in `SshServer.Settings.Sql` (`SqlSettingsRepository`, `SettingsDbContext`). The schema is created and
+upgraded with EF Core migrations (`SshServer.Settings.Sql/Migrations/Sqlite`) when the server starts.
+
+Configuration (`appsettings.json`, environment variables such as `Settings__Provider`, or the command line):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `Settings:Provider` | `Sqlite` | `Sqlite`, or `LiteDb` for the old LiteDB file (obsolete) |
+| `ConnectionStrings:Settings` | `Data Source=freesftpsharp.db` | The SQLite connection string. A relative path is relative to the application directory (`AppContext.BaseDirectory`), not to the current directory |
+| `Settings:LiteDbPath` | `config.db` in the current directory, else in the application directory | The LiteDB file: imported once by `Sqlite`, used directly by `LiteDb` |
+
+```json
+{
+  "Settings": { "Provider": "Sqlite" },
+  "ConnectionStrings": { "Settings": "Data Source=/var/lib/freesftpsharp/freesftpsharp.db" }
+}
+```
+
+### Upgrade from LiteDB (config.db)
+
+Earlier versions stored everything in a LiteDB file `config.db` in the current directory. When the SQLite
+database is new and a `config.db` exists, the server imports the settings (including the host key, so clients
+do not see a changed host key) and all users from it once, and logs a warning. `config.db` is opened read-only
+and is not changed or deleted; after the import it is no longer used, so you can archive it.
+
+The LiteDB storage (`SshServer.Settings.LiteDb`) is **obsolete**. It is kept for the import and can still be
+selected with `Settings:Provider` = `LiteDb`, but it will be removed in a later version.
+
+### Another database
+
+The model is provider-neutral (lists are JSON text columns). To add an EF Core provider such as SQL Server, add a
+value to `SettingsProvider`, its `Use...` call in `Startup.CreateDbContextOptions`, and its own migrations.
+To change the model, add a SQLite migration:
+
+```sh
+dotnet ef migrations add <Name> --project SshServer.Settings.Sql --output-dir Migrations/Sqlite
+```
 
 ## Sample
 

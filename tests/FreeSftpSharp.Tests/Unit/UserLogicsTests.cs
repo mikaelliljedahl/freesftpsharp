@@ -7,7 +7,7 @@ using SshServer.Interfaces;
 namespace FreeSftpSharp.Tests.Unit;
 
 /// <summary>
-/// <see cref="UserLogics"/>: public key authentication by fingerprint, password check and the IP whitelist.
+/// <see cref="UserLogics"/>: public key authentication by fingerprint and the IP whitelist (passwords: UserPasswordVerificationTests).
 /// </summary>
 public sealed class UserLogicsTests
 {
@@ -51,17 +51,6 @@ public sealed class UserLogicsTests
         var user = new User { Username = "u", RsaPublicKey = storedKey! };
 
         Assert.False(UserLogics.VerifyUserKey(user, ExpectedFingerprint(rsa.ExportParameters(false))));
-    }
-
-    [Fact]
-    public void Password_check_accepts_the_right_password_and_rejects_others()
-    {
-        var user = new User { Username = "u", HashedPassword = Infrastructure.TestCredentials.HashPassword("1234") };
-
-        Assert.True(UserLogics.VerifyUserPassword(user, "1234"));
-        Assert.False(UserLogics.VerifyUserPassword(user, "12345"));
-        Assert.False(UserLogics.VerifyUserPassword(user, ""));
-        Assert.False(UserLogics.VerifyUserPassword(new User { Username = "nopw" }, ""));
     }
 
     [Theory]

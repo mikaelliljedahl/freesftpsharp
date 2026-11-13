@@ -1,0 +1,38 @@
+@page
+@model FxSshSftpServer.Pages.LoginModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log in - FxSshSftpServer</title>
+    <link rel="stylesheet" href="~/css/bootstrap/bootstrap.min.css" />
+    <link href="~/css/site.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="container" style="max-width: 24rem; margin-top: 4rem;">
+        <h1 class="h3 mb-3">FxSshSftpServer admin</h1>
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+        }
+        <form method="post">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <div class="form-group">
+                <label asp-for="UserName">User name</label>
+                <input asp-for="UserName" class="form-control" autocomplete="username" autofocus required />
+            </div>
+            <div class="form-group">
+                <label asp-for="Password">Password</label>
+                <input asp-for="Password" class="form-control" autocomplete="current-password" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Log in</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -143,9 +143,16 @@ namespace FxSsh.SshServerModule
             
         }
 
-        public SettingsRepository()
+        /// <summary>The legacy default: "config.db" in the current directory.</summary>
+        public const string DefaultFileName = "config.db";
+
+        public SettingsRepository() : this(DefaultFileName)
         {
-            db = new LiteDatabase("config.db");
+        }
+
+        public SettingsRepository(string databasePath)
+        {
+            db = new LiteDatabase(databasePath);
 
             serversettingsCollection = db.GetCollection<ServerSettingsWithObjectId>("settings");
 

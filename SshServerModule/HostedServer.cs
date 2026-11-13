@@ -119,6 +119,8 @@ namespace FxSsh.SshServerModule
             var user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
             if (user == null)
             {
+                if (e.AuthMethod == "password")
+                    UserLogics.SimulatePasswordCheck(); // same time as for a real user
                 _logger.LogInformation("Authentication ({Method}) failed for unknown user {Username} from {RemoteEndPoint}.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
                 return;
@@ -139,7 +141,7 @@ namespace FxSsh.SshServerModule
                         e.Username, e.KeyAlgorithm, e.Fingerprint, e.Result);
                     break;
                 case "password":
-                    e.Result = UserLogics.VerifyUserPassword(user, e.Password);
+                    e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
                     _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
                     break;
                 default:

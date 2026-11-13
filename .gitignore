@@ -166,3 +166,7 @@ $RECYCLE.BIN/
 /.vs/VSWorkspaceState.json
 /.vs/ProjectEvaluation/freesftpsharp.metadata.v7.bin
 /.vs/ProjectEvaluation/freesftpsharp.projects.v7.bin
+
+# Local settings databases
+freesftpsharp.db*
+config.db
