@@ -81,14 +81,53 @@ OpenSSH connects with its default settings.
 - Running commands remotely is disabled by default (code is commented out but will later be a setting per user)
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
 - Server settings and users are saved in a SQLite database (EF Core). See [Settings storage](#settings-storage).
+- Global IP blacklist, optional global IP whitelist, auto-ban after failed logins, and `BindToAddress`. See [Network access settings](#network-access-settings).
 
 
 ### Features planned for the future
 - whitelist IP/ip-range (CIDR) per account. (Implemented in server but not in the admin UI)
-- Ban IP, auto-ban on multiple failed attempts to login
+- Global blacklist/whitelist, `BindToAddress` and the auto-bans in the admin UI (#42; implemented in the server)
 - Option to use cloud Blob storage as sftp root. Filesystem will be an interface in the SFTP engine, then both local file system or blob storage can be used. Controlled using Dependency Injection
 - More settings databases through EF Core (e.g. SQL Server / Azure SQL), selected by configuration
 - SCP subsystem
+
+## Network access settings
+
+These fields of the server settings (`ServerSettings`) control who can connect. Network entries are CIDR
+(`10.0.0.0/8`, `2001:db8::/32`) or single addresses (`10.1.2.3`, `::1`). IPv4 clients that arrive on the
+dual-stack socket as `::ffff:10.1.2.3` match IPv4 entries. Host bits are ignored (`192.168.1.5/24` is
+`192.168.1.0/24`). Invalid entries are skipped and logged once. `SshServer.Interfaces.Net.CidrNotation` parses and
+validates the entries; the admin UI can use `CidrNotation.IsValid` / `FindInvalid` for input validation.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `BindToAddress` | empty | Local addresses to listen on, e.g. `127.0.0.1`, `::1`, `192.168.1.10`. Empty: all addresses, IPv4 and IPv6. `::` also means all addresses (dual stack). Read at start; when no entry is valid, the server does not start |
+| `BlacklistedIps` | empty | Networks that may not connect. The connection is closed right after accept, before the SSH identification and key exchange, and logged. Wins over the whitelist |
+| `OnlyWhitelistedIps` | `false` | Global whitelist mode: only the networks in `WhitelistedIps` may connect. With an empty list nothing is checked (as for the per-user whitelist), so a half-done setting does not lock everybody out. Loopback is not special here |
+| `WhitelistedIps` | empty | The networks for `OnlyWhitelistedIps` |
+| `MaxLoginAttemptsBeforeBan` | `5` (new database) | Auto-ban: this many failed password logins from one address within `LoginFailureWindowSeconds` ban the address for `BanDurationSeconds`. `0` turns auto-ban off. A database of an older version keeps its stored value (usually `0`) |
+| `LoginFailureWindowSeconds` | `600` | Sliding window for counting failures. `0` turns auto-ban off |
+| `BanDurationSeconds` | `1800` | How long a ban lasts. `0` turns auto-ban off |
+| `ExemptLoopbackFromBan` | `true` | Never ban `127.0.0.0/8` and `::1` |
+
+The per-user whitelist (`User.OnlyWhitelistedIps` / `User.WhitelistedIps`) is checked in addition, at login.
+
+Auto-ban details:
+
+- Counted are failed **password** logins, also for unknown user names and for users whose IP whitelist does not
+  match. Rejected public keys are not counted: clients offer every key they have, so a user with several keys would
+  be banned, and keys cannot be guessed like passwords.
+- A banned address is dropped at accept like a blacklisted one. A session that is open when the ban starts gets no
+  more successful logins.
+- A successful login resets no counter (otherwise one valid account would let an attacker try passwords of other
+  accounts without limit).
+- Bans are kept in memory: a restart lifts them. `IIpBanService` (registered by `AddSshServerSecurity()`) lists the
+  active bans and lifts one with `Unban`, for the admin UI.
+
+Settings changes (blacklist, whitelist, ban settings) apply to the next connection; `BindToAddress` and
+`ListenToPort` need a restart. `User.LastSuccessfulLogin` is set (UTC) after each successful login.
+
+The old `ServerRootDirectory` setting was never used (each user has `UserRootDirectory`) and has been removed.
 
 ## Settings storage
 

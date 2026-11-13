@@ -113,10 +113,14 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             stored.ServerEcdsaKey = updatedSettings.ServerEcdsaKey;
         stored.ServerBanner = updatedSettings.ServerBanner;
         stored.ListenToPort = updatedSettings.ListenToPort;
-        stored.ServerRootDirectory = updatedSettings.ServerRootDirectory;
         stored.BindToAddress = updatedSettings.BindToAddress;
         stored.BlacklistedIps = updatedSettings.BlacklistedIps;
+        stored.OnlyWhitelistedIps = updatedSettings.OnlyWhitelistedIps;
+        stored.WhitelistedIps = updatedSettings.WhitelistedIps;
         stored.MaxLoginAttemptsBeforeBan = updatedSettings.MaxLoginAttemptsBeforeBan;
+        stored.LoginFailureWindowSeconds = updatedSettings.LoginFailureWindowSeconds;
+        stored.BanDurationSeconds = updatedSettings.BanDurationSeconds;
+        stored.ExemptLoopbackFromBan = updatedSettings.ExemptLoopbackFromBan;
         stored.IdleTimeout = updatedSettings.IdleTimeout;
         stored.EnableCommand = updatedSettings.EnableCommand;
         stored.EnableDirectTcpIp = updatedSettings.EnableDirectTcpIp;

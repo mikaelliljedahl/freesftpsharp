@@ -41,10 +41,15 @@ public static class LiteDbSettingsReader
                     ServerEcdsaKey = stored.ServerEcdsaKey, // only in files written by a version with ECDSA host keys
                     ServerBanner = stored.ServerBanner,
                     ListenToPort = stored.ListenToPort,
-                    ServerRootDirectory = stored.ServerRootDirectory,
                     BindToAddress = stored.BindToAddress,
                     BlacklistedIps = stored.BlacklistedIps,
                     MaxLoginAttemptsBeforeBan = stored.MaxLoginAttemptsBeforeBan,
+                    // Not in files of older versions: then these are the defaults of ServerSettings.
+                    OnlyWhitelistedIps = stored.OnlyWhitelistedIps,
+                    WhitelistedIps = stored.WhitelistedIps,
+                    LoginFailureWindowSeconds = stored.LoginFailureWindowSeconds,
+                    BanDurationSeconds = stored.BanDurationSeconds,
+                    ExemptLoopbackFromBan = stored.ExemptLoopbackFromBan,
                     IdleTimeout = stored.IdleTimeout,
                     EnableCommand = stored.EnableCommand,
                     EnableDirectTcpIp = stored.EnableDirectTcpIp,

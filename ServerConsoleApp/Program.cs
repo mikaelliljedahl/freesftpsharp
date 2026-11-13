@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FxSsh.SshServerModule.Security;
+using System;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Configuration;
@@ -49,6 +50,7 @@ await new HostBuilder()
     services.AddSshServerSettings(hostContext.Configuration);
     services.AddSingleton<IFileSystemFactory, LocalFileSystemFactory>();
     services.AddHostedService<HostedServer>();
+    services.AddSshServerSecurity();
 
 
 })
