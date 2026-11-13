@@ -231,13 +231,11 @@ public sealed class InMemoryFileSystem : IFileSystem
     private Node Find(string normalized, string path)
         => _nodes.TryGetValue(normalized, out var node) ? node : throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}");
 
-    /// <summary>The parent of a new entry must be a directory. Call with the lock.</summary>
+    /// <summary>The parent of a new entry must be a directory (NoSuchFile otherwise, like ENOENT and ENOTDIR). Call with the lock.</summary>
     private void RequireParentDirectory(string normalized, string path)
     {
-        if (!_nodes.TryGetValue(VirtualPath.GetParent(normalized), out var parent))
+        if (!_nodes.TryGetValue(VirtualPath.GetParent(normalized), out var parent) || !parent.IsDirectory)
             throw new FileSystemException(FileSystemError.NoSuchFile, $"No such directory: {path}/..");
-        if (!parent.IsDirectory)
-            throw new FileSystemException(FileSystemError.NotADirectory, $"Not a directory: {path}/..");
     }
 
     private void Require(StorageCapabilities capability, string path)

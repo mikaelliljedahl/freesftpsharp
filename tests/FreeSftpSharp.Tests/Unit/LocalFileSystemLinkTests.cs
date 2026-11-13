@@ -1,5 +1,6 @@
 using FreeSftpSharp.Tests.Infrastructure;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Unit;
 
@@ -35,32 +36,68 @@ public sealed class LocalFileSystemLinkTests : IDisposable
         try { Directory.Delete(_tempDirectory, recursive: true); } catch { }
     }
 
+    private const FileOpenFlags WriteNew = FileOpenFlags.Write | FileOpenFlags.Create | FileOpenFlags.Truncate;
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private async Task<bool> ExistsAsync(string path, FileSystemEntryType type)
+        => (await _fileSystem.StatAsync(path, true, Ct))?.Type == type;
+
+    private Task<bool> FileExistsAsync(string path) => ExistsAsync(path, FileSystemEntryType.File);
+
+    private Task<bool> DirectoryExistsAsync(string path) => ExistsAsync(path, FileSystemEntryType.Directory);
+
+    private async Task<List<FileSystemEntry>> ListAsync(string path)
+    {
+        var entries = new List<FileSystemEntry>();
+        await foreach (var entry in _fileSystem.ListAsync(path, Ct))
+            entries.Add(entry);
+        return entries;
+    }
+
+    private async Task OpenAndCloseAsync(string path, FileOpenFlags flags)
+        => await (await _fileSystem.OpenAsync(path, flags, null, Ct)).DisposeAsync();
+
+    /// <summary>The operation is refused: PermissionDenied (a path that leads outside the root).</summary>
+    private static async Task AssertDeniedAsync(Func<Task> action)
+    {
+        var ex = await Assert.ThrowsAsync<FileSystemException>(action);
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
+    }
+
+    private static void AssertDenied(Action action)
+    {
+        var ex = Assert.Throws<FileSystemException>(action);
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
+    }
+
     private string InRoot(string relative) => Path.Combine(_root, relative.Replace('/', Path.DirectorySeparatorChar));
 
     [Fact]
-    public void Link_to_a_directory_outside_the_root_is_refused_for_every_operation()
+    public async Task Link_to_a_directory_outside_the_root_is_refused_for_every_operation()
     {
         FileLinks.CreateDirectoryLink(InRoot("out"), _outside);
 
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetPhysicalPath("/out"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetPhysicalPath("/out/secret.txt"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.DirectoryExists("/out"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.FileExists("/out/secret.txt"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetInfo("/out"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetInfo("/out/secret.txt"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetFiles("/out").ToList());
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetDirectories("/out").ToList());
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.OpenFile("/out/secret.txt", FileMode.Open, FileAccess.Read).Dispose());
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.OpenFile("/out/new.txt", FileMode.Create, FileAccess.Write).Dispose());
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.OpenStreamWrite("/out/secret.txt", FileMode.Create).Dispose());
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.RemoveFile("/out/secret.txt"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.SetFileLength("/out/secret.txt", 0));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.SetPermissions("/out/secret.txt", 0x1FF));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.SetTimes("/out/secret.txt", DateTime.UnixEpoch, DateTime.UnixEpoch));
-        Assert.False(_fileSystem.MakeDirectory("/out/newdir"));
-        Assert.False(_fileSystem.MoveFileOrDirectory("/out/secret.txt", "/stolen.txt"));
+        AssertDenied(() => _fileSystem.GetPhysicalPath("/out"));
+        AssertDenied(() => _fileSystem.GetPhysicalPath("/out/secret.txt"));
+        await AssertDeniedAsync(() => DirectoryExistsAsync("/out"));
+        await AssertDeniedAsync(() => FileExistsAsync("/out/secret.txt"));
+        await AssertDeniedAsync(() => ListAsync("/out"));
+        await AssertDeniedAsync(() => OpenAndCloseAsync("/out/secret.txt", FileOpenFlags.Read));
+        await AssertDeniedAsync(() => OpenAndCloseAsync("/out/new.txt", WriteNew));
+        await AssertDeniedAsync(() => OpenAndCloseAsync("/out/secret.txt", WriteNew));
+        await AssertDeniedAsync(() => _fileSystem.DeleteFileAsync("/out/secret.txt", Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.DeleteDirectoryAsync("/out", Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.SetAttributesAsync("/out/secret.txt", new FileAttributesUpdate { Size = 0 }, Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.SetAttributesAsync("/out/secret.txt", new FileAttributesUpdate { Permissions = 0x1FF }, Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.SetAttributesAsync("/out/secret.txt",
+            new FileAttributesUpdate { LastAccessTimeUtc = DateTime.UnixEpoch, LastWriteTimeUtc = DateTime.UnixEpoch }, Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.GetStorageSpaceAsync("/out", Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.CreateDirectoryAsync("/out/newdir", Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.RenameAsync("/out/secret.txt", "/stolen.txt", RenameFlags.None, Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.RenameAsync("/out/secret.txt", "/stolen.txt", RenameFlags.ReplaceExisting, Ct).AsTask());
         File.WriteAllText(InRoot("mine.txt"), "mine");
-        Assert.False(_fileSystem.MoveFileOrDirectory("/mine.txt", "/out/mine.txt"));
+        await AssertDeniedAsync(() => _fileSystem.RenameAsync("/mine.txt", "/out/mine.txt", RenameFlags.None, Ct).AsTask());
 
         Assert.Equal(Secret, File.ReadAllText(_secretFile));
         Assert.Equal(["secret.txt"], Directory.GetFileSystemEntries(_outside).Select(Path.GetFileName));
@@ -68,147 +105,150 @@ public sealed class LocalFileSystemLinkTests : IDisposable
     }
 
     [Fact]
-    public void Relative_link_that_leaves_the_root_is_refused()
+    public async Task Relative_link_that_leaves_the_root_is_refused()
     {
         FileLinks.CreateDirectoryLink(InRoot("up"), Path.Combine("..", "outside"));
 
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.FileExists("/up/secret.txt"));
+        await AssertDeniedAsync(() => FileExistsAsync("/up/secret.txt"));
     }
 
     [Fact]
-    public void Link_in_a_subdirectory_to_the_parent_of_the_root_is_refused()
+    public async Task Link_in_a_subdirectory_to_the_parent_of_the_root_is_refused()
     {
         Directory.CreateDirectory(InRoot("a/b"));
         FileLinks.CreateDirectoryLink(InRoot("a/b/top"), Path.Combine("..", "..", ".."));
 
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.FileExists("/a/b/top/outside/secret.txt"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.GetDirectories("/a/b/top").ToList());
+        await AssertDeniedAsync(() => FileExistsAsync("/a/b/top/outside/secret.txt"));
+        await AssertDeniedAsync(() => ListAsync("/a/b/top"));
     }
 
     [Fact]
-    public void Chain_of_links_that_ends_outside_the_root_is_refused()
+    public async Task Chain_of_links_that_ends_outside_the_root_is_refused()
     {
         FileLinks.CreateDirectoryLink(InRoot("second"), _outside);
         FileLinks.CreateDirectoryLink(InRoot("first"), InRoot("second"));
 
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.FileExists("/first/secret.txt"));
+        await AssertDeniedAsync(() => FileExistsAsync("/first/secret.txt"));
     }
 
     [Fact]
-    public void Link_to_a_file_outside_the_root_is_refused()
+    public async Task Link_to_a_file_outside_the_root_is_refused()
     {
         FileLinks.CreateFileLink(InRoot("secret-link.txt"), _secretFile);
 
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.FileExists("/secret-link.txt"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.OpenFile("/secret-link.txt", FileMode.Open, FileAccess.Read).Dispose());
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.OpenFile("/secret-link.txt", FileMode.Open, FileAccess.Write).Dispose());
+        await AssertDeniedAsync(() => FileExistsAsync("/secret-link.txt"));
+        await AssertDeniedAsync(() => OpenAndCloseAsync("/secret-link.txt", FileOpenFlags.Read));
+        await AssertDeniedAsync(() => OpenAndCloseAsync("/secret-link.txt", FileOpenFlags.Write));
         Assert.Equal(Secret, File.ReadAllText(_secretFile));
     }
 
     [Fact]
-    public void Dangling_link_to_a_missing_file_outside_the_root_cannot_create_it()
+    public async Task Dangling_link_to_a_missing_file_outside_the_root_cannot_create_it()
     {
         var target = Path.Combine(_outside, "created.txt");
         FileLinks.CreateFileLink(InRoot("dangling.txt"), target);
 
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.OpenFile("/dangling.txt", FileMode.OpenOrCreate, FileAccess.Write).Dispose());
+        await AssertDeniedAsync(() => OpenAndCloseAsync("/dangling.txt", FileOpenFlags.Write | FileOpenFlags.Create));
         Assert.False(File.Exists(target));
     }
 
     [Fact]
-    public void Link_to_a_directory_inside_the_root_keeps_working()
+    public async Task Link_to_a_directory_inside_the_root_keeps_working()
     {
         Directory.CreateDirectory(InRoot("real"));
         File.WriteAllText(InRoot("real/file.txt"), "inside");
         FileLinks.CreateDirectoryLink(InRoot("alias"), InRoot("real"));
         FileLinks.CreateDirectoryLink(InRoot("relative-alias"), "real");
 
-        Assert.True(_fileSystem.DirectoryExists("/alias"));
-        Assert.True(_fileSystem.FileExists("/alias/file.txt"));
-        Assert.True(_fileSystem.FileExists("/relative-alias/file.txt"));
-        Assert.Contains(_fileSystem.GetFiles("/alias"), f => f.Name == "file.txt");
-        using (var stream = _fileSystem.OpenFile("/alias/new.txt", FileMode.Create, FileAccess.Write))
-            stream.WriteByte(1);
+        Assert.True(await DirectoryExistsAsync("/alias"));
+        Assert.True(await FileExistsAsync("/alias/file.txt"));
+        Assert.True(await FileExistsAsync("/relative-alias/file.txt"));
+        Assert.Contains(await ListAsync("/alias"), f => f.Name == "file.txt");
+        Assert.Contains(await ListAsync("/"), f => f.Name == "alias" && f.IsDirectory);
+        await using (var handle = await _fileSystem.OpenAsync("/alias/new.txt", WriteNew, null, Ct))
+            await handle.WriteAsync(0, new byte[] { 1 }, Ct);
         Assert.True(File.Exists(InRoot("real/new.txt")));
-        Assert.True(_fileSystem.MakeDirectory("/alias/sub"));
+        await _fileSystem.CreateDirectoryAsync("/alias/sub", Ct);
         Assert.True(Directory.Exists(InRoot("real/sub")));
     }
 
     [Fact]
-    public void Link_to_a_file_inside_the_root_keeps_working()
+    public async Task Link_to_a_file_inside_the_root_keeps_working()
     {
         File.WriteAllText(InRoot("file.txt"), "inside");
         FileLinks.CreateFileLink(InRoot("file-link.txt"), "file.txt");
 
-        using var reader = new StreamReader(_fileSystem.OpenFile("/file-link.txt", FileMode.Open, FileAccess.Read));
-        Assert.Equal("inside", reader.ReadToEnd());
+        await using var handle = await _fileSystem.OpenAsync("/file-link.txt", FileOpenFlags.Read, null, Ct);
+        var buffer = new byte[100];
+        var read = await handle.ReadAsync(0, buffer, Ct);
+        Assert.Equal("inside", System.Text.Encoding.UTF8.GetString(buffer, 0, read));
     }
 
     [Fact]
-    public void Link_that_goes_out_and_comes_back_inside_the_root_keeps_working()
+    public async Task Link_that_goes_out_and_comes_back_inside_the_root_keeps_working()
     {
         Directory.CreateDirectory(InRoot("real"));
         File.WriteAllText(InRoot("real/file.txt"), "inside");
         FileLinks.CreateDirectoryLink(InRoot("roundtrip"), Path.Combine("..", "root", "real"));
 
-        Assert.True(_fileSystem.FileExists("/roundtrip/file.txt"));
+        Assert.True(await FileExistsAsync("/roundtrip/file.txt"));
     }
 
     [Fact]
-    public void Root_reached_through_a_link_to_its_parent_cannot_be_removed_moved_or_changed()
+    public async Task Root_reached_through_a_link_to_its_parent_cannot_be_removed_moved_or_changed()
     {
         FileLinks.CreateDirectoryLink(InRoot("parent"), _tempDirectory);
 
-        Assert.False(_fileSystem.RemoveDirectory("/parent/root"));
-        Assert.False(_fileSystem.MoveFileOrDirectory("/parent/root", "/moved"));
-        Assert.Throws<UnauthorizedAccessException>(() => _fileSystem.SetPermissions("/parent/root", 0));
+        await AssertDeniedAsync(() => _fileSystem.DeleteDirectoryAsync("/parent/root", Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.RenameAsync("/parent/root", "/moved", RenameFlags.None, Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.RenameAsync("/a.txt", "/parent/root", RenameFlags.ReplaceExisting, Ct).AsTask());
+        await AssertDeniedAsync(() => _fileSystem.SetAttributesAsync("/parent/root", new FileAttributesUpdate { Permissions = 0 }, Ct).AsTask());
         Assert.True(Directory.Exists(_root));
         Assert.True(Directory.Exists(InRoot("parent")));
     }
 
     [Fact]
-    public void Link_to_the_root_can_be_removed_and_the_root_stays()
+    public async Task Link_to_the_root_can_be_removed_and_the_root_stays()
     {
         FileLinks.CreateDirectoryLink(InRoot("self"), _root);
 
-        Assert.True(_fileSystem.RemoveDirectory("/self"));
+        await _fileSystem.DeleteDirectoryAsync("/self", Ct);
 
         Assert.False(Path.Exists(InRoot("self")));
         Assert.True(Directory.Exists(_root));
     }
 
     [Fact]
-    public void Root_that_is_a_link_keeps_working()
+    public async Task Root_that_is_a_link_keeps_working()
     {
         var linkedRoot = Path.Combine(_tempDirectory, "root-link");
         FileLinks.CreateDirectoryLink(linkedRoot, _root);
         File.WriteAllText(InRoot("file.txt"), "inside");
         var fileSystem = new LocalFileSystem(linkedRoot);
 
-        Assert.True(fileSystem.FileExists("/file.txt"));
-        Assert.True(fileSystem.DirectoryExists("/"));
+        Assert.Equal(FileSystemEntryType.File, (await fileSystem.StatAsync("/file.txt", true, Ct))?.Type);
+        Assert.Equal(FileSystemEntryType.Directory, (await fileSystem.StatAsync("/", true, Ct))?.Type);
     }
 
     [Fact]
-    public void Path_below_a_file_or_a_missing_directory_is_not_found_and_not_refused()
+    public async Task Path_below_a_file_or_a_missing_directory_is_not_found_and_not_refused()
     {
         File.WriteAllText(InRoot("file.txt"), "x");
 
-        Assert.False(_fileSystem.FileExists("/file.txt/child"));
-        Assert.False(_fileSystem.FileExists("/missing/child"));
-        Assert.Null(_fileSystem.GetInfo("/missing/child"));
+        Assert.Null(await _fileSystem.StatAsync("/file.txt/child", true, Ct));
+        Assert.Null(await _fileSystem.StatAsync("/missing/child", true, Ct));
     }
 
     [Fact]
-    public void Link_loop_gives_an_error_and_no_hang()
+    public async Task Link_loop_gives_an_error_and_no_hang()
     {
         if (OperatingSystem.IsWindows())
             Assert.Skip("A link loop is a POSIX test; junctions to a missing target cannot be created.");
         Directory.CreateSymbolicLink(InRoot("loop-a"), "loop-b");
         Directory.CreateSymbolicLink(InRoot("loop-b"), "loop-a");
 
-        var ex = Record.Exception(() => _fileSystem.FileExists("/loop-a/x"));
+        var ex = await Record.ExceptionAsync(() => FileExistsAsync("/loop-a/x"));
 
-        Assert.True(ex is IOException or UnauthorizedAccessException, $"Unexpected: {ex}");
+        Assert.IsType<FileSystemException>(ex);
     }
 }

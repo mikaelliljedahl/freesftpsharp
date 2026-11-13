@@ -1,6 +1,7 @@
 using System.Text;
 using FxSsh.Services.Sftp;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using static FreeSftpSharp.Tests.Sftp.SftpEngineClient;
 
 namespace FreeSftpSharp.Tests.Sftp;
@@ -108,7 +109,7 @@ public sealed class SftpPathTraversalTests : SftpEngineTestBase
     [Fact]
     public void Access_denied_by_the_file_system_gives_permission_denied_without_the_physical_path()
     {
-        using var client = new SftpEngineClient(new ThrowingFileSystem(() => new UnauthorizedAccessException($"Access to the path '{PhysicalPath}' is denied.")));
+        using var client = new SftpEngineClient(new ThrowingFileSystem(() => new FileSystemException(FileSystemError.PermissionDenied, $"Access to the path '{PhysicalPath}' is denied.", new UnauthorizedAccessException(PhysicalPath))));
         client.Service.OnData(Init());
 
         var responses = new[]

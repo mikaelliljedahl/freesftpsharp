@@ -34,7 +34,7 @@ public interface IFileSystem
 
     /// <summary>
     /// Opens a file. Throws <see cref="FileSystemError.NoSuchFile"/> when the file (without <see cref="FileOpenFlags.Create"/>)
-    /// or its parent directory does not exist, <see cref="FileSystemError.AlreadyExists"/> for
+    /// or its parent directory does not exist or is a file, <see cref="FileSystemError.AlreadyExists"/> for
     /// <see cref="FileOpenFlags.Exclusive"/> and an existing file, and <see cref="FileSystemError.IsADirectory"/> for a
     /// directory. The permissions in <paramref name="initial"/> are applied only when the open creates the file; its other values are ignored. Other handles can read,
     /// write, rename and delete the file while it is open.
@@ -43,7 +43,7 @@ public interface IFileSystem
 
     /// <summary>
     /// Creates a directory. Throws <see cref="FileSystemError.AlreadyExists"/> when the path exists (file or directory)
-    /// and <see cref="FileSystemError.NoSuchFile"/> when the parent does not exist.
+    /// and <see cref="FileSystemError.NoSuchFile"/> when the parent does not exist or is a file.
     /// </summary>
     ValueTask CreateDirectoryAsync(string path, CancellationToken ct);
 
@@ -85,75 +85,4 @@ public interface IFileSystem
     /// </summary>
     ValueTask<StorageSpace?> GetStorageSpaceAsync(string path, CancellationToken ct);
 
-    // ---- Members of the synchronous interface, removed when the SFTP adapter is ported. A backend that has only the new members does not implement them. ----
-
-    bool RemoveDirectory(string pathToRemove) => throw new NotSupportedException();
-    bool MakeDirectory(string newPath) => throw new NotSupportedException();
-    bool DirectoryExists(string path) => throw new NotSupportedException();
-    bool FileExists(string path) => throw new NotSupportedException();
-    Stream OpenStreamRead(string path) => throw new NotSupportedException();
-    Stream OpenStreamWrite(string path) => throw new NotSupportedException();
-    Stream OpenStreamWrite(string path, FileMode mode) => throw new NotSupportedException();
-    IEnumerable<Resource> GetFiles(string path) => throw new NotSupportedException();
-    IEnumerable<Resource> GetDirectories(string path) => throw new NotSupportedException();
-    bool RemoveFile(string path) => throw new NotSupportedException();
-    ulong GetSize(string path) => throw new NotSupportedException();
-    DateTime GetDirectoryLastModified(string path) => throw new NotSupportedException();
-    DateTime GetDirectoryLastAccessed(string path) => throw new NotSupportedException();
-    DateTime GetFileLastModified(string path) => throw new NotSupportedException();
-    DateTime GetFileLastAccessed(string path) => throw new NotSupportedException();
-    bool MoveFileOrDirectory(string oldpath, string newpath) => throw new NotSupportedException();
-
-    /// <summary>Returns the type, size, times and permissions of a file or directory, or null if the path does not exist.</summary>
-    FileSystemEntryInfo? GetInfo(string path) => throw new NotSupportedException();
-
-    /// <summary>
-    /// Opens a file with the given mode and access. Other handles can read, write and delete the file
-    /// while the stream is open (SFTP clients open the same file again, for example for SETSTAT).
-    /// </summary>
-    Stream OpenFile(string path, FileMode mode, FileAccess access) => throw new NotSupportedException();
-
-    /// <summary>Truncates or extends a file to <paramref name="length"/> bytes.</summary>
-    void SetFileLength(string path, long length) => throw new NotSupportedException();
-
-    /// <summary>Sets the last access and/or last write time (UTC) of a file or directory. A null time is not changed.</summary>
-    void SetTimes(string path, DateTime? lastAccessUtc, DateTime? lastWriteUtc) => throw new NotSupportedException();
-
-    /// <summary>
-    /// Sets the POSIX permission bits (rwxrwxrwx, the lowest 9 bits of <paramref name="mode"/>) of a file
-    /// or directory. Other bits (file type, setuid, setgid, sticky) are ignored. A platform without POSIX
-    /// permissions applies what it can.
-    /// </summary>
-    void SetPermissions(string path, uint mode) => throw new NotSupportedException();
-
-    /// <summary>
-    /// Renames a file or directory with POSIX rename semantics: an existing file at <paramref name="newPath"/>
-    /// is replaced, atomically where the storage allows it (SFTP posix-rename@openssh.com). A directory is
-    /// never replaced. Throws <see cref="FileNotFoundException"/> when <paramref name="oldPath"/> does not
-    /// exist, <see cref="IOException"/> when the target cannot be replaced, and
-    /// <see cref="UnauthorizedAccessException"/> for the user root.
-    /// </summary>
-    void RenameReplacing(string oldPath, string newPath) => throw new NotSupportedException();
-
-    /// <summary>
-    /// The size and free space of the storage that holds <paramref name="path"/> (SFTP statvfs@openssh.com),
-    /// or null when the storage cannot tell. Throws <see cref="FileNotFoundException"/> when the path does
-    /// not exist.
-    /// </summary>
-    StorageSpace? GetStorageSpace(string path) => throw new NotSupportedException();
-}
-
-/// <param name="Type">File or directory.</param>
-/// <param name="Length">The size in bytes; 0 for a directory.</param>
-/// <param name="LastAccessUtc">The last access time (UTC).</param>
-/// <param name="LastWriteUtc">The last write time (UTC).</param>
-/// <param name="Permissions">The POSIX permission bits (rwxrwxrwx, lowest 9 bits).</param>
-public sealed record FileSystemEntryInfo(ResourceType Type, ulong Length, DateTime LastAccessUtc, DateTime LastWriteUtc, uint Permissions);
-
-public record struct Resource(string Name, string FullName, ResourceType Type, ulong Length);
-
-public enum ResourceType
-{
-    File = 1,
-    Folder = 2
 }

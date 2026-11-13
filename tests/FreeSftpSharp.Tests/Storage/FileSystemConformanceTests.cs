@@ -473,6 +473,16 @@ public abstract class FileSystemConformanceTests<TFixture> : IDisposable
         Assert.Null(await Fs.StatAsync("/missing", true, Ct));
     }
 
+    [Fact]
+    public async Task Create_directory_or_file_below_a_file_throws_no_such_file()
+    {
+        await WriteFileAsync("/a.txt", "a");
+
+        await AssertErrorAsync(FileSystemError.NoSuchFile, () => Fs.CreateDirectoryAsync("/a.txt/new", Ct).AsTask());
+        await AssertErrorAsync(FileSystemError.NoSuchFile, () => OpenAndCloseAsync("/a.txt/new", WriteNew));
+        Assert.Equal("a", await ReadTextAsync("/a.txt"));
+    }
+
     // ---- DeleteFileAsync ----
 
     [Fact]
