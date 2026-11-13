@@ -25,11 +25,15 @@ namespace SshServerModule.Sftp
     /// the virtual path in its message. The physical path of the user root is never sent to the client.
     /// </para>
     /// </summary>
-    public sealed class SftpFileSystemAdapter : ISftpFileSystem
+    public sealed class SftpFileSystemAdapter : ISftpFileSystem, ISftpPosixRenameFileSystem, ISftpStatVfsFileSystem, ISftpFsyncFileSystem
     {
         private const uint RegularFileType = 0x8000;
         private const uint DirectoryType = 0x4000;
         private const string OwnExceptionKey = "FreeSftpSharp.SftpMessage";
+
+        /// <summary>The block size of the statvfs reply; the byte counts of the storage are given in these blocks.</summary>
+        private const ulong StatVfsBlockSize = 4096;
+        private const ulong MaxNameLength = 255;
 
         private readonly IFileSystem _fileSystem;
         private readonly ILogger _logger;
@@ -193,6 +197,54 @@ namespace SshServerModule.Sftp
             {
                 throw Translate(ex, oldPath);
             }
+        }
+
+        /// <summary>posix-rename@openssh.com: like <see cref="Rename"/>, but an existing file at the target is replaced.</summary>
+        public void PosixRename(string oldPath, string newPath)
+        {
+            _logger.LogInformation("User {Username} renames {OldPath} to {NewPath} (replacing).", _username, oldPath, newPath);
+            try
+            {
+                _fileSystem.RenameReplacing(oldPath, newPath);
+            }
+            catch (Exception ex)
+            {
+                throw Translate(ex, oldPath);
+            }
+        }
+
+        /// <summary>
+        /// statvfs@openssh.com: the size and free space of the storage of the user root, in 4 KiB blocks. The
+        /// reply has no paths. The inode counts are 0 (unknown).
+        /// </summary>
+        public SftpFileSystemStats GetFileSystemStats(string path)
+        {
+            try
+            {
+                var space = _fileSystem.GetStorageSpace(path)
+                    ?? throw Own(new IOException($"The storage space is not known: {path}"));
+                return new SftpFileSystemStats
+                {
+                    BlockSize = StatVfsBlockSize,
+                    FragmentSize = StatVfsBlockSize,
+                    Blocks = space.TotalBytes / StatVfsBlockSize,
+                    FreeBlocks = space.FreeBytes / StatVfsBlockSize,
+                    AvailableBlocks = space.AvailableBytes / StatVfsBlockSize,
+                    MaxNameLength = MaxNameLength,
+                };
+            }
+            catch (Exception ex)
+            {
+                throw Translate(ex, path);
+            }
+        }
+
+        /// <summary>fsync@openssh.com: writes the data of an open file to the storage.</summary>
+        public void Sync(ISftpFileHandle handle)
+        {
+            if (handle is not FileHandle file)
+                throw Own(new IOException("Not a file handle of this session."));
+            file.Sync();
         }
 
         public void MakeDirectory(string path, SftpFileAttributes attributes)
@@ -412,6 +464,25 @@ namespace SshServerModule.Sftp
                 try
                 {
                     _owner.ApplyAttributes(_path, attributes, _stream);
+                }
+                catch (Exception ex)
+                {
+                    throw _owner.Translate(ex, _path);
+                }
+            }
+
+            /// <summary>
+            /// Writes the buffered data to the storage. A <see cref="FileStream"/> flushes to the disk (fsync);
+            /// another stream flushes to its backend.
+            /// </summary>
+            public void Sync()
+            {
+                try
+                {
+                    if (_stream is FileStream fileStream)
+                        fileStream.Flush(flushToDisk: true);
+                    else
+                        _stream.Flush();
                 }
                 catch (Exception ex)
                 {

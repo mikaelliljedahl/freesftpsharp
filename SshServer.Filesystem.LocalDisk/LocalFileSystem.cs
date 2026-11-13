@@ -455,6 +455,51 @@ namespace SshServer.Filesystem.LocalDisk
                 File.SetUnixFileMode(physicalPath, (UnixFileMode)(mode & 0x1FF));
         }
 
+        public void RenameReplacing(string oldPath, string newPath)
+        {
+            var source = GetPhysicalPath(oldPath);
+            var target = GetPhysicalPath(newPath);
+            if (IsUserRoot(source) || IsUserRoot(target))
+                throw new UnauthorizedAccessException("The user root directory cannot be moved or replaced.");
+
+            if (Directory.Exists(source))
+            {
+                if (Directory.Exists(target) || File.Exists(target))
+                    throw new IOException($"The target already exists: {newPath}");
+                Directory.Move(source, target);
+                return;
+            }
+
+            if (!File.Exists(source))
+                throw new FileNotFoundException($"No such file: {oldPath}");
+            if (Directory.Exists(target))
+                throw new IOException($"The target is a directory: {newPath}");
+            if (string.Equals(source, target, StringComparison.Ordinal))
+                return; // rename(2) of a path to itself does nothing
+
+            // One rename(2) on Unix and MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows: the target is
+            // replaced atomically, a reader sees either the old or the new file.
+            File.Move(source, target, overwrite: true);
+        }
+
+        public StorageSpace? GetStorageSpace(string path)
+        {
+            var physicalPath = GetPhysicalPath(path);
+            if (!Directory.Exists(physicalPath) && !File.Exists(physicalPath))
+                throw new FileNotFoundException($"No such file: {path}");
+
+            try
+            {
+                // On Unix DriveInfo takes any path (statvfs); on Windows it needs the drive root.
+                var drive = new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(physicalPath)! : physicalPath);
+                return new StorageSpace((ulong)drive.TotalSize, (ulong)drive.TotalFreeSpace, (ulong)drive.AvailableFreeSpace);
+            }
+            catch (ArgumentException)
+            {
+                return null; // for example a UNC path on Windows
+            }
+        }
+
         private static string CombineVirtualPath(string virtualDirectory, string name)
         {
             return virtualDirectory == "/" ? "/" + name : virtualDirectory + "/" + name;

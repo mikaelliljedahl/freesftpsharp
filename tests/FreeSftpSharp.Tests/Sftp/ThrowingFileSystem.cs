@@ -28,4 +28,6 @@ internal sealed class ThrowingFileSystem(Func<Exception> create) : IFileSystem
     public void SetFileLength(string path, long length) => throw Fail();
     public void SetTimes(string path, DateTime? lastAccessUtc, DateTime? lastWriteUtc) => throw Fail();
     public void SetPermissions(string path, uint mode) => throw Fail();
+    public void RenameReplacing(string oldPath, string newPath) => throw Fail();
+    public StorageSpace? GetStorageSpace(string path) => throw Fail();
 }

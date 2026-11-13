@@ -83,6 +83,96 @@ public sealed class OpenSshSftpTests : IClassFixture<SftpServerFixture>
     }
 
     [Fact]
+    public async Task Rename_over_an_existing_file_replaces_it_with_posix_rename()
+    {
+        // sftp uses posix-rename@openssh.com when the server announces it. A plain SSH_FXP_RENAME
+        // never overwrites, so the replaced target proves that the extension was used.
+        SkipIfUnavailable();
+        var remote = _server.CreateUniqueDirectory("ossh");
+        File.WriteAllText(_server.PhysicalPath(remote + "/new.txt"), "new content");
+        File.WriteAllText(_server.PhysicalPath(remote + "/current.txt"), "old content");
+
+        var result = await RunAsync(_server, CreateLocalDirectory(), $"rename {remote}/new.txt {remote}/current.txt", "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.False(File.Exists(_server.PhysicalPath(remote + "/new.txt")), result.ToString());
+        Assert.Equal("new content", File.ReadAllText(_server.PhysicalPath(remote + "/current.txt")));
+    }
+
+    [Fact]
+    public async Task Rename_with_the_legacy_flag_does_not_overwrite()
+    {
+        SkipIfUnavailable();
+        var remote = _server.CreateUniqueDirectory("ossh");
+        File.WriteAllText(_server.PhysicalPath(remote + "/new.txt"), "new content");
+        File.WriteAllText(_server.PhysicalPath(remote + "/current.txt"), "old content");
+
+        var result = await RunAsync(_server, CreateLocalDirectory(), $"rename -l {remote}/new.txt {remote}/current.txt", "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.True(File.Exists(_server.PhysicalPath(remote + "/new.txt")), result.ToString());
+        Assert.Equal("old content", File.ReadAllText(_server.PhysicalPath(remote + "/current.txt")));
+    }
+
+    [Fact]
+    public async Task Df_shows_the_disk_space_with_statvfs()
+    {
+        SkipIfUnavailable();
+
+        var result = await RunAsync(_server, CreateLocalDirectory(), "df", "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.DoesNotContain("does not support", result.AllOutput);
+        var lines = result.StandardOutput.Split('\n').Select(l => l.Trim()).ToList();
+        var header = lines.FindIndex(l => l.StartsWith("Size", StringComparison.Ordinal) && l.Contains("Avail", StringComparison.Ordinal));
+        Assert.True(header >= 0, result.ToString());
+        // Size, Used, Avail, (root), %Capacity in KiB.
+        var values = lines[header + 1].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var drive = new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(_server.UserRoot)! : _server.UserRoot);
+        Assert.Equal(drive.TotalSize / 4096 * 4, long.Parse(values[0])); // whole 4 KiB blocks
+    }
+
+    [Fact]
+    public async Task Put_with_fsync_gives_the_same_bytes()
+    {
+        SkipIfUnavailable();
+        var local = CreateLocalDirectory();
+        var remote = _server.CreateUniqueDirectory("ossh");
+        var data = RandomNumberGenerator.GetBytes(300 * 1024);
+        File.WriteAllBytes(Path.Combine(local, "synced.bin"), data);
+
+        // -vvv: sftp logs the fsync@openssh.com request; without the extension it skips the fsync silently.
+        var result = await RunWithArgumentsAsync(_server, local, _server.Port, ["-vvv"],
+            "cd " + remote, $"put -f {Quote(Path.Combine(local, "synced.bin"))} synced.bin", "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.Contains("Sent message fsync@openssh.com", result.StandardError);
+        Assert.DoesNotContain("Couldn't sync file", result.StandardError);
+        Assert.Equal(data, File.ReadAllBytes(_server.PhysicalPath(remote + "/synced.bin")));
+    }
+
+    [Fact]
+    public async Task Sftp_takes_its_buffer_sizes_from_the_announced_limits()
+    {
+        SkipIfUnavailable();
+        var local = CreateLocalDirectory();
+        var remote = _server.CreateUniqueDirectory("ossh");
+        var data = RandomNumberGenerator.GetBytes(1024 * 1024 + 3);
+        File.WriteAllBytes(Path.Combine(local, "big.bin"), data);
+
+        var result = await RunWithArgumentsAsync(_server, local, _server.Port, ["-vvv"],
+            "cd " + remote,
+            $"put {Quote(Path.Combine(local, "big.bin"))} big.bin",
+            $"get big.bin {Quote(Path.Combine(local, "big.down"))}",
+            "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.Contains("using 65536 / 65536", result.StandardError);
+        Assert.Equal(data, File.ReadAllBytes(_server.PhysicalPath(remote + "/big.bin")));
+        Assert.Equal(data, File.ReadAllBytes(Path.Combine(local, "big.down")));
+    }
+
+    [Fact]
     public async Task Rm_removes_a_file()
     {
         SkipIfUnavailable();
