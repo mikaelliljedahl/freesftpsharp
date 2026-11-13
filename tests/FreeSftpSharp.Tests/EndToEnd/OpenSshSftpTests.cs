@@ -119,6 +119,30 @@ public sealed class OpenSshSftpTests : IClassFixture<SftpServerFixture>
     }
 
     [Fact]
+    public async Task Get_over_a_slow_connection_with_many_requests_in_flight_gives_the_same_bytes()
+    {
+        // 256 reads of 32 KiB in flight are 8 MiB of responses, much more than the 2 MiB channel window of
+        // OpenSSH, and the proxy slows down the data to the client. The server must often wait for window
+        // adjustments while it has several responses to send; the responses must still arrive whole and in order.
+        SkipIfUnavailable();
+        await using var proxy = new SlowDownstreamProxy(_server.Port);
+        var local = CreateLocalDirectory();
+        var remote = _server.CreateUniqueDirectory("ossh");
+        var data = RandomNumberGenerator.GetBytes(8 * 1024 * 1024 + 7);
+        File.WriteAllBytes(_server.PhysicalPath(remote + "/big.bin"), data);
+
+        var result = await RunWithArgumentsAsync(_server, local, proxy.Port, ["-R", "256", "-B", "32768"],
+            "cd " + remote,
+            $"get big.bin {Quote(Path.Combine(local, "first.down"))}",
+            $"get big.bin {Quote(Path.Combine(local, "second.down"))}",
+            "pwd");
+
+        AssertSessionCompleted(result);
+        Assert.True(data.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(local, "first.down"))), $"The first download differs.{Environment.NewLine}{result}");
+        Assert.True(data.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(local, "second.down"))), $"The second download differs.{Environment.NewLine}{result}");
+    }
+
+    [Fact]
     public async Task Overwrite_of_a_2MB_file_with_a_200B_file_gives_200B()
     {
         SkipIfUnavailable();
