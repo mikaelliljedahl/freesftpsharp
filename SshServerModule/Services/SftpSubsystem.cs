@@ -465,9 +465,17 @@ public class SftpSubsystem : IDisposable
                 var fs = _fileSystem.OpenStreamRead(path);
                 HandleToFileStreamDictionary.Add(handle, fs);
             }
+            catch (FileNotFoundException)
+            {
+                HandleToPathDictionary.Remove(handle);
+                SendStatus(requestId, SftpStatusType.SSH_FX_NO_SUCH_FILE);
+                return; // send only one response for each request
+            }
             catch
             {
+                HandleToPathDictionary.Remove(handle);
                 SendStatus(requestId, SftpStatusType.SSH_FX_PERMISSION_DENIED);
+                return; // send only one response for each request
             }
         }
 
