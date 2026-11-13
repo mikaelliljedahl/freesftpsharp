@@ -65,7 +65,7 @@
                 }
                 else
                 {
-                    <TwoColumnRow HeaderText="Password" TooltipText="Will be saved as SHA256 hash if used">
+                    <TwoColumnRow HeaderText="Password" TooltipText="Will be saved as a salted PBKDF2-SHA256 hash if used">
                         @if (!string.IsNullOrWhiteSpace(SelectedUser.HashedPassword))
                         {
                             <span>Password has been set. You can change it by entering a new one</span>

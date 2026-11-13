@@ -26,6 +26,7 @@ public sealed class SftpServerFixture : IAsyncLifetime
     public const string SecretContent = "SECRET-CONFIG-DB-CONTENT-must-never-be-readable";
 
     private HostedServer? _server;
+    private InMemorySettingsRepository? _repository;
 
     public int Port { get; private set; }
     public string TempDirectory { get; }
@@ -33,6 +34,10 @@ public sealed class SftpServerFixture : IAsyncLifetime
     public string SecretFilePath { get; }
     public string Username => TestCredentials.Username;
     public string Password => TestCredentials.Password;
+
+    /// <summary>The settings repository of the running server, to add users or read what the server stored.</summary>
+    public InMemorySettingsRepository Repository =>
+        _repository ?? throw new InvalidOperationException("The server is not started.");
 
     public SftpServerFixture()
     {
@@ -63,6 +68,7 @@ public sealed class SftpServerFixture : IAsyncLifetime
             }
 
             _server = server;
+            _repository = (InMemorySettingsRepository)server._settingsRepository;
             Port = port;
             await WaitUntilServerAnswersAsync(port, TimeSpan.FromSeconds(15));
             return;
@@ -97,9 +103,9 @@ public sealed class SftpServerFixture : IAsyncLifetime
     }
 
     /// <summary>Creates a client that is not connected yet.</summary>
-    public SftpClient CreateClient(string? password = null)
+    public SftpClient CreateClient(string? password = null, string? username = null)
     {
-        var client = new SftpClient(Host, Port, Username, password ?? Password);
+        var client = new SftpClient(Host, Port, username ?? Username, password ?? Password);
         client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(15);
         client.OperationTimeout = TimeSpan.FromSeconds(30);
         // Known product bug: the server never sends SSH_MSG_CHANNEL_CLOSE back, so SSH.NET waits for
@@ -129,6 +135,19 @@ public sealed class SftpServerFixture : IAsyncLifetime
         var name = $"{prefix}-{Guid.NewGuid():N}";
         Directory.CreateDirectory(Path.Combine(UserRoot, name));
         return "/" + name;
+    }
+
+    /// <summary>Adds a user with the same root directory as the default test user.</summary>
+    public void AddUser(string username, string hashedPassword)
+    {
+        Repository.AddUser(new User
+        {
+            Username = username,
+            HashedPassword = hashedPassword,
+            UserRootDirectory = UserRoot,
+            OnlyWhitelistedIps = false,
+            WhitelistedIps = new List<string>(),
+        });
     }
 
     private HostedServer CreateServer(int port)

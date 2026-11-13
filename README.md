@@ -55,6 +55,12 @@ Kestrel__Endpoints__Https__Certificate__Path=/path/cert.pfx
 Kestrel__Endpoints__Https__Certificate__Password=...
 ```
 
+### SFTP user passwords
+
+SFTP user passwords are stored with the same salted PBKDF2-SHA256 hash as the admin password (600,000 iterations).
+Older versions stored an unsalted SHA-256 hash. Such a user can still log in; after the first successful login
+the server replaces the old hash with a PBKDF2 hash and logs this at Information level.
+
 ## FxSsh
 
 FxSsh is a lightweight [SSH](http://en.wikipedia.org/wiki/Secure_Shell) server side application as SSH reinforcement of [GitCandy](https://github.com/Aimeast/GitCandy). 

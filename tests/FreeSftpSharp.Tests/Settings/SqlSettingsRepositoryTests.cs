@@ -119,7 +119,8 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
     {
         _repository.AddUser(NewUser("bob"));
         var user = _repository.GetUser("bob");
-        user.HashedPassword = TestCredentials.HashPassword("new");
+        var newHash = TestCredentials.HashPassword("new");
+        user.HashedPassword = newHash;
         user.RsaPublicKey = "public-key";
         user.UserRootDirectory = "/other";
         user.OnlyWhitelistedIps = false;
@@ -129,7 +130,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.True(_repository.UpdateUser(user));
 
         var stored = _repository.GetUser("bob");
-        Assert.Equal(TestCredentials.HashPassword("new"), stored.HashedPassword);
+        Assert.Equal(newHash, stored.HashedPassword);
         Assert.Equal("public-key", stored.RsaPublicKey);
         Assert.Equal("/other", stored.UserRootDirectory);
         Assert.False(stored.OnlyWhitelistedIps);

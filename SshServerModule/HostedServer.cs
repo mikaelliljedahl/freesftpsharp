@@ -126,6 +126,8 @@ namespace FxSsh.SshServerModule
             var user = _settingsRepository.GetUser(e.Username);
             if (user == null)
             {
+                if (e is PasswordUserAuthArgs)
+                    UserLogics.SimulatePasswordCheck(); // same time as for a real user
                 e.Result = false;
                 return;
             }
@@ -154,7 +156,7 @@ namespace FxSsh.SshServerModule
 
                 // verify password against user data
               
-                e.Result = UserLogics.VerifyUserPassword(user, pw.Password);
+                e.Result = UserLogics.VerifyUserPassword(user, pw.Password, _settingsRepository, _logger);
 
 
                 //e.Password 

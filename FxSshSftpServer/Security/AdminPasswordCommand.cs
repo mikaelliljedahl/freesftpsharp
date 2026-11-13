@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Security;
 using System;
 using System.IO;
 using System.Linq;
@@ -45,7 +46,7 @@ namespace FxSshSftpServer.Security
                 return 1;
             }
 
-            var hash = AdminPasswordHasher.Hash(password);
+            var hash = PasswordHasher.Hash(password);
             output.WriteLine("Add the hash to the configuration, for example as an environment variable:");
             output.WriteLine();
             output.WriteLine($"AdminAuth__PasswordHash={hash}");
