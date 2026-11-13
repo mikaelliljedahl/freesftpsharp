@@ -285,7 +285,7 @@ namespace FxSsh.SshServerModule
             if (!e.AttachedUserAuthArgs.Result || e.ShellType == "subsystem")
                 return; // subsystems are handled in OnSubsystemRequested
 
-            _logger.LogInformation("Channel {ChannelId} runs {ShellType}: \"{CommandText}\".", e.Channel.ServerChannelId, e.ShellType, e.CommandText);
+            _logger.LogInformation("Channel {ChannelId} runs {ShellType}.", e.Channel.ServerChannelId, e.ShellType);
 
             e.Agreed = true;
             e.Channel.SendData(Encoding.UTF8.GetBytes($"You ran {e.CommandText}\n"));

@@ -7,9 +7,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 using Serilog;
-using Serilog.Events;
-using Serilog.Sinks.File;
-using Serilog.Sinks.HtmlFile;
 
 using FxSsh.SshServerModule;
 
@@ -23,43 +20,40 @@ if (AdminPasswordCommand.IsRequested(args))
     return AdminPasswordCommand.RunOnConsole();
 }
 
+// The bootstrap logger reports errors that happen before the real logger is configured from appsettings.json.
+Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
+
 var builder = WebApplication.CreateBuilder(args);
 Log.Logger = new LoggerConfiguration()
-                      //.MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-                      //.MinimumLevel.Override("System", LogEventLevel.Warning)
+                      .ReadFrom.Configuration(LogFilePaths.MakeAbsolute(builder.Configuration))
                       .Enrich.FromLogContext()
-                      //.WriteTo.File("FxSshServer.txt", rollingInterval: RollingInterval.Day)
-                      .WriteTo.File("FxSshServer.txt", rollOnFileSizeLimit: true, fileSizeLimitBytes: 10_000_000)
-                      .WriteTo.HtmlFile(path: "logsHtml/FxSshServer.html", fileSizeLimitBytes: 10_000_000)
-                  //.Enrich.WithExceptionDetails(new DestructuringOptionsBuilder()
-                  //.WithDefaultDestructurers()
-                  //.WithDestructurers(new[] { new DbUpdateExceptionDestructurer() }))
-                  .CreateLogger();
+                      .CreateLogger();
 
 builder.Logging.AddSerilog(Log.Logger);
 
 Log.Information("Starting host service");
 
-Log.Information("AddRazorPages...");
+Log.Debug("AddRazorPages...");
 builder.Services.AddRazorPages();
 
-Log.Information("AddAdminAuthentication...");
+Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
+builder.Services.AddAdminDataProtection(builder.Configuration);
 
-Log.Information("AddServerSideBlazor...");
+Log.Debug("AddServerSideBlazor...");
 builder.Services.AddServerSideBlazor();
 
-Log.Information("AddHostedService<HostedServer>...");
+Log.Debug("AddHostedService<HostedServer>...");
 builder.Services.AddHostedService<HostedServer>();
 builder.Services.AddSshServerSecurity(); // auto-ban state, IIpBanService for the admin UI
 builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:BindToAddress override the stored settings
 
-Log.Warning("AddSshServerSettings...");
+Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);
-Log.Warning("AddLocalFileSystemHosting...");
+Log.Debug("AddLocalFileSystemHosting...");
 builder.Services.AddLocalFileSystemHosting();
 
-Log.Warning("builder.Build()...");
+Log.Debug("builder.Build()...");
 var app = builder.Build();
 
 // Without an admin credential the whole UI answers 503 (the SSH server still runs).
@@ -76,14 +70,14 @@ else
     app.UseHsts();
 }
 
-Log.Warning("UseHttpsRedirection()...");
+Log.Debug("UseHttpsRedirection()...");
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-Log.Warning("UseEndpoints(...)...");
+Log.Debug("UseEndpoints(...)...");
 app.UseEndpoints(endpoints =>
 {
     endpoints.MapBlazorHub();
@@ -93,9 +87,9 @@ app.UseEndpoints(endpoints =>
 
 try
 {
-    Log.Warning("Starting service...");
+    Log.Information("Starting service...");
     app.Run();
-    Log.Warning("Service has finished.");
+    Log.Information("Service has finished.");
     return 0;
 }
 catch (Exception ex)

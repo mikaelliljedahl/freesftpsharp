@@ -170,3 +170,8 @@ $RECYCLE.BIN/
 # Local settings databases
 freesftpsharp.db*
 config.db
+
+# Log files written when running from source
+logs/
+logsHtml/
+keys/
