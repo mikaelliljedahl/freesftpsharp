@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The test project uses SftpSubsystem.NormalizePath, OnInput and OnOutput. -->
+    <InternalsVisibleTo Include="FreeSftpSharp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Properties\" />
   </ItemGroup>
 
