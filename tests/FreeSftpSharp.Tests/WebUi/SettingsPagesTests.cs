@@ -82,6 +82,7 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         page.Find("#server-settings-form").Submit();
 
         Assert.Contains("Not a valid IP address: localhost", page.Markup);
+        Assert.NotNull(Repository.ServerSettings.BindToAddress);
         Assert.Empty(Repository.ServerSettings.BindToAddress);
     }
 
@@ -110,7 +111,7 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         Assert.Equal(2, keys.Count);
         Assert.Contains("SHA256:", keys[1].TextContent); // RSA
         Assert.Contains("rsa-sha2-512", keys[1].TextContent);
-        Assert.DoesNotContain(Repository.ServerSettings.ServerRsaKey[..40], page.Markup);
+        Assert.DoesNotContain((Repository.ServerSettings.ServerRsaKey ?? throw new InvalidOperationException("No RSA host key."))[..40], page.Markup);
         Assert.Contains("curve25519-sha256", page.Markup);
     }
 
@@ -152,7 +153,9 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         page.Find("#access-form").Submit();
 
         Assert.Contains("Not a valid network: " + entry, page.Markup);
+        Assert.NotNull(Repository.ServerSettings.BlacklistedIps);
         Assert.Empty(Repository.ServerSettings.BlacklistedIps);
+        Assert.NotNull(Repository.ServerSettings.WhitelistedIps);
         Assert.Empty(Repository.ServerSettings.WhitelistedIps);
         Assert.DoesNotContain(Toasts.Messages, m => m.Level == ToastLevel.Success);
     }

@@ -210,6 +210,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Equal("public-key", stored.RsaPublicKey);
         Assert.Equal("/other", stored.UserRootDirectory);
         Assert.False(stored.OnlyWhitelistedIps);
+        Assert.NotNull(stored.WhitelistedIps);
         Assert.Empty(stored.WhitelistedIps);
         Assert.Equal(user.LastSuccessfulLogin, stored.LastSuccessfulLogin);
     }

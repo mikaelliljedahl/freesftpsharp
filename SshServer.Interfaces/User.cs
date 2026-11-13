@@ -9,12 +9,12 @@ namespace SshServer.Interfaces;
 public class User
 {
     public int Id { get; set; }
-    public string Username { get; set; }
-    public string UserRootDirectory { get; set; }
-    public string HashedPassword { get; set; }
-    public string RsaPublicKey { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string UserRootDirectory { get; set; } = string.Empty;
+    public string? HashedPassword { get; set; }
+    public string? RsaPublicKey { get; set; }
     public bool OnlyWhitelistedIps { get; set; }
-    public List<string> WhitelistedIps { get; set; }
+    public List<string>? WhitelistedIps { get; set; }
     public DateTime LastSuccessfulLogin { get; set; }
 
 }
