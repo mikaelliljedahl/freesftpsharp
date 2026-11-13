@@ -6,7 +6,10 @@ namespace SshServer.Filesystem.LocalDisk
     /// <summary>
     /// Gives an SFTP user access to one directory on the local disk.
     /// All paths that this class receives are virtual paths, where "/" is the user root directory.
-    /// A virtual path can never point to a location outside the user root directory.
+    /// A virtual path can never point to a location outside the user root directory, also not through a
+    /// symbolic link or junction inside the root: a path whose real path (all links followed) is outside
+    /// the real path of the root is refused with <see cref="UnauthorizedAccessException"/>. Links whose
+    /// targets stay inside the root work. The user root itself can be a link.
     /// </summary>
     public class LocalFileSystem : IFileSystem
     {
@@ -14,7 +17,6 @@ namespace SshServer.Filesystem.LocalDisk
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
         private readonly string _userRootDirectory;
-        private readonly string _userRootPrefix;
 
         public LocalFileSystem(string userRootDirectory)
         {
@@ -22,9 +24,6 @@ namespace SshServer.Filesystem.LocalDisk
                 throw new ArgumentException("The user root directory is not set.", nameof(userRootDirectory));
 
             _userRootDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(userRootDirectory));
-            _userRootPrefix = Path.EndsInDirectorySeparator(_userRootDirectory)
-                ? _userRootDirectory
-                : _userRootDirectory + Path.DirectorySeparatorChar;
         }
 
         /// <summary>
@@ -66,13 +65,137 @@ namespace SshServer.Filesystem.LocalDisk
 
             // Second line of defence: the normalization above must already prevent this.
             // The check also catches platform rules, for example Windows that removes trailing dots and spaces.
-            if (!string.Equals(fullPath, _userRootDirectory, PathComparison)
-                && !fullPath.StartsWith(_userRootPrefix, PathComparison))
-            {
+            if (!IsInside(fullPath, _userRootDirectory))
                 throw new UnauthorizedAccessException($"The path is outside the user root directory: {virtualPath}");
+
+            // The path is inside the root as text, but a symbolic link or junction on the way (or the last
+            // segment itself) can point outside it. Follow the links like the operating system does and
+            // check the real path against the real path of the root.
+            if (!string.Equals(fullPath, _userRootDirectory, PathComparison))
+            {
+                var realRoot = ResolveLinks(_userRootDirectory);
+                var realPath = ResolveLinks(fullPath);
+                if (!IsInside(realPath, realRoot))
+                    throw new UnauthorizedAccessException($"The path is a link to outside the user root directory: {virtualPath}");
             }
 
             return fullPath;
+        }
+
+        /// <summary>
+        /// True if a physical path from <see cref="GetPhysicalPath"/> is the user root directory, also when a
+        /// link in a parent directory leads to it (for example "/link-to-parent/root"). A path whose last
+        /// segment is itself a link to the root is not the root: removing or moving it changes only the link.
+        /// </summary>
+        private bool IsUserRoot(string physicalPath)
+        {
+            if (string.Equals(physicalPath, _userRootDirectory, PathComparison))
+                return true;
+
+            var parent = Path.GetDirectoryName(physicalPath);
+            if (parent == null)
+                return false;
+            var realPath = Path.Join(ResolveLinks(parent), Path.GetFileName(physicalPath));
+            return string.Equals(realPath, ResolveLinks(_userRootDirectory), PathComparison);
+        }
+
+        private static bool IsInside(string path, string root)
+        {
+            var prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
+            return string.Equals(path, root, PathComparison) || path.StartsWith(prefix, PathComparison);
+        }
+
+        /// <summary>
+        /// The most symbolic links that one path can pass through, like MAXSYMLINKS (40) on Linux.
+        /// </summary>
+        private const int MaxLinks = 40;
+
+        /// <summary>
+        /// Returns the real path of an absolute path: every symbolic link or junction in it, also in the
+        /// targets of links, is replaced by its target, and "." and ".." are removed. Segments that do not
+        /// exist are kept as they are (a path to a new file has a last segment that does not exist).
+        /// <para>
+        /// A ".." segment in a link target goes to the parent of the real directory on Linux and macOS
+        /// (POSIX), and is removed as text on Windows, which also removes it as text before it follows a link.
+        /// </para>
+        /// </summary>
+        private static string ResolveLinks(string path)
+        {
+            var linkCount = 0;
+            return ResolveLinks(path, ref linkCount);
+        }
+
+        private static string ResolveLinks(string path, ref int linkCount)
+        {
+            if (OperatingSystem.IsWindows())
+                path = Path.GetFullPath(path);
+
+            var root = Path.GetPathRoot(path) ?? string.Empty;
+            var current = root;
+            var segments = path.Substring(root.Length).Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var segment in segments)
+            {
+                if (segment == ".")
+                    continue;
+                if (segment == "..")
+                {
+                    current = Path.GetDirectoryName(current) ?? current;
+                    continue;
+                }
+
+                var candidate = Path.Join(current, segment);
+                var target = GetLinkTarget(candidate);
+                if (target == null)
+                {
+                    current = candidate;
+                    continue;
+                }
+
+                if (++linkCount > MaxLinks)
+                    throw new IOException("Too many levels of symbolic links.");
+
+                // A relative target is relative to the directory that has the link.
+                var targetPath = OperatingSystem.IsWindows()
+                    ? Path.GetFullPath(WithoutDevicePrefix(target), current)
+                    : Path.IsPathRooted(target) ? target : Path.Join(current, target);
+                current = ResolveLinks(targetPath, ref linkCount);
+            }
+
+            return current;
+        }
+
+        /// <summary>
+        /// Windows: a junction can store its target as "\\?\C:\dir" or "\??\C:\dir". Returns the normal
+        /// form "C:\dir" (or "\\server\share" for "\\?\UNC\server\share"), so it compares with the root.
+        /// </summary>
+        private static string WithoutDevicePrefix(string target)
+        {
+            foreach (var prefix in new[] { @"\\?\", @"\??\" })
+            {
+                if (!target.StartsWith(prefix, StringComparison.Ordinal))
+                    continue;
+                var rest = target.Substring(prefix.Length);
+                if (rest.StartsWith(@"UNC\", StringComparison.OrdinalIgnoreCase))
+                    return @"\\" + rest.Substring(4);
+                if (rest.Length >= 2 && char.IsAsciiLetter(rest[0]) && rest[1] == ':')
+                    return rest;
+            }
+            return target;
+        }
+
+        /// <summary>The target of a symbolic link or junction as stored in the link, or null if the path is not a link or does not exist.</summary>
+        private static string? GetLinkTarget(string path)
+        {
+            try
+            {
+                return new FileInfo(path).LinkTarget;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return null;
+            }
         }
 
         public bool DirectoryExists(string path)
@@ -176,7 +299,7 @@ namespace SshServer.Filesystem.LocalDisk
         public bool RemoveDirectory(string pathToRemove)
         {
             var absolutepath = GetPhysicalPath(pathToRemove);
-            if (string.Equals(absolutepath, _userRootDirectory, PathComparison))
+            if (IsUserRoot(absolutepath))
                 return false; // never remove the user root directory
 
             var di = new DirectoryInfo(absolutepath);
@@ -216,7 +339,7 @@ namespace SshServer.Filesystem.LocalDisk
                 var oldpathAbsolute = GetPhysicalPath(oldpath);
                 var newpathAbsolute = GetPhysicalPath(newpath);
 
-                if (string.Equals(oldpathAbsolute, _userRootDirectory, PathComparison))
+                if (IsUserRoot(oldpathAbsolute))
                     return false; // never move the user root directory
 
                 var di = new DirectoryInfo(oldpathAbsolute);
@@ -312,7 +435,7 @@ namespace SshServer.Filesystem.LocalDisk
         public void SetPermissions(string path, uint mode)
         {
             var physicalPath = GetPhysicalPath(path);
-            if (string.Equals(physicalPath, _userRootDirectory, PathComparison))
+            if (IsUserRoot(physicalPath))
                 throw new UnauthorizedAccessException("The permissions of the user root directory cannot be changed.");
 
             if (Directory.Exists(physicalPath))
