@@ -120,8 +120,17 @@ namespace FxSsh.Services.Sftp
         private readonly object _laneLock = new();
         private readonly Dictionary<string, Lane> _lanes = [];
         private int _pendingRequests;
-        private long _pendingRequestBytes;
         private TaskCompletionSource _idle = CompletedSource();
+        private volatile bool _closing;
+        private int _closeRaised;
+
+        // Set by Attach: gives the window of a handled request back to the
+        // channel (Channel.DeferWindowAdjust), and counts the replies that
+        // wait for the peer's window.
+        private Action<uint> _releaseWindow;
+        private readonly object _replyLock = new();
+        private long _queuedReplyBytes;
+        private TaskCompletionSource _replyRoom;
 
         private byte[] _pendingBytes;
         private int _handleCursor;
@@ -224,6 +233,13 @@ namespace FxSsh.Services.Sftp
             var outbound = System.Threading.Channels.Channel.CreateUnbounded<byte[]>(
                 new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
 
+            // Flow control: the window of a request goes back to the peer
+            // when the request is answered, not when it arrives. A client
+            // that sends faster than the requests are handled (a bandwidth
+            // limit) stops at the SSH window; the receive loop never waits.
+            channel.DeferWindowAdjust();
+            _releaseWindow = channel.ReleaseWindow;
+
             channel.DataReceived += (_, data) => OnData(data);
             // Peer finished sending (RFC 4254 6.2): the pump sends the
             // queued responses, then echoes EOF and closes our side carrying
@@ -235,22 +251,26 @@ namespace FxSsh.Services.Sftp
                 _ => outbound.Writer.TryComplete(), CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             channel.CloseReceived += (_, _) => OnClose();
-            // A lost connection force-closes the channel without a peer
-            // CLOSE: release the open handles here, or the files stay open
-            // until the garbage collector finalizes them.
+            // A lost connection (or a disconnect by the server) force-closes
+            // the channel without a peer CLOSE: release the open handles, or
+            // the files stay open until the garbage collector finalizes them.
+            // The waiting requests are cancelled, and the handles are
+            // released on the thread pool when the running requests have
+            // stopped: the close of the session never waits for the storage.
             channel.ForceClosed += (_, _) =>
             {
                 outbound.Writer.TryComplete();
-                // Cancel the waiting requests and release the handles when
-                // the running ones have stopped, so that no request uses a
-                // handle while it is aborted.
-                _cancellationTokenSource.Cancel();
-                WhenIdle().ContinueWith(
-                    _ => CloseAllHandles(), CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                BeginClose().ContinueWith(_ => CloseAllHandles(), CancellationToken.None,
+                    TaskContinuationOptions.None, TaskScheduler.Default);
             };
 
-            DataReceived += (_, packet) => outbound.Writer.TryWrite(packet);
+            DataReceived += (_, packet) =>
+            {
+                lock (_replyLock)
+                    _queuedReplyBytes += packet.Length;
+                if (!outbound.Writer.TryWrite(packet))
+                    ReplySent(packet.Length);
+            };
             CloseReceived += (_, exitCode) =>
             {
                 outbound.Writer.TryComplete();
@@ -260,7 +280,7 @@ namespace FxSsh.Services.Sftp
             _ = PumpAsync(channel, outbound.Reader);
         }
 
-        private static async Task PumpAsync(SessionChannel channel, System.Threading.Channels.ChannelReader<byte[]> outbound)
+        private async Task PumpAsync(SessionChannel channel, System.Threading.Channels.ChannelReader<byte[]> outbound)
         {
             try
             {
@@ -270,6 +290,7 @@ namespace FxSsh.Services.Sftp
                     if (channel.ServerClosed || channel.IsForceClosed)
                         return;
                     await channel.SendDataAsync(packet);
+                    ReplySent(packet.Length);
                 }
 
                 if (!channel.ServerClosed && !channel.IsForceClosed)
@@ -317,6 +338,7 @@ namespace FxSsh.Services.Sftp
                 if (length < 1 || length > MaxPacketLength)
                 {
                     Log.Warn($"SFTP: discarding invalid frame length {length}.");
+                    _releaseWindow?.Invoke((uint)_pendingBytes.Length);
                     _pendingBytes = null;
                     return;
                 }
@@ -338,32 +360,66 @@ namespace FxSsh.Services.Sftp
 
         /// <summary>
         /// Tears the engine down in response to the peer closing the channel:
-        /// cancels the token that <see cref="WaitForClose"/> blocks on,
-        /// releases every open handle, and raises <see cref="CloseReceived"/>
-        /// with an exit code of 0.
+        /// cancels the token that <see cref="WaitForClose"/> blocks on and the
+        /// waiting requests, then, when the running requests have stopped,
+        /// releases every open handle and raises <see cref="CloseReceived"/>
+        /// with an exit code of 0. It does not wait: with no running request
+        /// (a synchronous file system) all of this is done when it returns.
         /// </summary>
         public void OnClose()
         {
-            _cancellationTokenSource.Cancel();
-            // The cancelled requests stop at once; a running storage call
-            // ends before its handle is closed.
-            WhenIdle().Wait();
-            CloseAllHandles();
-            CloseReceived?.Invoke(this, 0);
+            BeginClose().ContinueWith(_ =>
+            {
+                CloseAllHandles();
+                if (Interlocked.Exchange(ref _closeRaised, 1) == 0)
+                    CloseReceived?.Invoke(this, 0);
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
 
         /// <summary>Blocks the calling thread until the engine is closed via <see cref="OnClose"/>.</summary>
         public void WaitForClose()
         {
-            Task.Delay(-1, _cancellationTokenSource.Token).Wait();
+            Task.Delay(-1, _cancellation).Wait();
         }
 
-        /// <summary>Release every open handle (session teardown); a file that the client did not close is aborted.</summary>
+        /// <summary>
+        /// Release every open handle (session teardown); a file that the client
+        /// did not close is aborted. Waits for the running requests. Safe to
+        /// call more than once and together with a close of the channel.
+        /// </summary>
         public void Dispose()
         {
-            _cancellationTokenSource.Cancel();
+            BeginClose().Wait();
             CloseAllHandles();
-            _cancellationTokenSource.Dispose();
+        }
+
+        /// <summary>
+        /// Starts the close: no new request is handled (<see cref="Enqueue"/>
+        /// answers FAILURE, <see cref="RegisterHandle"/> refuses a handle), the
+        /// waiting requests are cancelled. Returns the task that completes when
+        /// the requests that already run have stopped. Idempotent, never throws.
+        /// </summary>
+        private Task BeginClose()
+        {
+            Task idle;
+            lock (_laneLock)
+            {
+                _closing = true;
+                idle = _idle.Task;
+            }
+
+            WakeReplyWaiters();
+            try
+            {
+                // The source is never disposed, so a late close cannot throw
+                // ObjectDisposedException.
+                _cancellationTokenSource.Cancel();
+            }
+            catch (Exception ex)
+            {
+                Log.Debug($"SFTP: a cancellation callback failed at the session close: {ex}");
+            }
+            return idle;
         }
 
         private void CloseAllHandles()
@@ -384,13 +440,12 @@ namespace FxSsh.Services.Sftp
         #region Request lanes
 
         /// <summary>
-        /// Upper bounds for the requests that are received but not answered.
-        /// Above them <see cref="OnData"/> waits, so the channel window is not
-        /// adjusted and the client stops sending (the flow control that the
-        /// serial engine had by blocking the receive loop).
+        /// The replies that may wait for the peer's window before the engine
+        /// stops handling requests. A client that pipelines READs and does not
+        /// read the replies stops at this bound (and then at the SSH window,
+        /// because its requests are not answered).
         /// </summary>
-        private const int MaxPendingRequests = 1024;
-        private const long MaxPendingRequestBytes = 16L * 1024 * 1024;
+        private const long MaxQueuedReplyBytes = 4L * 1024 * 1024;
 
         /// <summary>The key of the lane for the requests without a handle.</summary>
         private const string PathLaneKey = "";
@@ -415,6 +470,49 @@ namespace FxSsh.Services.Sftp
                 return _idle.Task;
         }
 
+        private void ReplySent(int bytes)
+        {
+            TaskCompletionSource room = null;
+            lock (_replyLock)
+            {
+                _queuedReplyBytes -= bytes;
+                if (_queuedReplyBytes < MaxQueuedReplyBytes)
+                {
+                    room = _replyRoom;
+                    _replyRoom = null;
+                }
+            }
+            room?.TrySetResult();
+        }
+
+        private void WakeReplyWaiters()
+        {
+            TaskCompletionSource room;
+            lock (_replyLock)
+            {
+                room = _replyRoom;
+                _replyRoom = null;
+            }
+            room?.TrySetResult();
+        }
+
+        /// <summary>Waits (without a thread) while too many replies wait for the peer's window.</summary>
+        private async ValueTask WaitForReplyRoomAsync()
+        {
+            while (true)
+            {
+                Task wait;
+                lock (_replyLock)
+                {
+                    if (_queuedReplyBytes < MaxQueuedReplyBytes || _closing)
+                        return;
+                    _replyRoom ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    wait = _replyRoom.Task;
+                }
+                await wait;
+            }
+        }
+
         /// <summary>
         /// Queues a request in its lane. Draft section 6: the server may
         /// answer requests in any order, but the requests of one file must be
@@ -427,6 +525,8 @@ namespace FxSsh.Services.Sftp
         /// limit); it then continues on the thread pool and the next
         /// requests of the other lanes are handled meanwhile. With a
         /// synchronous file system the engine is as serial as before.
+        /// This method never waits: the SSH window (see <see cref="Attach"/>)
+        /// bounds the requests in the lanes.
         /// </summary>
         private void Enqueue(ReadOnlyMemory<byte> payload)
         {
@@ -434,23 +534,46 @@ namespace FxSsh.Services.Sftp
             Lane lane;
             lock (_laneLock)
             {
-                while ((_pendingRequests >= MaxPendingRequests || _pendingRequestBytes >= MaxPendingRequestBytes) &&
-                       !_cancellation.IsCancellationRequested)
-                    Monitor.Wait(_laneLock);
+                if (!_closing)
+                {
+                    if (_pendingRequests++ == 0)
+                        _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-                if (_pendingRequests++ == 0)
-                    _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                _pendingRequestBytes += payload.Length;
+                    if (!_lanes.TryGetValue(key, out lane))
+                        _lanes.Add(key, lane = new Lane());
+                    lane.Requests.Enqueue(payload);
+                    if (lane.Running)
+                        return;
+                    lane.Running = true;
+                }
+                else
+                    lane = null;
+            }
 
-                if (!_lanes.TryGetValue(key, out lane))
-                    _lanes.Add(key, lane = new Lane());
-                lane.Requests.Enqueue(payload);
-                if (lane.Running)
-                    return;
-                lane.Running = true;
+            if (lane == null)
+            {
+                RejectClosed(payload);
+                _releaseWindow?.Invoke((uint)payload.Length + 4);
+                return;
             }
 
             _ = RunLaneAsync(key, lane);
+        }
+
+        /// <summary>A request after the close started: FAILURE, the file system is not used.</summary>
+        private void RejectClosed(ReadOnlyMemory<byte> payload)
+        {
+            try
+            {
+                var reader = new SshDataReader(payload);
+                if (reader.ReadByte() == SSH_FXP_INIT)
+                    return;
+                SendStatus(reader.ReadUInt32(), SSH_FX_FAILURE, "The session is closed.", "en");
+            }
+            catch (Exception)
+            {
+                // A malformed request: there is no id to answer.
+            }
         }
 
         private async Task RunLaneAsync(string key, Lane lane)
@@ -471,8 +594,9 @@ namespace FxSsh.Services.Sftp
 
                 try
                 {
-                    // After a close the handles are gone and a wait is
-                    // cancelled at once, so the rest of the lane ends fast.
+                    // After a close the waits are cancelled and the new
+                    // handles refused, so the rest of the lane ends fast.
+                    await WaitForReplyRoomAsync();
                     await ProcessRequestAsync(new SshDataReader(payload));
                 }
                 catch (Exception ex)
@@ -481,12 +605,11 @@ namespace FxSsh.Services.Sftp
                 }
                 finally
                 {
+                    _releaseWindow?.Invoke((uint)payload.Length + 4);
                     lock (_laneLock)
                     {
-                        _pendingRequestBytes -= payload.Length;
                         if (--_pendingRequests == 0)
                             _idle.TrySetResult();
-                        Monitor.PulseAll(_laneLock);
                     }
                 }
             }
@@ -1034,8 +1157,19 @@ namespace FxSsh.Services.Sftp
         {
             var handle = Interlocked.Increment(ref _handleCursor).ToString();
             lock (_mapOfHandle)
-                _mapOfHandle.Add(handle, entry);
-            return handle;
+            {
+                if (!_closing)
+                {
+                    _mapOfHandle.Add(handle, entry);
+                    return handle;
+                }
+            }
+
+            // The session closes: CloseAllHandles may have run already, so
+            // the handle would never be released.
+            try { entry.Abort(); }
+            catch (Exception ex) { Log.Warn($"SFTP: closing a handle failed: {ex.Message}"); }
+            throw new IOException("The session is closed.");
         }
 
         /// <summary>Resolve a file handle, replying FAILURE when missing or a directory handle.</summary>
