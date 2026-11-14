@@ -50,9 +50,11 @@ public sealed class WebhookReceiver : IAsyncDisposable
     /// <param name="clock">The time that is kept with each request. Default: the system clock.</param>
     public static async Task<WebhookReceiver> StartAsync(Func<DateTimeOffset>? clock = null)
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(o => o.Listen(IPAddress.Loopback, 0));
+        // An empty builder reads no appsettings.json, environment variables or command line, so no endpoint
+        // (Kestrel:Endpoints, ASPNETCORE_URLS) of the machine or of an appsettings.json in the test output can reach it.
+        var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions());
+        builder.Services.AddLogging();
+        builder.WebHost.UseKestrelCore().ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
         var app = builder.Build();
         var receiver = new WebhookReceiver(app, clock ?? (() => DateTimeOffset.UtcNow));
         app.Run(receiver.HandleAsync);
