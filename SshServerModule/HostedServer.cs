@@ -17,6 +17,7 @@ using SshServer.Interfaces.Net;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces.TwoFactor;
 using SshServerModule.Sftp;
+using SshServerModule.Proxy;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -48,6 +49,7 @@ namespace FxSsh.SshServerModule
         private readonly IEventBus _events;
         private readonly IEffectiveUserSettingsService _userSettings;
         private readonly ITwoFactorVerifier _twoFactor;
+        private readonly ProxyProtocolOptions _proxy;
 
         /// <summary>The prompt of the TOTP verification code (keyboard-interactive, echo off).</summary>
         internal const string CodePrompt = "Verification code: ";
@@ -64,10 +66,13 @@ namespace FxSsh.SshServerModule
         /// <param name="events">The event bus for the auth and system events (AddSshServerEvents). Null: no events.</param>
         /// <param name="userSettings">The effective settings of the users with their groups (AddSshServerStorage). Null: one over <paramref name="settingsRepository"/>.</param>
         /// <param name="twoFactor">The TOTP second factor (AddTwoFactor, #63). Null: no user has a second factor.</param>
+        /// <param name="proxy">The PROXY protocol of a load balancer (AddSshServerListenOptions, #75). Null or no allowed source: off.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
             LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IConnectionRegistry connections = null,
-            IEventBus events = null, ITwoFactorVerifier twoFactor = null, IEffectiveUserSettingsService userSettings = null)
+            IEventBus events = null, ITwoFactorVerifier twoFactor = null, IEffectiveUserSettingsService userSettings = null,
+            ProxyProtocolOptions proxy = null)
         {
+            _proxy = proxy;
             _twoFactor = twoFactor;
             _userSettings = userSettings ?? new EffectiveUserSettingsService(settingsRepository);
             _connections = connections ?? new ConnectionRegistry(TimeProvider.System);
@@ -98,6 +103,9 @@ namespace FxSsh.SshServerModule
 
             var timeouts = SessionTimeouts.FromSettings(settings);
             var hostKeys = HostKeys.Load(_settingsRepository);
+            if (_proxy?.Enabled == true)
+                _logger.LogInformation("PROXY protocol on: connections only from {Sources}, each with a PROXY header.",
+                    string.Join(", ", _proxy.AllowedSources));
 
             try
             {
@@ -109,6 +117,8 @@ namespace FxSsh.SshServerModule
                         server.AddHostKey(hostKey.Algorithm, hostKey.Pem);
                     Ed25519PublicKey.Register(server); // ed25519 user keys (issue #58)
                     server.ConnectionAccepted += OnConnectionAccepted;
+                    if (_proxy?.Enabled == true)
+                        server.ConnectionPreface = async (socket, ct) => await _proxy.AcceptAsync(socket, ct);
                     servers.Add(server);
                     await server.StartAsync(cancellationToken);
                     _logger.LogInformation("Listening on {Address} port {Port}.", address, listen.Port);

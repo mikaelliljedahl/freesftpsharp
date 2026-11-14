@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -50,7 +51,10 @@ namespace FxSsh.SshServerModule
 
     public static class SshServerOptionsServiceCollectionExtensions
     {
-        /// <summary>Binds <see cref="SshServerOptions"/> from the <c>SshServer</c> section of the application configuration.</summary>
+        /// <summary>
+        /// Binds <see cref="SshServerOptions"/> from the <c>SshServer</c> section of the application configuration, and the
+        /// <see cref="global::SshServerModule.Proxy.ProxyProtocolOptions"/> from the <c>Proxy</c> section.
+        /// </summary>
         public static IServiceCollection AddSshServerListenOptions(this IServiceCollection services)
         {
             services.AddOptions<SshServerOptions>()
@@ -60,6 +64,8 @@ namespace FxSsh.SshServerModule
                     options.Port = bound.Port;
                     options.BindToAddress = bound.BindToAddress;
                 });
+            // The PROXY protocol of a load balancer (#75): off until Proxy:AllowedSources is set.
+            services.TryAddSingleton(sp => global::SshServerModule.Proxy.ProxyProtocolOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
             return services;
         }
     }

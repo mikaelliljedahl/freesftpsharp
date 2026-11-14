@@ -51,6 +51,8 @@ public class SftpServerFixture : IAsyncLifetime
     }
     /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
     protected virtual SshServerOptions? CreateListenOptions(int port) => null;
+    /// <summary>The PROXY protocol of the listener (#75). Null: off. Override it in a derived fixture.</summary>
+    protected virtual SshServerModule.Proxy.ProxyProtocolOptions? CreateProxyOptions() => null;
     /// <summary>The clock of the server (bans, LastLoginAt, expiry). Override it with a FakeTimeProvider.</summary>
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
     /// <summary>The event bus of the server (file, auth and system events). Null: no events. Override it in a derived fixture.</summary>
@@ -104,7 +106,9 @@ public class SftpServerFixture : IAsyncLifetime
             _server = server;
             _repository = (InMemorySettingsRepository)server._settingsRepository;
             Port = port;
-            await WaitUntilServerAnswersAsync(port, TimeSpan.FromSeconds(15));
+            // Behind the PROXY protocol a plain connection is refused; the listener is bound when StartAsync returns.
+            if (CreateProxyOptions() == null)
+                await WaitUntilServerAnswersAsync(port, TimeSpan.FromSeconds(15));
             return;
         }
 
@@ -217,7 +221,7 @@ public class SftpServerFixture : IAsyncLifetime
         TwoFactor ??= CreateTwoFactor(time);
         return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(Connections, _eventBus, repository), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
-            Connections, _eventBus, TwoFactor);
+            Connections, _eventBus, TwoFactor, proxy: CreateProxyOptions());
     }
 
     /// <summary>
