@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Admins;
 using System.Diagnostics;
 using FreeSftpSharp.Tests.Settings;
 using Microsoft.AspNetCore.DataProtection;
@@ -122,7 +123,7 @@ public sealed class WebhookDeliveryTests : IAsyncDisposable
         Assert.Equal("HTTP 503", dead.LastError);
 
         _receiver.Respond = (_, _) => new ReceiverAnswer(204);
-        Assert.True(await host.Admin.RedeliverAsync(dead.Id, Ct));
+        Assert.True(await host.Admin.RedeliverAsync(AdminActor.System, dead.Id, Ct));
         var delivered = Assert.Single(await host.WaitForDeliveriesAsync(id, d => d[0].Status == WebhookDeliveryStatus.Delivered));
         Assert.Equal(1, delivered.Attempts);
         Assert.Equal(WebhookRetrySchedule.MaxAttempts + 1, _receiver.Requests.Count);
@@ -232,7 +233,7 @@ public sealed class WebhookDeliveryTests : IAsyncDisposable
         var id = await host.AddWebhookAsync(Hook("first"));
         await host.AddWebhookAsync(Hook("second"));
 
-        Assert.True(await host.Admin.SendTestAsync(id, Ct));
+        Assert.True(await host.Admin.SendTestAsync(AdminActor.System, id, Ct));
 
         await host.WaitForDeliveriesAsync(id, d => d.Count == 1 && d[0].Status == WebhookDeliveryStatus.Delivered);
         var request = Assert.Single(_receiver.Requests);
@@ -247,7 +248,7 @@ public sealed class WebhookDeliveryTests : IAsyncDisposable
 
         await host.Sink.HandleAsync(Upload(), Ct);
 
-        Assert.Empty(await host.Admin.ListAsync(Ct));
+        Assert.Empty(await host.Admin.ListAsync(AdminActor.System, Ct));
         Assert.Empty(await host.Store.ClaimDueAsync("test", DateTime.MaxValue.AddDays(-1), DateTime.MaxValue, 10, Ct));
         Assert.Empty(_receiver.Requests);
     }

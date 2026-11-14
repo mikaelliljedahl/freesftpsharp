@@ -96,9 +96,20 @@ public static class OpenSshSftp
         return RunAsync(server, localDirectory, DefaultExitGracePeriod, sftpArguments, commands, port);
     }
 
-    private static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, string[] extraArguments, string[] commands, int? port = null)
+    /// <summary>
+    /// Like <see cref="RunWithOptionsAsync"/>, with another SSH_ASKPASS script (for example one that answers the
+    /// keyboard-interactive prompts). The script gets the prompt as its first argument.
+    /// </summary>
+    public static Task<Result> RunWithAskPassAsync(SftpServerFixture server, string localDirectory, string askPassScript, string[] sshOptions, params string[] commands)
     {
-        var askPass = CreateAskPassScript(server);
+        return RunAsync(server, localDirectory, DefaultExitGracePeriod, sshOptions.SelectMany(o => new[] { "-o", o }).ToArray(), commands,
+            askPass: askPassScript);
+    }
+
+    private static async Task<Result> RunAsync(SftpServerFixture server, string localDirectory, TimeSpan exitGracePeriod, string[] extraArguments, string[] commands, int? port = null,
+        string? askPass = null)
+    {
+        askPass ??= CreateAskPassScript(server);
 
         var startInfo = new ProcessStartInfo(SftpPath.Value ?? "sftp")
         {

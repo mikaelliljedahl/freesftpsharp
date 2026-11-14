@@ -65,9 +65,10 @@ proxy), so that the request counts as HTTPS; do not use `AllowInsecureHttp` for 
   may use. A user without WebDAV gets 403, but only after a correct password, so a client without the password learns
   nothing. SFTP refuses a user without SFTP like a wrong password.
 - **App passwords.** A WebDAV client cannot answer a second login step. A user with a multi-step login
-  (`RequireAllOf`) cannot log in to WebDAV with the password alone; give it an app password (admin UI: user form, "App
-  passwords"). An app password is random (28 characters, about 160 bits), valid for the protocols that you select, can
-  expire, and is shown once; the server keeps only its SHA-256 hash. It also works for the users that will get TOTP.
+  (`RequireAllOf`) or a TOTP second factor (#63) cannot log in to WebDAV with the password alone; give it an app
+  password (admin UI: user form, "App passwords"). An app password is random (28 characters, about 160 bits), valid for
+  the protocols that you select, can expire, and is shown once; the server keeps only its SHA-256 hash. An app password
+  for SFTP is a password of the SFTP login (it does not replace a TOTP code there).
 - **Sessions.** HTTP has no connection. The server keeps a session per client address and credential: the password is
   checked once (PBKDF2), the admin UI page "Connections" and the metrics show one WebDAV connection, and the audit log
   has one `LoginOk` and one `Logout`. A session ends after `SessionIdleTimeoutSeconds`, when an administrator

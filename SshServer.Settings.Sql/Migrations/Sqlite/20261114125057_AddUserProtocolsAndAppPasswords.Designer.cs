@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114122754_AddUserProtocolsAndAppPasswords")]
-partial class _20261114122754_AddUserProtocolsAndAppPasswords
+[Migration("20261114125057_AddUserProtocolsAndAppPasswords")]
+partial class _20261114125057_AddUserProtocolsAndAppPasswords
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -165,6 +165,102 @@ partial class _20261114122754_AddUserProtocolsAndAppPasswords
                 b.HasIndex("Username");
 
                 b.ToTable("AuditEntries");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRule", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Actions")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Conditions")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("CronExpression")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("EventTypes")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastScheduledRunUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("TimeZone")
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("EventRules");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("DurationMs")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Message")
+                    .IsRequired()
+                    .HasMaxLength(4000)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("RuleId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("StartedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("RuleId", "StartedUtc");
+
+                b.ToTable("EventRuleRuns");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.ServerSettings", b =>
@@ -352,6 +448,9 @@ partial class _20261114122754_AddUserProtocolsAndAppPasswords
                     .HasColumnType("TEXT")
                     .UseCollation("NOCASE");
 
+                b.Property<bool>("OnlyForEventRules")
+                    .HasColumnType("INTEGER");
+
                 b.Property<string>("PathGlob")
                     .HasMaxLength(1024)
                     .HasColumnType("TEXT");
@@ -454,12 +553,72 @@ partial class _20261114122754_AddUserProtocolsAndAppPasswords
                 b.ToTable("WebhookDeliveries");
             });
 
+        modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("AdminId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("EnabledAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("LastUsedStep")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("ProtectedSecret")
+                    .IsRequired()
+                    .HasMaxLength(1024)
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("RecoveryCodeHashes")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("UserId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("AdminId")
+                    .IsUnique();
+
+                b.HasIndex("UserId")
+                    .IsUnique();
+
+                b.ToTable("TwoFactorEnrolments", t =>
+                    {
+                        t.HasCheckConstraint("CK_TwoFactorEnrolments_Owner", "(UserId IS NULL AND AdminId IS NOT NULL) OR (UserId IS NOT NULL AND AdminId IS NULL)");
+                    });
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
             {
                 b.HasOne("SshServer.Interfaces.Admins.Role", null)
                     .WithMany()
                     .HasForeignKey("ScopeRoleId")
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
+            {
+                b.HasOne("SshServer.Interfaces.EventRules.EventRule", null)
+                    .WithMany()
+                    .HasForeignKey("RuleId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
@@ -515,6 +674,19 @@ partial class _20261114122754_AddUserProtocolsAndAppPasswords
                     .HasForeignKey("WebhookId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Admin", null)
+                    .WithMany()
+                    .HasForeignKey("AdminId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("SshServer.Interfaces.User", null)
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 #pragma warning restore 612, 618
     }

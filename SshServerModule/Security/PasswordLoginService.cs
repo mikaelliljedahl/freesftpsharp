@@ -8,6 +8,7 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Net;
+using SshServer.Interfaces.TwoFactor;
 
 namespace FxSsh.SshServerModule.Security
 {
@@ -40,8 +41,9 @@ namespace FxSsh.SshServerModule.Security
     /// <list type="number">
     /// <item>The global IP rules and the auto-ban (<see cref="IpFilter"/>, <see cref="LoginBanTracker"/>).</item>
     /// <item>The user, its IP whitelist and the password: the stored PBKDF2 hash (<see cref="User.AllowedAuthMethods"/>
-    /// must allow the password, and a user with a multi-step login cannot log in with the password alone), or an app
-    /// password of the user for the protocol (<see cref="User.AppPasswords"/>).</item>
+    /// must allow the password; a user with a multi-step login or a TOTP second factor (#63) cannot log in with the
+    /// password alone, because these protocols cannot ask for a second step), or an app password of the user for the
+    /// protocol (<see cref="User.AppPasswords"/>).</item>
     /// <item>The protocol (<see cref="User.AllowedProtocols"/>), checked after the credentials, so only the owner of the
     /// account learns that the protocol is refused.</item>
     /// </list>
@@ -59,10 +61,14 @@ namespace FxSsh.SshServerModule.Security
         private readonly IEventBus? _events;
         private readonly ILogger _logger;
         private readonly IpFilter _ipFilter;
+        private readonly ITwoFactorVerifier? _twoFactor;
 
         /// <param name="events">The event bus (AddSshServerEvents). Null: no events.</param>
-        public PasswordLoginService(ISettingsRepository repository, LoginBanTracker bans, ILogger<PasswordLoginService> logger, IEventBus? events = null)
+        /// <param name="twoFactor">The second factor (#63). Null: no user has one.</param>
+        public PasswordLoginService(ISettingsRepository repository, LoginBanTracker bans, ILogger<PasswordLoginService> logger, IEventBus? events = null,
+            ITwoFactorVerifier? twoFactor = null)
         {
+            _twoFactor = twoFactor;
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _bans = bans ?? throw new ArgumentNullException(nameof(bans));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -92,7 +98,7 @@ namespace FxSsh.SshServerModule.Security
             }
 
             var user = string.IsNullOrEmpty(username) ? null : _repository.GetUser(username);
-            var (method, failure) = Verify(user, password, protocol, address);
+            var (method, failure) = await VerifyAsync(user, password, protocol, address, ct);
             if (failure != null)
             {
                 _logger.LogInformation("{Protocol} login of {Username} from {Address} failed: {Reason}.", protocolName, username, address, failure);
@@ -122,7 +128,8 @@ namespace FxSsh.SshServerModule.Security
         }
 
         /// <summary>Returns the method that succeeded, or the reason of the failure. Every failure costs one key derivation.</summary>
-        private (string? Method, string? Failure) Verify(User? user, string? password, UserProtocols protocol, IPAddress address)
+        private async ValueTask<(string? Method, string? Failure)> VerifyAsync(User? user, string? password, UserProtocols protocol,
+            IPAddress address, CancellationToken ct)
         {
             if (user == null)
             {
@@ -149,6 +156,23 @@ namespace FxSsh.SshServerModule.Security
             {
                 UserLogics.SimulatePasswordCheck();
                 return (null, "the user has a multi-step login; use an app password");
+            }
+
+            bool totp;
+            try
+            {
+                totp = _twoFactor != null && await _twoFactor.IsEnabledAsync(TwoFactorSubject.ForUser(user), ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "The second factor of user {Username} cannot be read; the login is refused.", user.Username);
+                UserLogics.SimulatePasswordCheck();
+                return (null, "the second factor cannot be checked");
+            }
+            if (totp)
+            {
+                UserLogics.SimulatePasswordCheck();
+                return (null, "the user has a second factor; use an app password");
             }
 
             return UserLogics.VerifyUserPassword(user, password, _repository, _logger) ? (PasswordMethod, null) : (null, "wrong password");

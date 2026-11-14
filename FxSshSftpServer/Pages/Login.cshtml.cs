@@ -1,19 +1,20 @@
 using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
 using FxSshSftpServer.Security;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
-using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.TwoFactor;
 
 namespace FxSshSftpServer.Pages
 {
-    /// <summary>Login for the stored administrators. Razor Pages validate the antiforgery token of every POST.</summary>
+    /// <summary>
+    /// Login for the stored administrators. Razor Pages validate the antiforgery token of every POST. An administrator
+    /// with a second factor (#63) continues on <see cref="LoginCodeModel"/> after the right password.
+    /// </summary>
     [AllowAnonymous]
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public class LoginModel : PageModel
@@ -22,23 +23,23 @@ namespace FxSshSftpServer.Pages
         public const string LockedOutMessage = "Too many failed logins. Try again later.";
 
         /// <summary>The <see cref="AuthEvent.Protocol"/> of the admin logins in the audit log.</summary>
-        public const string AuditProtocol = "AdminUI";
+        public const string AuditProtocol = AdminLoginFlow.AuditProtocol;
 
         private readonly AdminCredentialValidator _validator;
-        private readonly AdminAdministrationService _administration;
         private readonly LoginThrottle _throttle;
-        private readonly IEventBus _events;
-        private readonly System.TimeProvider _time;
+        private readonly AdminLoginFlow _flow;
+        private readonly ITwoFactorVerifier _twoFactor;
+        private readonly PendingTwoFactorLogin _pending;
         private readonly ILogger<LoginModel> _logger;
 
-        public LoginModel(AdminCredentialValidator validator, AdminAdministrationService administration, LoginThrottle throttle,
-            IEventBus events, System.TimeProvider time, ILogger<LoginModel> logger)
+        public LoginModel(AdminCredentialValidator validator, LoginThrottle throttle, AdminLoginFlow flow, ITwoFactorVerifier twoFactor,
+            PendingTwoFactorLogin pending, ILogger<LoginModel> logger)
         {
             _validator = validator;
-            _administration = administration;
             _throttle = throttle;
-            _events = events;
-            _time = time;
+            _flow = flow;
+            _twoFactor = twoFactor;
+            _pending = pending;
             _logger = logger;
         }
 
@@ -61,6 +62,7 @@ namespace FxSshSftpServer.Pages
         public async Task<IActionResult> OnPostAsync()
         {
             var client = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _pending.Clear(HttpContext);
 
             if (_throttle.IsLockedOut(client))
             {
@@ -73,34 +75,21 @@ namespace FxSshSftpServer.Pages
             {
                 _throttle.RecordFailure(client);
                 _logger.LogWarning("Failed admin login for user {UserName} from {Client}.", UserName, client);
-                await PublishAsync(AuthEventType.LoginFailed, UserName, client);
+                await _flow.PublishFailedAsync(HttpContext, UserName, "password",
+                    "wrong user name or password, disabled account or address not allowed");
                 return Failed(InvalidCredentialsMessage, StatusCodes.Status200OK);
             }
 
-            _throttle.RecordSuccess(client);
-            _logger.LogInformation("Admin {UserName} logged in from {Client}.", admin.Username, client);
-            await _administration.RecordLoginAsync(admin, HttpContext.RequestAborted);
-            await PublishAsync(AuthEventType.LoginOk, admin.Username, client);
-
-            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, AdminClaims.CreatePrincipal(admin));
-
-            var target = Url.IsLocalUrl(ReturnUrl) ? ReturnUrl : "/";
-            if (admin.MustChangePassword)
-                return LocalRedirect("/ChangePassword?ReturnUrl=" + System.Uri.EscapeDataString(target));
-            return LocalRedirect(target);
-        }
-
-        private async Task PublishAsync(AuthEventType type, string userName, string client)
-        {
-            await _events.PublishAsync(new AuthEvent(type)
+            if (await _twoFactor.IsEnabledAsync(TwoFactorSubject.ForAdmin(admin), HttpContext.RequestAborted))
             {
-                Timestamp = _time.GetUtcNow(),
-                Username = userName?.Trim(),
-                RemoteIp = client,
-                Protocol = AuditProtocol,
-                Method = "password",
-                Reason = type == AuthEventType.LoginFailed ? "wrong user name or password, disabled account or address not allowed" : null,
-            }, HttpContext.RequestAborted);
+                // The throttle is not reset here: the failures of the code step count with the password failures.
+                _pending.Issue(HttpContext, admin);
+                _logger.LogInformation("Admin {UserName} gave the right password from {Client}; the verification code is next.", admin.Username, client);
+                var code = "/LoginCode";
+                return LocalRedirect(string.IsNullOrEmpty(ReturnUrl) ? code : code + "?ReturnUrl=" + System.Uri.EscapeDataString(ReturnUrl));
+            }
+
+            return await _flow.CompleteAsync(this, admin, "password", ReturnUrl);
         }
 
         private IActionResult Failed(string message, int statusCode)

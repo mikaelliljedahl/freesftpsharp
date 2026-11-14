@@ -36,6 +36,9 @@ public sealed record WebhookInput
 
     public bool Enabled { get; init; } = true;
 
+    /// <summary>See <see cref="Webhook.OnlyForEventRules"/>.</summary>
+    public bool OnlyForEventRules { get; init; }
+
     public static WebhookInput From(Webhook webhook) => new()
     {
         Id = webhook.Id,
@@ -50,5 +53,6 @@ public sealed record WebhookInput
         FailOpen = webhook.FailOpen,
         TimeoutSeconds = webhook.TimeoutSeconds,
         Enabled = webhook.Enabled,
+        OnlyForEventRules = webhook.OnlyForEventRules,
     };
 }

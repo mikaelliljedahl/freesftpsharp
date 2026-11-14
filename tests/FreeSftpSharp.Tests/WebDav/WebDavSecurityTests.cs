@@ -97,6 +97,22 @@ public sealed class WebDavSecurityTests
     }
 
     [Fact]
+    public async Task TotpUser_NeedsAnAppPasswordForWebDav()
+    {
+        await using var host = await WebDavTestHost.StartAsync();
+        var user = host.AddUser("tina", u => u.Id = 42);
+        var (entry, secret) = AppPasswordGenerator.Create("Explorer", UserProtocols.WebDav, DateTime.UtcNow, null);
+        user.AppPasswords = [entry];
+        host.Repository.UpdateUser(user);
+        host.TwoFactor.UserIds.Add(42);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client("tina").SendAsync("OPTIONS", "/dav/")).StatusCode);
+        Assert.Contains(host.Events.Published.OfType<AuthEvent>(),
+            e => e is { Type: AuthEventType.LoginFailed, Reason: "the user has a second factor; use an app password" });
+        Assert.Equal(HttpStatusCode.OK, (await host.Client("tina", secret).SendAsync("OPTIONS", "/dav/")).StatusCode);
+    }
+
+    [Fact]
     public async Task FailedLogins_BanTheAddress()
     {
         await using var host = await WebDavTestHost.StartAsync();

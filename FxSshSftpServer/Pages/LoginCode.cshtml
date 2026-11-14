@@ -1,0 +1,42 @@
+@page
+@model FxSshSftpServer.Pages.LoginCodeModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verification code - FxSshSftpServer</title>
+    <script src="~/js/theme.js"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body class="d-flex align-items-center min-vh-100 py-4">
+    <main class="container" style="max-width: 24rem;">
+        <div class="card">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-1 d-flex align-items-center gap-2"><i class="bi bi-shield-lock text-primary"></i> Verification code</h1>
+                <p class="text-body-secondary mb-4">Enter the code of your authenticator app, or one of your recovery codes.</p>
+                @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                {
+                    <div class="alert alert-danger" role="alert" id="code-error">@Model.ErrorMessage</div>
+                }
+                <form method="post">
+                    <input type="hidden" asp-for="ReturnUrl" />
+                    <div class="mb-4">
+                        <label asp-for="Code" class="form-label">Code</label>
+                        <input asp-for="Code" class="form-control font-monospace" autocomplete="one-time-code" inputmode="numeric" autofocus required />
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Verify</button>
+                </form>
+                <div class="text-center mt-3"><a href="/Login" class="small">Start again</a></div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

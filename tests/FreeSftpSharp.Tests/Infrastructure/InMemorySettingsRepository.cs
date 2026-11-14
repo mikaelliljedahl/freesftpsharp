@@ -12,6 +12,7 @@ public sealed class InMemorySettingsRepository : ISettingsRepository
 {
     private readonly ConcurrentDictionary<string, User> _users = new(StringComparer.Ordinal);
     private ServerSettings _serverSettings;
+    private int _lastId;
 
     public InMemorySettingsRepository(ServerSettings serverSettings)
     {
@@ -33,7 +34,15 @@ public sealed class InMemorySettingsRepository : ISettingsRepository
 
     public List<User> GetAllUsers() => _users.Values.ToList();
 
-    public bool AddUser(User newUser) => _users.TryAdd(newUser.Username, newUser);
+    /// <summary>Adds the user; a user without an id gets the next one, like the database (the second factor uses it).</summary>
+    public bool AddUser(User newUser)
+    {
+        if (_users.ContainsKey(newUser.Username))
+            return false;
+        if (newUser.Id == 0)
+            newUser.Id = Interlocked.Increment(ref _lastId);
+        return _users.TryAdd(newUser.Username, newUser);
+    }
 
     public bool UpdateUser(User updatedUser)
     {

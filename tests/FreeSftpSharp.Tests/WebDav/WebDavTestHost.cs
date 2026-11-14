@@ -18,6 +18,7 @@ using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.TwoFactor;
 using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.WebDav;
@@ -79,6 +80,9 @@ public sealed class WebDavTestHost : IAsyncDisposable
     public RecordingEventBus Events => (RecordingEventBus)_app.Services.GetRequiredService<IEventBus>();
     public IConnectionRegistry Connections => _app.Services.GetRequiredService<IConnectionRegistry>();
     public FakeTimeProvider Time => (FakeTimeProvider)_app.Services.GetRequiredService<TimeProvider>();
+
+    /// <summary>The second factor: the ids of the users with TOTP.</summary>
+    public FakeTwoFactor TwoFactor => (FakeTwoFactor)_app.Services.GetRequiredService<ITwoFactorVerifier>();
     internal WebDavSessionStore Sessions => _app.Services.GetRequiredService<WebDavSessionStore>();
 
     /// <summary>The storage of a user (each user has the store with its name).</summary>
@@ -109,6 +113,7 @@ public sealed class WebDavTestHost : IAsyncDisposable
         builder.Services.AddSingleton<IEventBus>(events);
         builder.Services.AddSingleton<IConnectionRegistry>(connections);
         builder.Services.AddSingleton<IFileSystemFactory>(factory);
+        builder.Services.AddSingleton<ITwoFactorVerifier>(new FakeTwoFactor());
         builder.Services.AddWebDav(builder.Configuration);
 
         var app = builder.Build();
@@ -160,6 +165,18 @@ public sealed class WebDavTestHost : IAsyncDisposable
     {
         public UserStorage Resolve(User user) => new(codec.Encode("memory", new InMemoryStorageOptions { Store = user.Username }), []);
     }
+}
+
+/// <summary>A second factor for the tests: the users in <see cref="UserIds"/> have TOTP.</summary>
+public sealed class FakeTwoFactor : ITwoFactorVerifier
+{
+    public HashSet<int> UserIds { get; } = new();
+
+    public Task<bool> IsEnabledAsync(TwoFactorSubject subject, CancellationToken ct) =>
+        Task.FromResult(subject.Kind == TwoFactorSubjectKind.User && UserIds.Contains(subject.Id));
+
+    public Task<TwoFactorCheck> VerifyAsync(TwoFactorSubject subject, string? code, CancellationToken ct) =>
+        Task.FromResult(TwoFactorCheck.Invalid);
 }
 
 /// <summary>Builders for the WebDAV requests of the tests.</summary>
