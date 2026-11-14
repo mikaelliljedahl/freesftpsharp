@@ -139,7 +139,10 @@ namespace SshServerModule.Events
             if (decision.IsDenied)
             {
                 await _events.PublishAsync(pre with { Status = FileEventStatus.Denied, Message = decision.Message }, CancellationToken.None);
-                throw new FileSystemException(FileSystemError.PermissionDenied, $"Permission denied: {pre.VirtualPath}");
+                throw new FileSystemException(FileSystemError.PermissionDenied, $"Permission denied: {pre.VirtualPath}")
+                {
+                    ClientMessage = decision.ClientMessage,
+                };
             }
             await _events.PublishAsync(pre, CancellationToken.None);
         }

@@ -12,11 +12,13 @@ using FxSsh.SshServerModule;
 
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Filesystem.Gcs;
 using SshServer.Filesystem.S3;
 using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServer.Webhooks;
 using SshServer.Observability;
 
 using FxSshSftpServer.Security;
@@ -44,7 +46,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
-builder.Services.AddAdminDataProtection(builder.Configuration); // the same keys directory as the storage secrets (AddSshServerSettings)
+builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook and storage secrets
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -61,11 +63,13 @@ Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
+builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
 builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a user or virtual folder selects it)
 builder.Services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
 
 Log.Debug("builder.Build()...");

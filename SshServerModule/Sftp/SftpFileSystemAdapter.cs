@@ -351,7 +351,9 @@ namespace SshServerModule.Sftp
             return Own(fileSystemException.Error switch
             {
                 FileSystemError.NoSuchFile => new FileNotFoundException($"No such file: {path}"),
-                FileSystemError.PermissionDenied => new UnauthorizedAccessException($"Permission denied: {path}"),
+                FileSystemError.PermissionDenied => new UnauthorizedAccessException(fileSystemException.ClientMessage is { Length: > 0 } reason
+                    ? $"Permission denied: {path}: {reason}"
+                    : $"Permission denied: {path}"),
                 FileSystemError.OpNotSupported => new NotSupportedException($"Operation not supported by the storage: {path}"),
                 FileSystemError.InvalidPath => new ArgumentException($"Bad request: {path}"),
                 FileSystemError.NotADirectory => new IOException($"Not a directory: {path}"),

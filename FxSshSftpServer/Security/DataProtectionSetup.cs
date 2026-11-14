@@ -1,20 +1,37 @@
+using Microsoft.AspNetCore.DataProtection;
+using System;
+using System.IO;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.DataProtection;
-using SshServer.Settings.Sql;
 
 namespace FxSshSftpServer.Security;
 
 /// <summary>
-/// Stores the ASP.NET Core data protection keys (they protect the admin login cookie and the antiforgery tokens)
-/// in a known directory, so that a login survives a restart of the app. It is the directory and the application name
-/// of the stored storage secrets too (<see cref="SecretProtection"/>).
+/// Stores the ASP.NET Core data protection keys (they protect the admin login cookie, the antiforgery tokens, and the
+/// webhook secrets and storage secrets (#56) in the settings database) in a known directory, so that a login survives a restart of the app and
+/// a stored webhook secret stays readable. Both hosts (admin UI and console) use this, with the same application name,
+/// so they read the same secrets when they share the directory.
 /// </summary>
 public static class DataProtectionSetup
 {
-    public static IServiceCollection AddAdminDataProtection(this IServiceCollection services, IConfiguration configuration)
+    public const string KeysPathKey = "DataProtection:KeysPath";
+    public const string DefaultKeysDirectory = "keys";
+
+    public static IServiceCollection AddServerDataProtection(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddDataProtection().UseSshServerKeys(SecretProtection.KeysPath(configuration));
+        var configured = configuration[KeysPathKey];
+        var keysPath = Path.GetFullPath(string.IsNullOrWhiteSpace(configured) ? DefaultKeysDirectory : configured,
+            AppContext.BaseDirectory);
+
+        var builder = services.AddDataProtection()
+            .SetApplicationName("FreeSftpSharp.Admin")
+            .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+
+        // On Windows the keys are encrypted with DPAPI. On other platforms they are stored unencrypted, and
+        // ASP.NET Core logs a warning about it: protect the directory with file permissions.
+        if (OperatingSystem.IsWindows())
+            builder.ProtectKeysWithDpapi();
+
         return services;
     }
 }

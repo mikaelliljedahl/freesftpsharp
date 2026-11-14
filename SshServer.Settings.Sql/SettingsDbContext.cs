@@ -6,6 +6,7 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Webhooks;
 
 namespace SshServer.Settings.Sql;
 
@@ -15,7 +16,8 @@ namespace SshServer.Settings.Sql;
 /// fields are the same as in the LiteDB file. Lists of strings are stored as JSON text columns
 /// (EF Core primitive collections), which works on SQLite and on SQL Server. The permissions and path filters of a
 /// user are JSON text columns too, with the permission flags as names (<c>{"/":"All","/in":"Upload"}</c>). The audit
-/// log (<see cref="AuditEntry"/>) is in the same database.
+/// log (<see cref="AuditEntry"/>) and the webhooks with their outbox (<see cref="Webhook"/>, <see cref="WebhookDelivery"/>)
+/// are in the same database.
 /// <para>
 /// A <see cref="StorageConfig"/> (the storage of a user or of a <see cref="VirtualFolder"/>) is a JSON text column
 /// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
@@ -33,6 +35,8 @@ public class SettingsDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<VirtualFolder> VirtualFolders => Set<VirtualFolder>();
+    public DbSet<Webhook> Webhooks => Set<Webhook>();
+    public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -107,6 +111,38 @@ public class SettingsDbContext : DbContext
             b.Property(a => a.SessionId).HasMaxLength(64);
             b.HasIndex(a => a.TimestampUtc);
             b.HasIndex(a => a.Username);
+        });
+
+        modelBuilder.Entity<Webhook>(b =>
+        {
+            b.ToTable("Webhooks");
+            b.HasKey(w => w.Id);
+            var name = b.Property(w => w.Name).IsRequired().HasMaxLength(100);
+            if (Database.IsSqlite())
+                name.UseCollation("NOCASE");
+            b.HasIndex(w => w.Name).IsUnique();
+            b.Property(w => w.Url).IsRequired().HasMaxLength(2048);
+            b.Property(w => w.Method).IsRequired().HasMaxLength(8);
+            b.Property(w => w.ProtectedSecret).IsRequired(false);
+            b.Property(w => w.PathGlob).IsRequired(false).HasMaxLength(1024);
+            b.Property(w => w.Headers).IsRequired().HasConversion(
+                v => ToJson(v), v => FromJson<Dictionary<string, string>>(v), JsonComparer<Dictionary<string, string>>());
+            b.PrimitiveCollection(w => w.EventTypes).IsRequired();
+            b.PrimitiveCollection(w => w.Users).IsRequired();
+        });
+
+        modelBuilder.Entity<WebhookDelivery>(b =>
+        {
+            b.ToTable("WebhookDeliveries");
+            b.HasKey(d => d.Id);
+            b.HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
+            b.Property(d => d.EventType).IsRequired().HasMaxLength(64);
+            b.Property(d => d.Payload).IsRequired();
+            b.Property(d => d.Status).IsRequired().HasConversion<string>().HasMaxLength(16);
+            b.Property(d => d.LeaseOwner).HasMaxLength(128);
+            b.HasIndex(d => d.DeliveryId).IsUnique();
+            b.HasIndex(d => new { d.Status, d.NextAttemptUtc });
+            b.HasIndex(d => new { d.WebhookId, d.CreatedUtc });
         });
     }
 

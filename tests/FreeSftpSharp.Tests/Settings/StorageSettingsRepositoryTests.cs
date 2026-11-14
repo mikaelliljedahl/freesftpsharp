@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
 using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
 using Microsoft.AspNetCore.DataProtection;
@@ -82,7 +81,7 @@ public sealed class StorageSettingsRepositoryTests : IDisposable
         var codec = TestStorage.Codec(new LocalDiskStorageProvider());
         Assert.Equal(new LocalDiskStorageOptions("/srv/old"), codec.Decode(storage.Root));
         using (var db = new SettingsDbContext(options))
-            Assert.Equal("20261114105828_AddUserStorageAndVirtualFolders", db.Database.GetAppliedMigrations().Last());
+            Assert.Contains(db.Database.GetAppliedMigrations(), m => m.EndsWith("_AddUserStorageAndVirtualFolders", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -196,27 +195,21 @@ public sealed class StorageSettingsRepositoryTests : IDisposable
     }
 
     [Fact]
-    public void The_secret_protection_of_the_hosts_creates_its_keys_only_at_the_first_secret()
+    public void The_secret_protection_uses_the_data_protection_of_the_host()
     {
         using var temp = new TempDirectory();
-        var keys = Path.Combine(temp.Path, "keys");
-        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { [SecretProtection.KeysPathKey] = keys })
-            .Build();
-        using var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
-            .AddSshServerSecretProtection(configuration)
-            .BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(temp.Path, "keys")));
+        using var withKeys = services.AddSshServerSecretProtection().BuildServiceProvider();
+        using var without = new ServiceCollection().AddSshServerSecretProtection().BuildServiceProvider();
 
-        var protector = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
-            .GetRequiredService<SshServer.Interfaces.Security.ISecretProtector>(services);
-        Assert.IsType<DataProtectionSecretProtector>(protector);
-        Assert.False(Directory.Exists(keys), "No key may be created before a secret needs one (zero-configuration start).");
-
+        var protector = withKeys.GetRequiredService<SshServer.Interfaces.Security.ISecretProtector>();
         var protectedValue = protector.Protect("s3-secret");
 
+        Assert.IsType<DataProtectionSecretProtector>(protector);
         Assert.NotEqual("s3-secret", protectedValue);
         Assert.Equal("s3-secret", protector.Unprotect(protectedValue));
-        Assert.NotEmpty(Directory.GetFiles(keys, "key-*.xml"));
+        Assert.Throws<InvalidOperationException>(() => without.GetRequiredService<SshServer.Interfaces.Security.ISecretProtector>().Protect("x"));
     }
 
     [Fact]

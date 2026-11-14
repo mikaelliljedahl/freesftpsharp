@@ -16,4 +16,10 @@ public sealed class FileSystemException : Exception
 
     /// <summary>The reason of the failure.</summary>
     public FileSystemError Error { get; }
+
+    /// <summary>
+    /// A short text for the client that tells why, for example the answer of a pre-upload hook. The protocol adds it to
+    /// its error answer as it is. Null: the client gets only the text of the <see cref="Error"/>.
+    /// </summary>
+    public string? ClientMessage { get; init; }
 }
