@@ -77,6 +77,11 @@
         </a>
     </li>
     <li class="nav-item">
+        <NavLink class="nav-link" href="account/two-factor" @onclick="OnNavigate">
+            <i class="bi bi-shield-lock"></i> Two-factor authentication
+        </NavLink>
+    </li>
+    <li class="nav-item">
         <a class="nav-link" href="Logout" @onclick="LogOut" @onclick:preventDefault>
             <i class="bi bi-box-arrow-right"></i> Log out
         </a>

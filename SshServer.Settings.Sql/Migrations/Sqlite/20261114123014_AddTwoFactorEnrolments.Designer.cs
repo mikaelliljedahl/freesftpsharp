@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114123710_AddQuotas")]
-partial class _20261114123710_AddQuotas
+[Migration("20261114123014_AddTwoFactorEnrolments")]
+partial class _20261114123014_AddTwoFactorEnrolments
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -357,12 +357,6 @@ partial class _20261114123710_AddQuotas
                     .HasMaxLength(128)
                     .HasColumnType("TEXT");
 
-                b.Property<string>("Bandwidth")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("DiskQuota")
-                    .HasColumnType("TEXT");
-
                 b.Property<string>("HashedPassword")
                     .HasColumnType("TEXT");
 
@@ -391,9 +385,6 @@ partial class _20261114123710_AddQuotas
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Storage")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("UserRootDirectory")
@@ -554,33 +545,55 @@ partial class _20261114123710_AddQuotas
                 b.ToTable("WebhookDeliveries");
             });
 
-        modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>
+        modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
             {
-                b.Property<string>("Scope")
-                    .HasMaxLength(300)
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("AdminId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("CreatedAt")
                     .HasColumnType("TEXT");
 
-                b.Property<long>("DownloadedBytes")
+                b.Property<bool>("Enabled")
                     .HasColumnType("INTEGER");
 
-                b.Property<DateTime?>("ScannedUtc")
+                b.Property<DateTime?>("EnabledAt")
                     .HasColumnType("TEXT");
 
-                b.Property<DateTime>("UpdatedUtc")
+                b.Property<long>("LastUsedStep")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("ProtectedSecret")
+                    .IsRequired()
+                    .HasMaxLength(1024)
                     .HasColumnType("TEXT");
 
-                b.Property<long>("UploadedBytes")
+                b.PrimitiveCollection<string>("RecoveryCodeHashes")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("UserId")
                     .HasColumnType("INTEGER");
 
-                b.Property<long>("UsedBytes")
+                b.Property<int>("Version")
+                    .IsConcurrencyToken()
                     .HasColumnType("INTEGER");
 
-                b.Property<long>("UsedFiles")
-                    .HasColumnType("INTEGER");
+                b.HasKey("Id");
 
-                b.HasKey("Scope");
+                b.HasIndex("AdminId")
+                    .IsUnique();
 
-                b.ToTable("QuotaUsages");
+                b.HasIndex("UserId")
+                    .IsUnique();
+
+                b.ToTable("TwoFactorEnrolments", t =>
+                    {
+                        t.HasCheckConstraint("CK_TwoFactorEnrolments_Owner", "(UserId IS NULL AND AdminId IS NOT NULL) OR (UserId IS NOT NULL AND AdminId IS NULL)");
+                    });
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
@@ -618,9 +631,6 @@ partial class _20261114123710_AddQuotas
                             .HasMaxLength(1024)
                             .HasColumnType("TEXT");
 
-                        b1.Property<string>("Quota")
-                            .HasColumnType("TEXT");
-
                         b1.Property<int>("UserId")
                             .HasColumnType("INTEGER");
 
@@ -656,6 +666,19 @@ partial class _20261114123710_AddQuotas
                     .HasForeignKey("WebhookId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Admin", null)
+                    .WithMany()
+                    .HasForeignKey("AdminId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("SshServer.Interfaces.User", null)
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 #pragma warning restore 612, 618
     }
