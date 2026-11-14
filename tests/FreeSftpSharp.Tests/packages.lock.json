@@ -1179,7 +1179,8 @@
       "sshserver.administration": {
         "type": "Project",
         "dependencies": {
-          "SshServer.Interfaces": "[1.0.0, )"
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServer.TwoFactor": "[1.0.0, )"
         }
       },
       "sshserver.api": {
@@ -1190,6 +1191,7 @@
           "SshServer.Administration": "[1.0.0, )",
           "SshServer.EventRules": "[1.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )",
+          "SshServer.TwoFactor": "[1.0.0, )",
           "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
         }

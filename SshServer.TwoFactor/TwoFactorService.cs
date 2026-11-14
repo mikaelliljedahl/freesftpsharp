@@ -18,7 +18,7 @@ public enum TwoFactorState
     On,
 }
 
-public sealed record TwoFactorStatus(TwoFactorState State, int RecoveryCodesLeft, DateTime? EnabledAt);
+public sealed record TwoFactorStatus(TwoFactorState State, int RecoveryCodesLeft, DateTime? EnabledAt, DateTime? CreatedAt = null);
 
 /// <summary>
 /// A new secret for an authenticator app: the Base32 text for the manual entry, the <c>otpauth://</c> URI and its QR
@@ -73,8 +73,8 @@ public sealed class TwoFactorService : ITwoFactorVerifier
         return enrolment switch
         {
             null => new TwoFactorStatus(TwoFactorState.Off, 0, null),
-            { Enabled: false } => new TwoFactorStatus(TwoFactorState.Pending, 0, null),
-            _ => new TwoFactorStatus(TwoFactorState.On, enrolment.RecoveryCodeHashes.Count, enrolment.EnabledAt),
+            { Enabled: false } => new TwoFactorStatus(TwoFactorState.Pending, 0, null, enrolment.CreatedAt),
+            _ => new TwoFactorStatus(TwoFactorState.On, enrolment.RecoveryCodeHashes.Count, enrolment.EnabledAt, enrolment.CreatedAt),
         };
     }
 
