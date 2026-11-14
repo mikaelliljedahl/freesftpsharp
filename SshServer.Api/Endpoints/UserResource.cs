@@ -132,7 +132,12 @@ public sealed class UserResource
         if (user.MaxSessions is < 0 or > 10_000)
             errors.Add("maxSessions", "The session limit must be from 0 to 10000 (0: no limit).");
 
-        if (write.Password != null)
+        if (write.Password != null && ExternalCredentials.PasswordManagedBy(user) is { } provider)
+        {
+            // The provider checks the password (#64); a stored one would never be used.
+            errors.Add("password", ExternalCredentials.PasswordManagedMessage(provider));
+        }
+        else if (write.Password != null)
         {
             errors.Add("password", UserAdministrationService.ValidatePassword(write.Password));
             if (write.RemovePassword == true)

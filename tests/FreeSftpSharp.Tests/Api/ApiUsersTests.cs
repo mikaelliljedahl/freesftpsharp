@@ -65,6 +65,30 @@ public sealed class ApiUsersTests : IClassFixture<ApiFactory>, IDisposable
     }
 
     [Fact]
+    public async Task A_password_for_a_user_of_an_external_provider_is_refused()
+    {
+        _factory.Repository.AddUser(new User { Username = "api-ldap-user", UserRootDirectory = _root.Path, AuthenticationProvider = "ldap" });
+        using var client = await _factory.SuperAdminAsync();
+
+        var view = await (await client.GetAsync("/api/v1/users/api-ldap-user", Ct)).JsonAsync();
+        var patch = await client.PatchJsonAsync("/api/v1/users/api-ldap-user", new { password = "long-enough-1" });
+        var put = await client.PutAsJsonAsync("/api/v1/users/api-ldap-user", new { rootDirectory = _root.Path, password = "long-enough-1" }, Ct);
+        var other = await client.PatchJsonAsync("/api/v1/users/api-ldap-user", new { description = "no password" });
+
+        Assert.Equal("ldap", view["authenticationProvider"]!.GetValue<string>());
+        foreach (var response in new[] { patch, put })
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var errors = (await response.JsonAsync())["errors"]!.AsObject();
+            Assert.Contains("The password of this account is managed by ldap.", errors["password"]!.ToJsonString());
+        }
+        Assert.Equal(HttpStatusCode.OK, other.StatusCode); // other changes are fine, and the provider stays
+        var stored = _factory.Repository.GetUser("api-ldap-user");
+        Assert.Null(stored.HashedPassword);
+        Assert.Equal("ldap", stored.AuthenticationProvider);
+    }
+
+    [Fact]
     public async Task Invalid_input_is_a_validation_problem_by_field()
     {
         using var client = await _factory.SuperAdminAsync();

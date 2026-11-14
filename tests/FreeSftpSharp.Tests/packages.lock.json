@@ -1006,6 +1006,11 @@
         "resolved": "11.0.0",
         "contentHash": "lKore9DXE1q8o6ss6/M7++xBpn2FMS0axaAypBspYLqY5OT1ZRPLzFGwF18l61aXfXTPpwkx5tYh4zMUHoAv/g=="
       },
+      "System.DirectoryServices.Protocols": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "gmes+wSLYzyp0lh05nIox1qhWAHt71GKWHycDRhkwgULlaSRh5icX9SuGMooLQ9N95Bn21iJkPFy3mqfBvPUrw=="
+      },
       "System.Drawing.Common": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -1147,6 +1152,8 @@
           "Serilog.Sinks.HtmlFile": "[1.0.1, )",
           "SshServer.Administration": "[1.0.0, )",
           "SshServer.Api": "[1.0.0, )",
+          "SshServer.Authentication.Http": "[1.0.0, )",
+          "SshServer.Authentication.Ldap": "[1.0.0, )",
           "SshServer.EventRules": "[1.0.0, )",
           "SshServer.Filesystem.AzureBlob": "[1.0.0, )",
           "SshServer.Filesystem.Encrypted": "[1.0.0, )",
@@ -1176,6 +1183,23 @@
           "SshServer.Interfaces": "[1.0.0, )",
           "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
+        }
+      },
+      "sshserver.authentication.http": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "Microsoft.Extensions.Http": "[11.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServer.Webhooks": "[1.0.0, )"
+        }
+      },
+      "sshserver.authentication.ldap": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )",
+          "System.DirectoryServices.Protocols": "[11.0.0, )"
         }
       },
       "sshserver.eventrules": {

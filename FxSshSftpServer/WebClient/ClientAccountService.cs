@@ -62,9 +62,14 @@ namespace FxSshSftpServer.WebClient
         public User GetUser(string username) => _repository.GetUser(username);
 
         /// <summary>Sets a new password after a check of the current one. Returns the saved user (for a new login cookie).</summary>
+        /// <summary>The external authentication provider that manages the password of the user (#64), or null.</summary>
+        public string PasswordManagedBy(string username) => ExternalCredentials.PasswordManagedBy(RequireUser(username));
+
         public User ChangePassword(string username, string currentPassword, string newPassword, string repeatPassword)
         {
             var user = RequireUser(username);
+            if (ExternalCredentials.PasswordManagedBy(user) is { } provider)
+                throw new ClientAccountException(ExternalCredentials.PasswordManagedMessage(provider));
             if (!UserPasswordCheck.Verify(user, currentPassword ?? "", _repository, _logger))
                 throw new ClientAccountException(WrongPasswordMessage);
             if (UserAdministrationService.ValidatePassword(newPassword) is { } problem)

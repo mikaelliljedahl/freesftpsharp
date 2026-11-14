@@ -34,7 +34,8 @@ public sealed record UserView(
     TransferQuota? TransferQuota,
     BandwidthLimit? Bandwidth,
     DateTime? LastLoginAt,
-    DateTime? PasswordChangedAt)
+    DateTime? PasswordChangedAt,
+    string? AuthenticationProvider)
 {
     public static UserView From(User user, StorageMapper storage) => new(
         user.Username,
@@ -60,7 +61,8 @@ public sealed record UserView(
         user.TransferQuota,
         user.Bandwidth,
         user.LastLoginAt,
-        user.PasswordChangedAt);
+        user.PasswordChangedAt,
+        user.AuthenticationProvider);
 }
 
 /// <summary>A public key of a user: the type, the fingerprint and the comment; the key blob is not needed by a client.</summary>
