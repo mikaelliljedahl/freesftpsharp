@@ -153,9 +153,25 @@ namespace FxSsh.Services
             {
                 await foreach (var message in _messageChannel.Reader.ReadAllAsync(_messageCts.Token))
                 {
+                    // ReadAllAsync still returns the queued messages after
+                    // CloseService. The connection has ended and the channels
+                    // are force-closed and removed, so a queued message (often
+                    // the peer's CHANNEL_CLOSE, sent right before its
+                    // DISCONNECT) has no channel and no peer: drop it.
+                    if (_messageCts.IsCancellationRequested)
+                    {
+                        Log.Debug($"Connection service closed; dropped the queued {message.GetType().Name} and the messages after it.");
+                        break;
+                    }
+
                     try
                     {
                         Dispatch(message);
+                    }
+                    catch (Exception ex) when (_messageCts.IsCancellationRequested)
+                    {
+                        // The connection ended while the message was handled.
+                        Log.Debug($"Connection service message handling stopped by the session close: {ex}");
                     }
                     catch (Exception ex)
                     {

@@ -4,10 +4,13 @@ using FreeSftpSharp.Tests.Infrastructure;
 
 namespace FreeSftpSharp.Tests.EndToEnd;
 
-/// <summary>A server with ServerSettings.IdleTimeout = 1 second.</summary>
+/// <summary>
+/// A server with ServerSettings.IdleTimeout = 3 seconds. With 1 second, a busy CI runner sometimes needed more than
+/// the timeout between two steps of the SSH.NET connect, and the server closed the session before Connect returned.
+/// </summary>
 public sealed class ShortIdleTimeoutServerFixture : SftpServerFixture
 {
-    protected override int IdleTimeoutSeconds => 1;
+    protected override int IdleTimeoutSeconds => 3;
 }
 
 /// <summary>
@@ -46,7 +49,7 @@ public sealed class IdleTimeoutTests : IClassFixture<ShortIdleTimeoutServerFixtu
         }
 
         Assert.False(cts.IsCancellationRequested, "The server did not close the idle connection within 15 seconds.");
-        Assert.InRange(stopwatch.Elapsed, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(10));
+        Assert.InRange(stopwatch.Elapsed, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(12));
     }
 
     [Fact]
@@ -55,7 +58,7 @@ public sealed class IdleTimeoutTests : IClassFixture<ShortIdleTimeoutServerFixtu
         using var client = _server.Connect();
         Assert.True(client.IsConnected);
 
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
         while (client.IsConnected && DateTime.UtcNow < deadline)
             Thread.Sleep(100);
 
