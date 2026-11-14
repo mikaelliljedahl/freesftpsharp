@@ -56,6 +56,9 @@ namespace FxSshSftpServer.Security.Oidc
             services.AddSingleton<AdminOidcAccounts>();
             services.AddSingleton<IAdminPasswordLoginPolicy, AdminOidcPasswordLoginPolicy>();
             services.AddSingleton<ClientOidcAccounts>();
+            // The ownership rule of its users (#145): the identity provider owns the password only; their SSH keys are local.
+            services.AddSingleton(new SshServer.Interfaces.Authentication.CredentialOwner(OidcClaims.ProviderName,
+                SshServer.Interfaces.Authentication.OwnedCredentials.Password));
 
             var admin = configuration.GetSection(AdminOidcOptions.SectionName).Get<AdminOidcOptions>() ?? new AdminOidcOptions();
             var client = configuration.GetSection(ClientOidcOptions.SectionName).Get<ClientOidcOptions>() ?? new ClientOidcOptions();

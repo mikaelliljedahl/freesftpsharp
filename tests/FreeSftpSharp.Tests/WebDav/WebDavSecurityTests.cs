@@ -99,6 +99,27 @@ public sealed class WebDavSecurityTests
     }
 
     [Fact]
+    public async Task UserOfTheSingleSignOn_LogsInWithAnAppPassword()
+    {
+        // A user of the OpenID Connect sign-in (#145): no password of its own; its app passwords are local credentials.
+        await using var host = await WebDavTestHost.StartAsync();
+        var user = host.AddUser("sso-user", u =>
+        {
+            u.AuthenticationProvider = "oidc";
+            u.HashedPassword = null;
+        });
+        var (entry, secret) = AppPasswordGenerator.Create("Finder", UserProtocols.WebDav, DateTime.UtcNow, null);
+        user.AppPasswords = [entry];
+        host.Repository.UpdateUser(user);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client("sso-user").SendAsync("OPTIONS", "/dav/")).StatusCode);
+        var listing = await host.Client("sso-user", secret).SendAsync("PROPFIND", "/dav/", null, ("Depth", "0"));
+        Assert.Equal((HttpStatusCode)207, listing.StatusCode);
+        Assert.Contains(host.Events.Published.OfType<AuthEvent>(), e => e is { Type: AuthEventType.LoginOk, Username: "sso-user", Method: "app-password" });
+        Assert.Equal("oidc", host.Repository.GetUser("sso-user")!.AuthenticationProvider);
+    }
+
+    [Fact]
     public async Task TotpUser_NeedsAnAppPasswordForWebDav()
     {
         await using var host = await WebDavTestHost.StartAsync();

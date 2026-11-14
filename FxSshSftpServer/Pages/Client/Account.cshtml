@@ -94,6 +94,10 @@
         <section class="card" id="keys-section">
             <div class="card-header fw-semibold"><i class="bi bi-file-earmark-lock"></i> SSH public keys</div>
             <div class="card-body">
+                @if (Model.KeysWithoutPassword)
+                {
+                    <p class="small text-body-secondary" id="keys-local">Your keys log you in over SFTP, also without a password of your own.</p>
+                }
                 @if (!Model.AllowsPublicKeys)
                 {
                     <p class="small text-body-secondary">Your account may not log in with a key now; an administrator can allow it.</p>
@@ -127,6 +131,66 @@
                     <label for="keys-text" class="form-label small">Add keys: the content of a <code>.pub</code> or <code>authorized_keys</code> file</label>
                     <textarea id="keys-text" name="KeysText" class="form-control font-monospace small mb-2" rows="3" required>@Model.KeysText</textarea>
                     <button type="submit" class="btn btn-sm btn-primary" id="add-keys">Add</button>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="card" id="app-passwords-section">
+            <div class="card-header fw-semibold"><i class="bi bi-key-fill"></i> App passwords</div>
+            <div class="card-body">
+                <p class="small text-body-secondary">A random password for a program that cannot do the normal login, for example a WebDAV or FTP client@(Model.PasswordManagedBy != null ? " (your account has no password of its own here)" : ""). It works only for the protocols you choose, not for this web client. The server keeps only its hash.</p>
+                @if (Model.NewAppPassword != null)
+                {
+                    <div class="alert alert-success small" id="new-app-password-box">
+                        The new app password. Copy it now; it is not shown again:
+                        <div class="font-monospace fs-6 mt-1 user-select-all" id="new-app-password">@Model.NewAppPassword</div>
+                    </div>
+                }
+                @if (Model.AppPasswords.Count == 0)
+                {
+                    <p class="small text-body-secondary" id="no-app-passwords">You have no app passwords.</p>
+                }
+                else
+                {
+                    <ul class="list-group mb-3" id="app-password-list">
+                        @foreach (var appPassword in Model.AppPasswords)
+                        {
+                            <li class="list-group-item d-flex flex-wrap gap-2 align-items-center app-password-row">
+                                <span class="fw-semibold small">@appPassword.Name</span>
+                                <span class="badge text-bg-secondary">@SshServer.Interfaces.Authentication.UserProtocolRules.Describe(appPassword.Protocols)</span>
+                                <span class="small text-body-secondary">created @appPassword.CreatedAt.ToString("yyyy-MM-dd")</span>
+                                @if (appPassword.ExpiresAt is { } expires)
+                                {
+                                    <span class="small text-body-secondary">expires @expires.ToString("yyyy-MM-dd")</span>
+                                }
+                                <form method="post" asp-page-handler="RemoveAppPassword" class="ms-auto">
+                                    <input type="hidden" name="id" value="@appPassword.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </li>
+                        }
+                    </ul>
+                }
+                <form method="post" asp-page-handler="CreateAppPassword" class="d-flex flex-wrap align-items-center gap-2">
+                    <label class="visually-hidden" for="app-password-name">Name</label>
+                    <input id="app-password-name" name="AppPasswordName" class="form-control form-control-sm w-auto" placeholder="Name, for example Laptop" maxlength="100" required />
+                    <div class="form-check form-check-inline mb-0">
+                        <input type="checkbox" id="app-password-webdav" name="AppPasswordWebDav" value="true" class="form-check-input" />
+                        <label class="form-check-label small" for="app-password-webdav">WebDAV</label>
+                    </div>
+                    <div class="form-check form-check-inline mb-0">
+                        <input type="checkbox" id="app-password-ftp" name="AppPasswordFtp" value="true" class="form-check-input" />
+                        <label class="form-check-label small" for="app-password-ftp">FTP</label>
+                    </div>
+                    <div class="form-check form-check-inline mb-0">
+                        <input type="checkbox" id="app-password-sftp" name="AppPasswordSftp" value="true" class="form-check-input" />
+                        <label class="form-check-label small" for="app-password-sftp">SFTP</label>
+                    </div>
+                    <label class="small" for="app-password-expires">Expires on (UTC, optional)</label>
+                    <input type="date" id="app-password-expires" name="AppPasswordExpires" class="form-control form-control-sm w-auto" />
+                    <button type="submit" class="btn btn-sm btn-primary" id="create-app-password">Create</button>
                 </form>
             </div>
         </section>

@@ -112,8 +112,17 @@ the template group (#61). Without a storage from a group, the user gets `<Auth:E
 on the local disk. At every later sign-in its secondary groups follow the groups of the token (a group without a
 local group is skipped).
 
-A user of the sign-in has no password for SFTP or WebDAV. An administrator can give it an app password for WebDAV
-(user form, "App passwords"). SSH public keys of such a user are not used: the provider `oidc` checks no SSH login.
+**Other protocols** (#145). The provider `oidc` owns the password only: a user of the sign-in has no password for
+SFTP, WebDAV or FTP, but its local credentials work there.
+
+- **SSH public keys** for SFTP: the user adds them on the account page of the web client (`/client/account`), or an
+  administrator in the user form or the REST API. They are checked like the keys of a local user (expiry, allowed
+  login methods, multi-step logins).
+- **App passwords** for WebDAV, FTP and SFTP clients: the user creates them on the account page (name, protocols,
+  optional expiry; the secret is shown once), or an administrator in the user form ("App passwords") or the REST API.
+  An app password does not open the web client.
+
+A password login of such a user over SFTP, WebDAV or FTP is refused ("the password of the user is managed by oidc").
 
 ## Settings
 
