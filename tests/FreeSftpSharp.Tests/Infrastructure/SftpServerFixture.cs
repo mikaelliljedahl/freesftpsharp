@@ -49,7 +49,7 @@ public class SftpServerFixture : IAsyncLifetime
     }
     /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
     protected virtual SshServerOptions? CreateListenOptions(int port) => null;
-    /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
+    /// <summary>The clock of the server (bans, LastLoginAt, expiry). Override it with a FakeTimeProvider.</summary>
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
     /// <summary>The event bus of the server (file, auth and system events). Null: no events. Override it in a derived fixture.</summary>
     protected virtual IEventBus? CreateEventBus() => null;
@@ -219,7 +219,7 @@ public class SftpServerFixture : IAsyncLifetime
     /// with the connection registry and the event bus of the fixture. Override it in a derived fixture.
     /// </summary>
     protected virtual IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
-        => TestStorage.Factory(StorageProviders(), _ => new UserStorageResolver(new UserRootDefaultStorage(), repository), connections, events);
+        => TestStorage.Factory(StorageProviders(), _ => new UserStorageResolver(new UserRootDefaultStorage(), repository), connections, events, repository);
 
     /// <summary>The storage providers of the default <see cref="CreateFileSystemFactory"/>. Override it in a derived fixture.</summary>
     protected virtual IEnumerable<IStorageProvider> StorageProviders() => [new LocalDiskStorageProvider()];

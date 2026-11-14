@@ -154,7 +154,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         var ed25519 = TestUserKeys.Ed25519("gina@laptop");
         var rsa = TestUserKeys.Rsa("gina@desktop");
         AddUser("gina", "secret-password", ed25519.Entry, rsa.Entry);
-        Repository.GetUser("gina").LastSuccessfulLogin = new DateTime(2026, 10, 30, 8, 15, 0, DateTimeKind.Utc);
+        Repository.GetUser("gina").LastLoginAt = new DateTime(2026, 10, 30, 8, 15, 0, DateTimeKind.Utc);
         var page = Render<Users>();
 
         Assert.Contains("2 keys", page.Find("#user-table").TextContent);

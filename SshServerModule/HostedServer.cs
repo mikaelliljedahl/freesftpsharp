@@ -14,6 +14,7 @@ using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Connections;
 using SshServerModule.Connections;
 using SshServer.Interfaces.Net;
+using SshServer.Interfaces.Users;
 using SshServerModule.Sftp;
 using System;
 using System.Collections.Generic;
@@ -44,6 +45,7 @@ namespace FxSsh.SshServerModule
         private readonly SshServerOptions _options;
         private readonly IConnectionRegistry _connections;
         private readonly IEventBus _events;
+        private readonly IEffectiveUserSettingsService _userSettings;
 
         /// <summary>The protocol name of the auth events.</summary>
         internal const string SshProtocol = "SSH";
@@ -52,10 +54,12 @@ namespace FxSsh.SshServerModule
         /// <param name="banTracker">The auto-ban state, shared with the admin UI (AddSshServerSecurity). Null: a private one.</param>
         /// <param name="connections">The open connections, shared with the admin UI (AddSshServerConnections). Null: a private registry.</param>
         /// <param name="events">The event bus for the auth and system events (AddSshServerEvents). Null: no events.</param>
+        /// <param name="userSettings">The effective settings of the users with their groups (AddSshServerStorage). Null: one over <paramref name="settingsRepository"/>.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
             LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IConnectionRegistry connections = null,
-            IEventBus events = null)
+            IEventBus events = null, IEffectiveUserSettingsService userSettings = null)
         {
+            _userSettings = userSettings ?? new EffectiveUserSettingsService(settingsRepository);
             _connections = connections ?? new ConnectionRegistry(TimeProvider.System);
             _options = options?.Value;
             _events = events;
@@ -213,6 +217,8 @@ namespace FxSsh.SshServerModule
             /// <summary>The user and method of the last accepted request (set when the login is complete).</summary>
             public volatile string AcceptedUsername;
             public volatile string AcceptedMethod;
+            /// <summary>The session limit of the accepted user (<see cref="User.MaxSessions"/>), checked again at the login.</summary>
+            public volatile int AcceptedMaxSessions;
 
             /// <summary>The user and method of the last request that was accepted as one step of a multi-step login.</summary>
             public User PendingUser;
@@ -225,7 +231,7 @@ namespace FxSsh.SshServerModule
             e.PartialSuccess = false;
             attempt.AcceptedUsername = null;
             attempt.PendingUser = null;
-            var failure = Authenticate(e, attempt, out var user, out var method);
+            var failure = Authenticate(e, attempt, connectionId, out var user, out var method);
             service.AuthenticationsThatCanContinue = attempt.Progress.MethodsThatCanContinue(user)
                 ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
 
@@ -240,6 +246,7 @@ namespace FxSsh.SshServerModule
                     return;
                 }
                 attempt.AcceptedMethod = attempt.Progress.Describe(method);
+                attempt.AcceptedMaxSessions = user.MaxSessions;
                 attempt.AcceptedUsername = e.Username;
                 return;
             }
@@ -273,7 +280,7 @@ namespace FxSsh.SshServerModule
         /// Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null. <paramref name="user"/>
         /// is the stored user (null when it is unknown), <paramref name="method"/> the method of the request.
         /// </summary>
-        string Authenticate(UserAuthArgs e, AuthAttempt attempt, out User user, out AuthMethods method)
+        string Authenticate(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, out User user, out AuthMethods method)
         {
             method = AuthMethodRules.FromSshName(e.AuthMethod);
             user = null;
@@ -296,14 +303,27 @@ namespace FxSsh.SshServerModule
                 return "unknown user";
             }
 
-            if (!UserLogics.VerifyUserIpWhitelisted(user, e.Session.RemoteEndPoint))
+            // Status, expiry, password age and session limit (issue #61): refused like a wrong credential, in the same time.
+            var lifecycle = UserLoginRules.Refusal(user, method, Now.UtcDateTime, _settingsRepository.ServerSettings.PasswordMaxAgeDays)
+                            ?? UserLoginRules.SessionLimitRefusal(user, _connections.CountSessions(user.Username, connectionId));
+            if (lifecycle != null)
             {
-                _logger.LogInformation("Client {RemoteEndPoint} is not in the IP whitelist of user {Username}.",
-                    e.Session.RemoteEndPoint, e.Username);
+                if (method == AuthMethods.Password)
+                    UserLogics.SimulatePasswordCheck();
+                _logger.LogInformation("Authentication ({Method}) of {Username} from {RemoteEndPoint} refused: {Reason}.",
+                    e.AuthMethod, e.Username, e.Session.RemoteEndPoint, lifecycle);
+                return lifecycle;
+            }
+
+            var settings = _userSettings.Resolve(user);
+            if (!UserLogics.VerifyUserIpWhitelisted(settings.AllowedIps, e.Session.RemoteEndPoint))
+            {
+                _logger.LogInformation("Client {RemoteEndPoint} is not in the allowed networks of user {Username} ({Origin}).",
+                    e.Session.RemoteEndPoint, e.Username, settings.AllowedIpsOrigin);
                 return "the address is not in the whitelist of the user";
             }
 
-            var refusal = attempt.Progress.Check(user, method);
+            var refusal = attempt.Progress.Check(user, method, settings.AllowedAuthMethods);
             if (refusal != null)
             {
                 if (method == AuthMethods.Password)
@@ -356,7 +376,19 @@ namespace FxSsh.SshServerModule
                 return;
 
             var method = attempt.AcceptedMethod;
-            _connections.SetAuthenticated(connectionId, username, method);
+            if (!_connections.TrySetAuthenticated(connectionId, username, method, attempt.AcceptedMaxSessions))
+            {
+                // Another login of the user took the last session between the check and now (issue #61).
+                var reason = UserLoginRules.SessionLimitReason(attempt.AcceptedMaxSessions);
+                _logger.LogInformation("The login of {Username} from {RemoteEndPoint} is refused: {Reason}.", username, session.RemoteEndPoint, reason);
+                Publish(new AuthEvent(AuthEventType.LoginFailed)
+                {
+                    Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
+                    Reason = reason, SessionId = connectionId.ToString(),
+                });
+                _ = session.DisconnectAsync(DisconnectReason.TooManyConnections, "Too many sessions of the user.");
+                return;
+            }
             Publish(new AuthEvent(AuthEventType.LoginOk)
             {
                 Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
@@ -373,7 +405,7 @@ namespace FxSsh.SshServerModule
                 var user = _settingsRepository.GetUser(username);
                 if (user == null)
                     return;
-                user.LastSuccessfulLogin = _bans.Time.GetUtcNow().UtcDateTime;
+                user.LastLoginAt = _bans.Time.GetUtcNow().UtcDateTime;
                 if (!_settingsRepository.UpdateUser(user))
                     _logger.LogWarning("Could not save the last login time of user {Username}.", username);
             }
@@ -391,6 +423,8 @@ namespace FxSsh.SshServerModule
 
             if (e.Name != "sftp" || !e.AttachedUserAuthArgs.Result)
                 return; // Agreed stays false: the server answers SSH_MSG_CHANNEL_FAILURE
+            if (_connections.Get(connectionId)?.Username == null)
+                return; // the login was refused when it was recorded (session limit); the session is being closed
 
             var username = e.AttachedUserAuthArgs.Username;
             var user = _settingsRepository.GetUser(username);

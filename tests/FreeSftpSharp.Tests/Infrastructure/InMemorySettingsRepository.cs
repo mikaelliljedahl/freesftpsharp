@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
@@ -74,8 +75,38 @@ public sealed class InMemorySettingsRepository : ISettingsRepository
             return false;
         foreach (var user in _users.Values)
             user.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
+        foreach (var group in _groups.Values)
+            group.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
         return true;
     }
+
+    private readonly ConcurrentDictionary<int, Group> _groups = new();
+    private int _nextGroupId;
+
+    public List<Group> GetGroups() => _groups.Values.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.Clone()).ToList();
+
+    public Group? GetGroup(int id) => _groups.TryGetValue(id, out var group) ? group.Clone() : null;
+
+    public bool AddGroup(Group group)
+    {
+        if (string.IsNullOrWhiteSpace(group.Name) || _groups.Values.Any(g => string.Equals(g.Name, group.Name, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        group.Id = Interlocked.Increment(ref _nextGroupId);
+        _groups[group.Id] = group.Clone();
+        return true;
+    }
+
+    public bool UpdateGroup(Group group)
+    {
+        if (!_groups.ContainsKey(group.Id)
+            || _groups.Values.Any(g => g.Id != group.Id && string.Equals(g.Name, group.Name, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        _groups[group.Id] = group.Clone();
+        return true;
+    }
+
+    public bool RemoveGroup(int id) =>
+        !_users.Values.Any(u => GroupService.IsMember(u, id)) && _groups.TryRemove(id, out _);
 
     private static VirtualFolder Copy(VirtualFolder folder) => new() { Id = folder.Id, Name = folder.Name, Description = folder.Description, Storage = folder.Storage };
 

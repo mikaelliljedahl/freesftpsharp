@@ -26,6 +26,7 @@ public sealed class StoredAdminsUiFactory : AdminUiFactory
         Add("settings-only", AdminPermissions.ManageSettings);
         Add("viewer", AdminPermissions.ViewConnections | AdminPermissions.ViewAudit);
         Add("admins-only", AdminPermissions.ManageAdmins);
+        Add("groups-only", AdminPermissions.ManageGroups);
         Add("tenant", AdminPermissions.ManageUsers | AdminPermissions.ManageSettings, admin => admin.ScopeRoleId = role.Id);
         Add("disabled", AdminPermissions.SuperAdmin, admin => admin.Status = AdminStatus.Disabled);
         Add("lan-only", AdminPermissions.SuperAdmin, admin => admin.AllowedIps = ["10.0.0.0/8"]);
@@ -74,6 +75,7 @@ public sealed partial class AdminAuthorizationTests : IClassFixture<StoredAdmins
             ("/admins", AdminPermissions.ManageAdmins),
             ("/roles", AdminPermissions.ManageAdmins),
             ("/webhooks", AdminPermissions.ManageEvents),
+            ("/groups", AdminPermissions.ManageGroups),
         };
         var admins = new (string Name, AdminPermissions Effective)[]
         {
@@ -82,6 +84,7 @@ public sealed partial class AdminAuthorizationTests : IClassFixture<StoredAdmins
             ("settings-only", AdminPermissions.ManageSettings),
             ("viewer", AdminPermissions.ViewConnections | AdminPermissions.ViewAudit),
             ("admins-only", AdminPermissions.ManageAdmins),
+            ("groups-only", AdminPermissions.ManageGroups),
             // The scope masks the settings permission away: a scoped administrator manages only its users.
             ("tenant", AdminPermissions.ManageUsers),
         };

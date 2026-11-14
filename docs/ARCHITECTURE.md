@@ -155,8 +155,17 @@ The chain today, from the backend outwards:
 All of them are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
 to `IFileSystemFactory.CreateAsync`.
 
-The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
-groups, #61). No protocol and no backend reads `User.Permissions` itself.
+The settings of a user come from `IEffectiveUserSettingsService` (`SshServer.Interfaces.Users`), the one place that
+resolves them with the groups (#61): the user's own value, else the primary group, else the secondary groups in order,
+else the server default. The permission decorator, the storage resolver (storage template with `%username%`, the virtual
+folders of the groups) and the login (methods, allowed networks) read them from there. No protocol and no backend
+reads `User.Permissions`, `User.Storage` or a `Group` itself; a new shared setting is one more nullable property on
+`Group` and one more line in that service.
+
+The lifecycle of a login (status, expiry, password age, session limit; #61) is in `UserLoginRules`. Every protocol asks
+it before the credential check and refuses like a wrong credential; the session limit is checked again when the login is
+recorded (`IConnectionRegistry.TrySetAuthenticated`, one step with the count), so two logins at the same time cannot
+both take the last session.
 
 ## Administrators and authorization
 
@@ -170,8 +179,9 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
 - **Services check again.** The pages do not use the shared singletons for admin work: they use scoped views of them
   (`AdminScopedSettingsRepository`, `ScopedConnections`, `ScopedAuditLog`) that check the permission and the scope of
   the signed-in administrator (`CurrentAdmin`) themselves. A hidden button is never the only check.
-- **The scope is applied in one place.** A scoped administrator sees only the users of its role; the scoped views
-  filter by it, so the users, connections and audit entries of another role are "not found".
+- **The scope is applied in one place.** A scoped administrator sees only the users and groups of its role; the scoped
+  views filter by it, so the users, groups, connections and audit entries of another role are "not found". It adds or
+  removes only the groups of its role for its users.
 - **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
   request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
 

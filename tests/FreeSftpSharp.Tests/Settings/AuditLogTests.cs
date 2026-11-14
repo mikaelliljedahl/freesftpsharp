@@ -226,7 +226,7 @@ public sealed class AuditLogTests : IDisposable
         var user = new User { Username = "dave", UserRootDirectory = "/srv/dave", WhitelistedIps = [] };
         _repository.AddUser(user);
 
-        user.LastSuccessfulLogin = Now.UtcDateTime;
+        user.LastLoginAt = Now.UtcDateTime;
         _repository.UpdateUser(user);
 
         Assert.DoesNotContain(_bus.Published, e => e is ProviderEvent { Action: ProviderAction.Update });

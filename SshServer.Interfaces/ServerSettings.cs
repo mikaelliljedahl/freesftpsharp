@@ -47,6 +47,12 @@ namespace SshServer.Interfaces
         /// <summary>When true (the default), loopback addresses (127.0.0.0/8, ::1) are never auto-banned.</summary>
         public bool ExemptLoopbackFromBan { get; set; } = true;
 
+        /// <summary>
+        /// The maximum age of a user password in days (issue #61). An older password is refused for SFTP logins (the
+        /// user logs in with a key or gets a new password). 0 (the default): passwords do not expire.
+        /// </summary>
+        public int PasswordMaxAgeDays { get; set; }
+
         public int IdleTimeout { get; set; }
         public bool EnableCommand { get; set; }
         public bool EnableDirectTcpIp { get; set; }

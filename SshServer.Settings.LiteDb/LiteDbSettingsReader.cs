@@ -73,9 +73,16 @@ public static class LiteDbSettingsReader
                     RequireAllOf = stored.RequireAllOf,
                     OnlyWhitelistedIps = stored.OnlyWhitelistedIps,
                     WhitelistedIps = stored.WhitelistedIps,
-                    LastSuccessfulLogin = stored.LastSuccessfulLogin,
-                    // Not in files of older versions: then the default of User ("/" = All).
-                    Permissions = stored.Permissions,
+                    LastLoginAt = stored.LastLoginAt ?? stored.LegacyLastLogin,
+                    // Not in files of older versions: then not set ("/" = All, or the groups). Only "/" = All is the
+                    // same as not set, so the user can take the permissions of a group later (issue #61).
+                    Permissions = FxSsh.SshServerModule.UserWithObjectId.IsRootAllOnly(stored.Permissions) ? null : stored.Permissions,
+                    // The age of a password counts from the import (issue #61).
+                    PasswordChangedAt = stored.PasswordChangedAt ?? (string.IsNullOrEmpty(stored.HashedPassword) ? null : DateTime.UtcNow),
+                    Description = stored.Description,
+                    Status = stored.Status,
+                    ExpiresAt = stored.ExpiresAt,
+                    MaxSessions = stored.MaxSessions,
                     PathFilters = stored.PathFilters,
                     // The storage of the user (#56). The virtual folders of a LiteDB file are not imported: their ids
                     // are not those of the SQL database.

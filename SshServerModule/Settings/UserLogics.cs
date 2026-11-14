@@ -14,9 +14,14 @@ namespace FxSsh.SshServerModule
     internal static class UserLogics
     {
 
-        internal static bool VerifyUserIpWhitelisted(User user, EndPoint remoteEndpoint)
+        /// <summary>
+        /// True when the client may log in from its address: <paramref name="allowedIps"/> are the effective allowed
+        /// networks of the user (<see cref="SshServer.Interfaces.Users.EffectiveUserSettings.AllowedIps"/>: its IP
+        /// whitelist or the networks of its groups). An empty list allows every address.
+        /// </summary>
+        internal static bool VerifyUserIpWhitelisted(IReadOnlyList<string> allowedIps, EndPoint remoteEndpoint)
         {
-            if (!user.OnlyWhitelistedIps || user.WhitelistedIps == null || user.WhitelistedIps.Count == 0) // No check needed
+            if (allowedIps == null || allowedIps.Count == 0) // No check needed
                 return true;
 
             if (remoteEndpoint is not IPEndPoint endpoint)
@@ -24,7 +29,7 @@ namespace FxSsh.SshServerModule
 
             // CIDR entries or single addresses. The server listens dual-stack, so an IPv4 client has an address such
             // as ::ffff:192.168.1.5; CidrNotation matches it as IPv4. Invalid entries are skipped.
-            return CidrNotation.Contains(CidrNotation.ParseValid(user.WhitelistedIps), endpoint.Address);
+            return CidrNotation.Contains(CidrNotation.ParseValid(allowedIps), endpoint.Address);
         }
 
         /// <summary>

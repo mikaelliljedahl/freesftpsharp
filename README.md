@@ -73,8 +73,9 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | Page | What it shows and changes |
 | --- | --- |
 | Dashboard (`/`) | The effective listen port and bind addresses (and whether they come from the configuration or the database), the number of users, the active bans, the host key fingerprints |
-| Users (`/users`) | A searchable user list; add, edit and delete (with a confirmation) users: root directory (with a warning when it does not exist), password (salted PBKDF2), the public keys (a list with type, SHA256 fingerprint, comment, added and expiry date; add keys from pasted `authorized_keys` text with an optional expiry, generate an ed25519 or RSA 4096 key pair (the browser downloads the private key once), remove a key with a confirmation), the allowed login methods and the multi-step login, the per-user IP whitelist (CIDR, validated), the last successful login |
-| Server settings (`/general`) | Listen port and bind addresses (with a note when `SshServer:Port` / `SshServer:BindToAddress` override them), server banner, idle timeout, `EnableCommand`, `EnableDirectTcpIp` (with a security warning), the host key fingerprints (never the private keys) and the algorithms the server offers |
+| Users (`/users`) | A searchable user list; add, edit and delete (with a confirmation) users: root directory (with a warning when it does not exist), password (salted PBKDF2), the public keys (a list with type, SHA256 fingerprint, comment, added and expiry date; add keys from pasted `authorized_keys` text with an optional expiry, generate an ed25519 or RSA 4096 key pair (the browser downloads the private key once), remove a key with a confirmation), the allowed login methods and the multi-step login, the per-user IP whitelist (CIDR, validated), status (enabled or disabled), expiry date, session limit and description, the primary and secondary groups with the effective value and source of each inherited setting, the last successful login |
+| Groups (`/groups`) | The groups of users: add, edit and delete; a storage template with `%username%`, virtual folders, permissions and path filters, login methods and allowed networks for the members; the members |
+| Server settings (`/general`) | Listen port and bind addresses (with a note when `SshServer:Port` / `SshServer:BindToAddress` override them), server banner, idle timeout, maximum password age, `EnableCommand`, `EnableDirectTcpIp` (with a security warning), the host key fingerprints (never the private keys) and the algorithms the server offers |
 | Connections (`/connections`) | The open client connections (user, client address, protocol and client version, connected since, last activity) with the files they read or write now and the bytes so far, refreshed every 2 seconds; a "Disconnect" action with a confirmation |
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
 | Audit (`/audit`) | The audit log: uploads, downloads, deletes, renames, directories, logins and failed logins, bans, changes of users and settings, with user, client address, path, size, duration and status; filters (user, type, status, date range) and a CSV export |
@@ -139,7 +140,8 @@ refused on the server also for a direct call.
 | `SuperAdmin` | Everything, also every other permission |
 | `ManageUsers` | The Users page: add, change and delete SFTP users |
 | `ManageEvents` | The Webhooks page (later also event rules) |
-| `ManageGroups`, `ManageFolders` | Reserved for groups and virtual folders (later roadmap items) |
+| `ManageGroups` | The Groups page: add, change and delete groups (a user manager may read them to give them to users) |
+| `ManageFolders` | The Virtual folders page |
 | `ViewConnections` | The Connections page |
 | `DisconnectConnections` | The "Disconnect" action on the Connections page |
 | `ViewAudit` | The Audit page |
@@ -163,6 +165,8 @@ users to it. An administrator with a role as its *scope*:
 - sees and manages only the users of the role (another user is "not found", also by its name),
 - creates users that always get the role, and cannot move a user to another role,
 - sees and closes only the connections of these users, and reads only their audit entries,
+- sees and changes only the groups of the role, creates groups that always get the role, and adds or removes only
+  these groups for its users (a group outside its scope stays as it is),
 - can only have the permissions `ManageUsers`, `ManageGroups`, `ManageFolders`, `ViewConnections`,
   `DisconnectConnections` and `ViewAudit`: the server settings and the administrators are global.
 
@@ -315,7 +319,33 @@ Auto-ban details:
   active bans and lifts one with `Unban`, for the admin UI.
 
 Settings changes (blacklist, whitelist, ban settings) apply to the next connection; `BindToAddress` and
-`ListenToPort` need a restart. `User.LastSuccessfulLogin` is set (UTC) after each successful login.
+`ListenToPort` need a restart. `User.LastLoginAt` is set (UTC) after each successful login.
+
+### Groups and the user lifecycle
+
+**Groups** carry shared settings for many users. A user has at most one primary group and any number of secondary
+groups. Each setting comes from one place, in this order: the user's own value, the primary group, the secondary groups
+in their order, the server default. One service (`IEffectiveUserSettingsService`) resolves them, and the protocols, the
+storage and the admin UI use only it.
+
+| Setting | Not set by a user or group when | Note |
+| --- | --- | --- |
+| Permissions, path filters | null or empty | The first source that has them gives all of them; they are not mixed path by path. A user without groups and only "/" = all permissions has no own permissions. |
+| Storage | null | The storage template of a group: `%username%` in an option (for example `/srv/sftp/%username%`) is replaced by the user name. The directory must exist. |
+| Virtual folders | | Added up: the user's own, then those of each group at a mount path that is still free. |
+| Login methods | the user allows every method | So a group can limit its members to public keys. |
+| Allowed networks | the user's IP whitelist is off or empty | |
+
+A group with members cannot be deleted. The REST API for groups comes with #67.
+
+**Lifecycle.** A user can be disabled (`Status`), can expire (`ExpiresAt`, UTC) and can have a session limit
+(`MaxSessions`, 0: no limit). The server refuses the login of a disabled or expired user also with the right password
+or key, and a new session over the limit while the open ones keep working. With `ServerSettings.PasswordMaxAgeDays`
+(default 0: off) a password that is older is refused for SFTP; the user can still log in with a key. A refused login
+looks to the client like a wrong password (it takes the same time), and the audit log has the reason ("the user is
+disabled", "the user has the maximum of 2 session(s) open", ...). Open sessions of a user that is disabled or expires
+keep running. The upgrade keeps every user enabled, without expiry and limit; the age of the existing passwords
+counts from the upgrade.
 
 The old `ServerRootDirectory` setting was never used (each user has `UserRootDirectory`) and has been removed.
 

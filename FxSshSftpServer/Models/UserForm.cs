@@ -70,7 +70,45 @@ namespace FxSshSftpServer.Models
         /// <summary>Empty (one method is enough), <see cref="KeyThenPassword"/> or <see cref="PasswordThenKey"/>.</summary>
         public string MultiStep { get; set; } = "";
 
-        public DateTime LastSuccessfulLogin { get; set; }
+        public DateTime? LastLoginAt { get; set; }
+
+        /// <summary>A note of the administrator.</summary>
+        [StringLength(1000, ErrorMessage = "The description can have at most 1000 characters.")]
+        public string Description { get; set; } = "";
+
+        /// <summary>The user may log in (<see cref="UserStatus.Enabled"/>).</summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>The day (UTC) from which the user cannot log in; null: never. The user expires at 00:00 UTC of that day.</summary>
+        public DateTime? ExpiresOn { get; set; }
+
+        [Range(0, 10_000, ErrorMessage = "The session limit must be from 0 to 10000 (0: no limit).")]
+        public int MaxSessions { get; set; }
+
+        /// <summary>The time the password was set (display only).</summary>
+        public DateTime? PasswordChangedAt { get; set; }
+
+        /// <summary>The primary group (issue #61); 0: none.</summary>
+        public int PrimaryGroupId { get; set; }
+
+        /// <summary>
+        /// The secondary groups in their order. The page toggles only the groups that the administrator sees, so a group
+        /// outside its scope stays as it is.
+        /// </summary>
+        public List<int> SecondaryGroupIds { get; set; } = new();
+
+        public bool HasGroups => PrimaryGroupId != 0 || SecondaryGroupIds.Count > 0;
+
+        /// <summary>
+        /// For a user with groups: no own permissions and path filters, the groups give them. Without groups the tables
+        /// are always shown; "/" with every permission and no filter is then the same as not set.
+        /// </summary>
+        public bool InheritPermissions { get; set; }
+
+        /// <summary>A selected group has a storage template, so the user needs no root directory (set by the page).</summary>
+        public bool GroupProvidesStorage { get; set; }
+
+        public bool UsesOwnPermissions => !HasGroups || !InheritPermissions;
 
         /// <summary>The permissions per directory (issue #59); the first row is always "/".</summary>
         public List<PermissionRow> Permissions { get; set; } = new() { PermissionRow.Root() };
@@ -98,12 +136,17 @@ namespace FxSshSftpServer.Models
             AllowPublicKey = user.AllowedAuthMethods.HasFlag(AuthMethods.PublicKey),
             OtherAllowedMethods = user.AllowedAuthMethods & ~(AuthMethods.Password | AuthMethods.PublicKey),
             MultiStep = MultiStepOf(user.RequireAllOf),
-            LastSuccessfulLogin = user.LastSuccessfulLogin,
-            Permissions = PermissionRowsOf(user.Permissions),
-            PathFilters = (user.PathFilters ?? new Dictionary<string, PathFilter>())
-                .OrderBy(f => f.Key, StringComparer.Ordinal)
-                .Select(f => PathFilterRow.From(f.Key, f.Value))
-                .ToList(),
+            LastLoginAt = user.LastLoginAt,
+            Description = user.Description ?? "",
+            Enabled = user.Status == UserStatus.Enabled,
+            ExpiresOn = user.ExpiresAt?.Date,
+            MaxSessions = user.MaxSessions,
+            PasswordChangedAt = user.PasswordChangedAt,
+            PrimaryGroupId = user.PrimaryGroupId ?? 0,
+            SecondaryGroupIds = (user.SecondaryGroupIds ?? new List<int>()).ToList(),
+            InheritPermissions = user.Permissions is not { Count: > 0 } && (user.PathFilters is null || user.PathFilters.Values.All(f => f.IsEmpty)),
+            Permissions = PermissionTables.RowsOf(user.Permissions),
+            PathFilters = PermissionTables.FilterRowsOf(user.PathFilters),
         };
 
         private static string MultiStepOf(List<AuthMethods> steps) =>
@@ -119,46 +162,29 @@ namespace FxSshSftpServer.Models
             _ => null,
         };
 
-        /// <summary>The rows of the stored permissions: "/" first (All when it is not stored), then by path.</summary>
-        private static List<PermissionRow> PermissionRowsOf(Dictionary<string, FilePermissions> permissions)
-        {
-            var rows = (permissions ?? new Dictionary<string, FilePermissions>())
-                .Select(p => new PermissionRow { Path = p.Key, Permissions = p.Value })
-                .ToList();
-            if (!rows.Any(r => r.IsRoot))
-                rows.Add(PermissionRow.Root());
-            return rows.OrderBy(r => r.IsRoot ? 0 : 1).ThenBy(r => r.Path, StringComparer.Ordinal).ToList();
-        }
-
-        private Dictionary<string, FilePermissions> PermissionDictionary()
-        {
-            var result = new Dictionary<string, FilePermissions>(StringComparer.Ordinal);
-            foreach (var row in Permissions)
-                result.TryAdd(NormalizedOrRaw(row.Path), row.Permissions);
-            return result;
-        }
-
-        private Dictionary<string, PathFilter> FilterDictionary()
-        {
-            var result = new Dictionary<string, PathFilter>(StringComparer.Ordinal);
-            foreach (var row in PathFilters)
-                result.TryAdd(NormalizedOrRaw(row.Path), row.ToFilter());
-            return result;
-        }
-
-        /// <summary>A valid path is stored normalized; an invalid one is kept as typed, so the validation can tell about it.</summary>
-        private static string NormalizedOrRaw(string path)
-        {
-            var trimmed = (path ?? "").Trim();
-            return trimmed.StartsWith('/') ? VirtualPath.Normalize(trimmed) : trimmed;
-        }
-
         /// <summary>
         /// Writes the form to <paramref name="user"/> (a new user, or the stored copy of an existing one). A new
         /// password is hashed with <see cref="PasswordHasher"/>; the plain text never leaves the form.
         /// </summary>
         /// <remarks>The storage configuration is built and validated by <see cref="StorageConfigService"/>; the caller sets <see cref="User.Storage"/>.</remarks>
-        public void ApplyTo(User user, int passwordIterations = PasswordHasher.DefaultIterations)
+        /// <param name="utcNow">The time of a new password (<see cref="User.PasswordChangedAt"/>). Null: now.</param>
+        public void ApplyTo(User user, int passwordIterations = PasswordHasher.DefaultIterations, DateTime? utcNow = null)
+        {
+            ApplySettingsTo(user);
+            if (!string.IsNullOrEmpty(NewPassword))
+            {
+                user.HashedPassword = PasswordHasher.Hash(NewPassword, passwordIterations);
+                user.PasswordChangedAt = utcNow ?? DateTime.UtcNow;
+            }
+            else if (RemovePassword)
+            {
+                user.HashedPassword = null;
+                user.PasswordChangedAt = null;
+            }
+        }
+
+        /// <summary>Writes every field except the password: also for the preview of the effective settings.</summary>
+        public void ApplySettingsTo(User user)
         {
             if (IsNew)
                 user.Username = Username.Trim();
@@ -168,23 +194,33 @@ namespace FxSshSftpServer.Models
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
             user.AllowedAuthMethods = AllowedMethods;
             user.RequireAllOf = RequiredSteps;
-            user.Permissions = PermissionDictionary();
-            var filters = FilterDictionary().Where(f => !f.Value.IsEmpty).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
-            user.PathFilters = filters.Count == 0 ? null : filters;
-            if (!string.IsNullOrEmpty(NewPassword))
-                user.HashedPassword = PasswordHasher.Hash(NewPassword, passwordIterations);
-            else if (RemovePassword)
-                user.HashedPassword = null;
+            if (UsesOwnPermissions)
+            {
+                // Without groups, "/" = All and no filter is the same as not set; then a group can give them later.
+                user.Permissions = !HasGroups && PermissionTables.IsRootAllOnly(Permissions) ? null : PermissionTables.ToDictionary(Permissions);
+                user.PathFilters = PermissionTables.NonEmptyFilters(PathFilters);
+            }
+            else
+            {
+                user.Permissions = null;
+                user.PathFilters = null;
+            }
+            user.Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
+            user.Status = Enabled ? UserStatus.Enabled : UserStatus.Disabled;
+            user.ExpiresAt = ExpiresOn is { } day ? DateTime.SpecifyKind(day.Date, DateTimeKind.Utc) : null;
+            user.MaxSessions = MaxSessions;
+            user.PrimaryGroupId = PrimaryGroupId == 0 ? null : PrimaryGroupId;
+            user.SecondaryGroupIds = SecondaryGroupIds.Where(id => id != PrimaryGroupId).Distinct().ToList();
         }
 
         /// <summary>The mounts of the form, with normalized paths.</summary>
         public List<VirtualFolderMount> MountList() => Mounts
-            .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = NormalizedOrRaw(m.MountPath) })
+            .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = PermissionTables.NormalizedOrRaw(m.MountPath) })
             .ToList();
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (UsesDefaultStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
+            if (UsesDefaultStorage && !GroupProvidesStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
                 yield return new ValidationResult("Enter the root directory of the user on the server.", new[] { nameof(UserRootDirectory) });
 
             if (!string.IsNullOrEmpty(NewPassword))
@@ -201,14 +237,12 @@ namespace FxSshSftpServer.Models
                 foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
                     yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
 
-            // Rows that are typed twice are found here; the dictionaries keep only the first of them.
-            foreach (var path in Permissions.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
-                yield return new ValidationResult($"The path {path.Key} has permissions twice.", new[] { nameof(Permissions) });
-            foreach (var path in PathFilters.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
-                yield return new ValidationResult($"The path {path.Key} has a filter twice.", new[] { nameof(PathFilters) });
-            foreach (var problem in PermissionRulesValidator.Validate(PermissionDictionary(), null))
+            if (!UsesOwnPermissions)
+                yield break;
+            var (permissionProblems, filterProblems) = PermissionTables.Problems(Permissions, PathFilters);
+            foreach (var problem in permissionProblems)
                 yield return new ValidationResult(problem, new[] { nameof(Permissions) });
-            foreach (var problem in PermissionRulesValidator.Validate(null, FilterDictionary()))
+            foreach (var problem in filterProblems)
                 yield return new ValidationResult(problem, new[] { nameof(PathFilters) });
         }
     }
