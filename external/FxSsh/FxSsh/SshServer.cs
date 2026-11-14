@@ -166,9 +166,14 @@ namespace FxSsh
                 var warn = LogWarnOnTag(catalog, AlgorithmTag.Obsolete);
                 if (warn.Length > 0)
                     Log.Warn("Enabled obsolete algorithms: " + warn);
-                warn = LogWarnOnTag(catalog, AlgorithmTag.Custom);
-                if (warn.Length > 0)
-                    Log.Warn("Imported custom algorithms: " + warn);
+            }
+
+            // A custom algorithm is a deliberate choice of the host, not a problem: Info, not Warn.
+            if (Log.IsEnabled(LogLevel.Info))
+            {
+                var custom = LogWarnOnTag(catalog, AlgorithmTag.Custom);
+                if (custom.Length > 0)
+                    Log.Info("Imported custom algorithms: " + custom);
             }
         }
 
