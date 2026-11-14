@@ -33,6 +33,8 @@ namespace FxSshSftpServer.Security
             services.Configure<AdminAuthOptions>(configuration.GetSection(AdminAuthOptions.SectionName));
             services.AddSingleton<AdminCredentialValidator>();
             services.AddSingleton<AdminSessionValidator>();
+            services.AddSingleton<AdminLoginFlow>();
+            services.AddSingleton<PendingTwoFactorLogin>();
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton(sp =>
             {
@@ -74,6 +76,7 @@ namespace FxSshSftpServer.Security
             services.AddScoped<AdminScopedSettingsRepository>();
             services.AddScoped<ScopedAuditLog>();
             services.AddScoped<ScopedConnections>();
+            services.AddScoped<TwoFactorAdministration>();
             // In the admin UI every user operation goes through the scope of the signed-in administrator. The command
             // line (ServerConsoleApp) keeps the singleton on the shared repository.
             services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));

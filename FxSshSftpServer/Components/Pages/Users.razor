@@ -2,10 +2,13 @@
 @attribute [Authorize(Policy = AdminPolicies.ManageUsers)]
 @using FxSsh.SshServerModule
 @using System.Globalization
+@using System.Threading
 @using SshServer.Interfaces.Permissions
 @using SshServer.Interfaces.Authentication
 @using SshServer.Interfaces.Users
+@using SshServer.Interfaces.TwoFactor
 @inject AdminScopedSettingsRepository SettingsRepository
+@inject TwoFactorAdministration TwoFactor
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject IJSRuntime JS
 @inject ToastService Toasts
@@ -47,6 +50,10 @@
                             @if (context.PublicKeys is { Count: > 0 } keys)
                             {
                                 <span class="badge text-bg-info me-1">@(keys.Count == 1 ? "key" : $"{keys.Count} keys")</span>
+                            }
+                            @if (twoFactorUsers.Contains(context.Id))
+                            {
+                                <span class="badge text-bg-success me-1" title="Two-factor authentication (TOTP)">2FA</span>
                             }
                             @if (context.RequireAllOf is { Count: > 0 })
                             {
@@ -251,11 +258,23 @@
                                     <option value="">Off: one allowed method is enough</option>
                                     <option value="@UserForm.KeyThenPassword">Public key, then password</option>
                                     <option value="@UserForm.PasswordThenKey">Password, then public key</option>
+                                    <option value="@UserForm.KeyThenKeyboardInteractive">Public key, then keyboard-interactive</option>
                                 </InputSelect>
                             </div>
                             <ValidationMessage For="() => form.AllowPassword" />
-                            <div class="form-text">A method that is not allowed fails like a wrong password. With a multi-step login the user needs both methods, in this order.</div>
+                            <div class="form-text">
+                                A method that is not allowed fails like a wrong password. With a multi-step login the user needs both methods, in this order.
+                                Keyboard-interactive asks for the verification code when the user has two-factor authentication, otherwise for the password.
+                            </div>
                         </fieldset>
+
+                        @if (!form.IsNew)
+                        {
+                            <fieldset class="border rounded p-3 mb-3">
+                                <legend class="float-none w-auto px-2 fs-6 mb-0">Two-factor authentication</legend>
+                                <TwoFactorPanel Target="TwoFactorTarget.User(form.Username)" OnChanged="LoadTwoFactorAsync" />
+                            </fieldset>
+                        }
 
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">IP whitelist</legend>
@@ -405,6 +424,7 @@
 
 @code {
     private List<User> users = new();
+    private IReadOnlySet<int> twoFactorUsers = new HashSet<int>();
     private string search = "";
     private UserForm form;
     private string pendingDelete;
@@ -422,7 +442,14 @@
                          || (u.UserRootDirectory ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
              .AsQueryable();
 
-    protected override void OnInitialized() => LoadUsers();
+    protected override async Task OnInitializedAsync()
+    {
+        LoadUsers();
+        await LoadTwoFactorAsync();
+    }
+
+    private async Task LoadTwoFactorAsync() =>
+        twoFactorUsers = await TwoFactor.ListEnabledAsync(TwoFactorSubjectKind.User, CancellationToken.None);
 
     private void LoadUsers() => users = SettingsRepository.GetAllUsers();
 
