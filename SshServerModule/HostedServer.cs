@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Connections;
+using SshServerModule.Connections;
 using SshServer.Interfaces.Net;
 using SshServerModule.Sftp;
 using System;
@@ -37,12 +39,15 @@ namespace FxSsh.SshServerModule
         private readonly LoginBanTracker _bans;
         private readonly IpFilter _ipFilter;
         private readonly SshServerOptions _options;
+        private readonly IConnectionRegistry _connections;
 
         /// <param name="options">Port and bind addresses from the configuration; they override the stored settings. Null: stored settings only.</param>
         /// <param name="banTracker">The auto-ban state, shared with the admin UI (AddSshServerSecurity). Null: a private one.</param>
+        /// <param name="connections">The open connections, shared with the admin UI (AddSshServerConnections). Null: a private registry.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
-            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null)
+            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IConnectionRegistry connections = null)
         {
+            _connections = connections ?? new ConnectionRegistry(TimeProvider.System);
             _options = options?.Value;
             _logger = logger;
             _settingsRepository = settingsRepository;
@@ -116,29 +121,47 @@ namespace FxSsh.SshServerModule
                 throw new SshConnectionException($"Connection refused: {filter}.", DisconnectReason.HostNotAllowedToConnect);
             }
 
-            _logger.LogInformation("Accepted a client from {RemoteEndPoint}.", e.RemoteEndPoint);
+            var connection = _connections.Register(new ConnectionRegistration(ConnectionProtocols.Sftp,
+                DisplayEndPoint(e.RemoteEndPoint), reason => e.DisconnectAsync(DisconnectReason.ByApplication, reason)));
+            var connectionId = connection.Id;
+            // Subscribed before the session starts, so a session always leaves the registry (also when the handshake fails).
+            e.Disconnected += (s, args) => _connections.Unregister(connectionId);
+            e.KeysExchanged += (s, args) =>
+            {
+                if (e.ClientVersion != null)
+                    _connections.SetClientVersion(connectionId, e.ClientVersion);
+            };
+
+            _logger.LogInformation("Accepted a client from {RemoteEndPoint} (connection {ConnectionId}).", e.RemoteEndPoint, connectionId);
 
             var timeouts = SessionTimeouts.FromSettings(_settingsRepository.ServerSettings);
             if (timeouts.KeepaliveInterval is { } keepalive)
                 e.ConfigureKeepalive(keepalive);
 
-            e.ServiceRegistered += OnServiceRegistered;
+            e.ServiceRegistered += (s, service) => OnServiceRegistered(e, service, connectionId);
         }
 
-        void OnServiceRegistered(object sender, SshService e)
+        /// <summary>The client address for the registry: an IPv4 client of the dual-stack listener as "127.0.0.1:50000", not "[::ffff:127.0.0.1]:50000".</summary>
+        internal static string DisplayEndPoint(EndPoint endPoint) => endPoint switch
         {
-            var session = (Session)sender;
+            IPEndPoint { Address.IsIPv4MappedToIPv6: true } ip => new IPEndPoint(ip.Address.MapToIPv4(), ip.Port).ToString(),
+            null => "?",
+            _ => endPoint.ToString(),
+        };
+
+        void OnServiceRegistered(Session session, SshService e, Guid connectionId)
+        {
             _logger.LogDebug("Session {RemoteEndPoint} requesting {Service}.", session.RemoteEndPoint, e.GetType().Name);
 
             if (e is UserAuthService authService)
             {
                 var attempt = new AuthAttempt();
                 authService.UserAuth += (s, args) => OnUserAuth(args, attempt);
-                authService.Succeed += (s, serviceName) => OnUserAuthSucceeded(session, attempt);
+                authService.Succeed += (s, serviceName) => OnUserAuthSucceeded(session, attempt, connectionId);
             }
             else if (e is ConnectionService connectionService)
             {
-                connectionService.SubsystemRequested += OnSubsystemRequested;
+                connectionService.SubsystemRequested += (s, args) => OnSubsystemRequested(args, connectionId);
 
                 if (_settingsRepository.ServerSettings.EnableCommand)
                     connectionService.CommandOpened += OnServiceCommandOpened;
@@ -164,6 +187,7 @@ namespace FxSsh.SshServerModule
         private sealed class AuthAttempt
         {
             public volatile string AcceptedUsername;
+            public volatile string AcceptedMethod;
         }
 
         void OnUserAuth(UserAuthArgs e, AuthAttempt attempt)
@@ -173,7 +197,10 @@ namespace FxSsh.SshServerModule
             Authenticate(e);
 
             if (e.Result)
+            {
+                attempt.AcceptedMethod = e.AuthMethod;
                 attempt.AcceptedUsername = e.Username;
+            }
             else if (e.AuthMethod == "password")
                 RecordFailedLogin(e.Session);
             // Failed public keys are not counted: clients offer each key of their agent, so a user with several keys
@@ -237,11 +264,13 @@ namespace FxSsh.SshServerModule
         }
 
         /// <summary>Called after the whole authentication succeeded (for a public key: after the signature check).</summary>
-        void OnUserAuthSucceeded(Session session, AuthAttempt attempt)
+        void OnUserAuthSucceeded(Session session, AuthAttempt attempt, Guid connectionId)
         {
             var username = attempt.AcceptedUsername;
             if (username == null)
                 return;
+
+            _connections.SetAuthenticated(connectionId, username, attempt.AcceptedMethod);
 
             try
             {
@@ -260,7 +289,7 @@ namespace FxSsh.SshServerModule
             }
         }
 
-        void OnSubsystemRequested(object sender, SubsystemRequestedArgs e)
+        void OnSubsystemRequested(SubsystemRequestedArgs e, Guid connectionId)
         {
             _logger.LogInformation("Channel {ChannelId} requested subsystem \"{Name}\".", e.Channel.ServerChannelId, e.Name);
 
@@ -283,6 +312,9 @@ namespace FxSsh.SshServerModule
                 return;
             }
 
+            // The registry entry of this connection: activity and the open files with their byte counts.
+            // The storage factory has no connection id yet, so this decorator is added here and not in the factory chain.
+            storage = new ConnectionTrackingFileSystem(storage, _connections, connectionId);
             var fileSystem = new SftpFileSystemAdapter(storage, _logger, user.Username);
             new SftpService(fileSystem).Attach(e.Channel);
             e.Agreed = true;

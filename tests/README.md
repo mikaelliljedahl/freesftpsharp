@@ -56,6 +56,10 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `EndToEnd/UserCommandEndToEndTests` | end-to-end (built `ServerConsoleApp` process, SSH.NET) | `user add` in an empty directory (password on stdin, root created, default database, no server start, no logs), `user list`, duplicate rejected, then the server starts and SSH.NET logs in and uploads; `user remove` stops the login |
 | `Unit/UserLogicsTests` | unit | public key check by SHA-256 fingerprint, IP whitelist (also for IPv4-mapped IPv6 addresses) |
 | `Unit/SessionTimeoutsTests` | unit | `IdleTimeout` gives an inactivity timeout, or keepalive probes when it is 0 |
+| `Connections/ConnectionRegistryTests` | unit (`FakeTimeProvider`) | `ConnectionRegistry`: register (new id, address, time, no user), oldest first, login, client version, activity, snapshots do not change, a transfer with the growing byte count ends on dispose, unregister once with the Disconnected event, `DisconnectAsync` calls the close callback with the reason and removes the entry, unknown ids are ignored, a failing event handler is logged |
+| `Connections/ConnectionTrackingFileSystemTests` | unit (`InMemoryFileSystem`) | the decorator: writes are an upload and reads a download with the bytes so far, the transfer ends when the file is closed, every operation records activity, storage errors are unchanged |
+| `EndToEnd/SshNetConnectionRegistryTests` | end-to-end (SSH.NET) | two clients as different users are in the registry with their user, address, protocol, auth method and client version, and leave it within one second of their disconnect; `DisconnectAsync` closes the client (the request in flight fails with `SshException`) and removes the entry; an upload shows the growing byte count and ends when the file is closed |
+| `WebUi/ConnectionsPageTests` | bUnit | the Connections page: empty note, user/address/transfer bytes, auto refresh with the fake clock, disconnect only after confirmation |
 | `EndToEnd/SshNetAuthenticationTests` | end-to-end (SSH.NET) | connect, wrong password is rejected, `Disconnect` does not wait for a timeout |
 | `EndToEnd/SshNetPasswordMigrationTests` | end-to-end (SSH.NET) | login of a user with an old SHA-256 hash, the stored hash is PBKDF2 afterwards and the next login works; wrong password; PBKDF2 user; unknown user |
 | `EndToEnd/PublicKeyAndWhitelistTests` | end-to-end (SSH.NET) | public key login, another key and a user without a key are rejected, unknown user, IP whitelist allows and rejects |
@@ -73,7 +77,7 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Unit/CidrNotationTests` | unit | the shared CIDR helper: IPv4/IPv6 networks and single addresses, host bits, IPv4-mapped IPv6, invalid input (prefix out of range, host names, scope ids, short IPv4 forms), matching |
 | `Unit/LoginBanTrackerTests` | unit | auto-ban after N failures in a sliding window, the ban expires, loopback exemption, IPv4-mapped addresses, 0 = off, `Unban`, clean-up of old records, defaults (`FakeTimeProvider`) |
 | `Unit/IpFilterTests` | unit | global blacklist, global whitelist mode (empty list = no check), blacklist wins, banned addresses |
-| `Unit/SecurityRegistrationTests` | unit | `AddSshServerSecurity`: `HostedServer` and `IIpBanService` share one `LoginBanTracker` |
+| `Unit/SecurityRegistrationTests` | unit | `AddSshServerSecurity`: `HostedServer` and `IIpBanService` share one `LoginBanTracker`; `AddSshServerConnections`: `HostedServer` and the admin UI share one `IConnectionRegistry` |
 | `EndToEnd/IpFilterAndBanTests` | end-to-end (SSH.NET, raw TCP) | a blacklisted / not whitelisted client gets no identification line; ban after 3 wrong passwords or unknown users (loopback exemption off), the ban expires (fake clock), `Unban`; `LastSuccessfulLogin` is set only on success |
 | `EndToEnd/BindToAddressTests` | end-to-end (raw TCP) | `BindToAddress` = 127.0.0.1 answers on 127.0.0.1 and refuses ::1; without it both answer (the IPv6 checks are skipped when the machine has no ::1) |
 | `Unit/LoginThrottleTests` | unit | lockout after N failed logins, the lockout ends, success clears the failures (`FakeTimeProvider`) |
@@ -91,7 +95,7 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
 ## Infrastructure
 
 - `Infrastructure/SftpServerFixture` starts the real `HostedServer` in-process (derive from it and override
-  `IdleTimeoutSeconds`, `ConfigureSettings` or `CreateTimeProvider` for other settings or a fake clock; `BanTracker` gives the auto-ban state; `Repository` gives the settings, for example to add users). It picks a free port,
+  `IdleTimeoutSeconds`, `ConfigureSettings` or `CreateTimeProvider` for other settings or a fake clock; `BanTracker` gives the auto-ban state; `Connections` gives the connection registry; `Repository` gives the settings, for example to add users). It picks a free port,
   creates `<temp>/root` (the user root, `/` for the client) and `<temp>/config.db` (a secret file outside the
   root, `SecretFilePath` / `SecretContent`), creates the user `test_person` / `1234`, and waits until the port
   sends the SSH identification line. It stops the server and deletes the directory afterwards.

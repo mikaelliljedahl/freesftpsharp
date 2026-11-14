@@ -14,6 +14,7 @@ using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
+using SshServerModule.Connections;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
@@ -55,6 +56,7 @@ await new HostBuilder()
     services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
+    services.AddSshServerConnections();
     services.AddSshServerListenOptions();
 })
 .RunConsoleAsync();

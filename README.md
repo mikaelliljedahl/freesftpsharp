@@ -4,8 +4,22 @@
 Sftp Server implementation based on SSHServer library based heavily on [FxSsh](https://github.com/Aimeast/FxSsh). This fork (based on https://github.com/0xFireball/SSHServer) implements the sftp subsystem and a Graphical user interface for administration of users and server settings.
 
 ## Current status
-All basic Sftp command are now implemented except handling symbolic links. However some implementations such as returning correct file attributes are not finalized. Server was tested with FileZilla client only. There are probably some bugs left to fix. 
-You are welcome to create PR's. The planned work is described in the [technical roadmap](docs/ROADMAP.md).
+
+The M1 Foundation milestone of the [technical roadmap](docs/ROADMAP.md) is done:
+
+- SFTP version 3 with all file and directory operations, and the common OpenSSH extensions. Symbolic links are
+  not supported.
+- Each user is locked to a root directory. Path traversal and links that point outside the root are refused.
+- Password (salted PBKDF2) and RSA public key login, IP filters and auto-ban.
+- A Blazor admin UI and a `user` command line for users and settings, stored in SQLite.
+- A storage abstraction (`IFileSystem`) with the local disk as the first backend. Other backends are plug-ins,
+  see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- An automated test suite: unit tests, and end-to-end tests with SSH.NET and OpenSSH `sftp`. CI runs it on
+  Ubuntu and Windows.
+
+The next milestones (M2 to M6) add storage backends, access control, events and an API, more protocols, and
+operations support. The server still starts with no configuration, as a simple local test server, and each new
+feature is opt-in. You are welcome to create pull requests.
 
 ## Quick start (local test server)
 
@@ -49,6 +63,7 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | Dashboard (`/`) | The effective listen port and bind addresses (and whether they come from the configuration or the database), the number of users, the active bans, the host key fingerprints |
 | Users (`/users`) | A searchable user list; add, edit and delete (with a confirmation) users: root directory (with a warning when it does not exist), password (salted PBKDF2), a generated RSA key pair (the browser downloads the private key once; the fingerprint is shown), the per-user IP whitelist (CIDR, validated), the last successful login |
 | Server settings (`/general`) | Listen port and bind addresses (with a note when `SshServer:Port` / `SshServer:BindToAddress` override them), server banner, idle timeout, `EnableCommand`, `EnableDirectTcpIp` (with a security warning), the host key fingerprints (never the private keys) and the algorithms the server offers |
+| Connections (`/connections`) | The open client connections (user, client address, protocol and client version, connected since, last activity) with the files they read or write now and the bytes so far, refreshed every 2 seconds; a "Disconnect" action with a confirmation |
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
 
 The UI has a dark mode (the half-circle button in the top bar; it follows the OS by default) and works on phone widths.
@@ -136,17 +151,20 @@ OpenSSH connects with its default settings.
 - Links are not supported: SSH_FXP_SYMLINK and SSH_FXP_READLINK give SSH_FX_OP_UNSUPPORTED. OpenSSH sends
   the two SYMLINK arguments in the opposite order of the draft (target path first, then link path); the
   server does not have to choose an order, because it refuses the request in both cases. If links are
-  supported later (#25), the server must read the arguments in the OpenSSH order, like OpenSSH sftp-server.
-- Running commands remotely is disabled by default (code is commented out but will later be a setting per user)
+  supported later, the server must read the arguments in the OpenSSH order, like OpenSSH sftp-server.
+  Links that exist on the disk and point outside the user root are not listed and cannot be opened.
+- Running commands (shell and exec) is not implemented. `EnableCommand` is off by default; when it is on, the
+  server only echoes the command and closes the channel.
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
 - Server settings and users are saved in a SQLite database (EF Core). See [Settings storage](#settings-storage).
 - Global IP blacklist, optional global IP whitelist, auto-ban after failed logins, and `BindToAddress`. See [Network access settings](#network-access-settings).
 
 
 ### Features planned for the future
-- Option to use cloud Blob storage as sftp root. Filesystem will be an interface in the SFTP engine, then both local file system or blob storage can be used. Controlled using Dependency Injection
-- More settings databases through EF Core (e.g. SQL Server / Azure SQL), selected by configuration
-- SCP subsystem
+
+The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub issue for each feature. For
+example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, per-path permissions,
+an audit log, webhooks, a REST API, WebDAV and FTP, and more settings databases.
 
 ## Network access settings
 
@@ -262,68 +280,22 @@ dotnet ef migrations add <Name> --project SshServer.Settings.Sql --output-dir Mi
 
 ## Sample
 
-### Server (Powered by this library)
+### Server
 
-```csharp
-using FxSsh;
-using FxSsh.Services;
-using System;
-using System.Text;
-using System.Threading.Tasks;
+`ServerConsoleApp/Program.cs` is the smallest host: it reads the configuration, registers the settings
+database, the local disk storage and the SSH server, and runs the generic host. `FxSshSftpServer` hosts the
+same server in ASP.NET Core together with the admin UI.
 
-namespace SshServerLoader
-{
-    class Program
-    {
-         static async Task Main(string[] args)
-        {
-             await new HostBuilder()
-            .ConfigureServices((hostContext, services) =>
-            {
-                services.AddLogging();
-                Log.Information("Starting host service");
-                services.AddHostedService<HostedSftpServer>();
-            })
-            .RunConsoleAsync();
-        }
-    }
-}
-```
-
-### Client (powered by SSH.NET client)
+### Client (SSH.NET)
 
 ```csharp
 using Renci.SshNet;
-using System;
-using System.Net;
 
-namespace TestClient
-{
-    internal class Program
-    {
-        private static void Main(string[] args)
-        {
-            var testUsername = "test_person";
-            var testPassword = "1234";
-
-
-            var connInfo = new ConnectionInfo(IPAddress.Loopback.ToString(), 22, testUsername,
-                new AuthenticationMethod[]
-                {
-                    // Password auth
-                    new PasswordAuthenticationMethod(testUsername, testPassword)
-                }
-            );
-
-            using var sftpclient = new SftpClient(connInfo);
-            sftpclient.Connect();
-            sftpclient.ListDirectory("/");
-            sftpclient.Disconnect();
-            
-            Console.ReadLine();
-        }
-    }
-}
+using var client = new SftpClient("localhost", 2222, "alice", "a-password");
+client.Connect();
+foreach (var entry in client.ListDirectory("/"))
+    Console.WriteLine(entry.FullName);
+client.Disconnect();
 ```
 
 ### License

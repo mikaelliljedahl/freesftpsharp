@@ -8,7 +8,9 @@ using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Storage;
+using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -44,6 +46,8 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
     /// <summary>The auto-ban state of the running server.</summary>
     public LoginBanTracker BanTracker { get; private set; } = null!;
+    /// <summary>The open connections of the running server.</summary>
+    public IConnectionRegistry Connections { get; private set; } = null!;
     public string TempDirectory { get; }
     public string UserRoot { get; }
     public string SecretFilePath { get; }
@@ -186,9 +190,12 @@ public class SftpServerFixture : IAsyncLifetime
             WhitelistedIps = new List<string>(),
         });
 
-        BanTracker = new LoginBanTracker(CreateTimeProvider());
+        var time = CreateTimeProvider();
+        BanTracker = new LoginBanTracker(time);
+        Connections = new ConnectionRegistry(time);
         return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(), repository, BanTracker,
-            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
+            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
+            Connections);
     }
 
     /// <summary>
