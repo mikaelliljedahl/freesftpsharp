@@ -21,6 +21,12 @@
           "Microsoft.Extensions.Logging": "11.0.0"
         }
       },
+      "FluentFTP": {
+        "type": "Direct",
+        "requested": "[55.1.0, )",
+        "resolved": "55.1.0",
+        "contentHash": "RXA6WEaziJiSt/lrOxbpxfkOyTY1YaeQiCKzsVoQQxEwcoI0dtoTzGiqS47mrqq3zBuETMwaVjI7FLTCcJC80w=="
+      },
       "Microsoft.AspNetCore.Mvc.Testing": {
         "type": "Direct",
         "requested": "[11.0.0, )",
@@ -1199,6 +1205,13 @@
           "xunit.v3.runner.common": "[4.0.3]"
         }
       },
+      "freesftpsharp.ftp": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServerModule": "[1.0.0, )"
+        }
+      },
       "freesftpsharp.webdav": {
         "type": "Project",
         "dependencies": {
@@ -1212,6 +1225,7 @@
       "fxsshsftpserver": {
         "type": "Project",
         "dependencies": {
+          "FreeSftpSharp.Ftp": "[1.0.0, )",
           "FreeSftpSharp.WebDav": "[1.0.0, )",
           "Microsoft.AspNetCore.Components.QuickGrid": "[11.0.0, )",
           "Serilog.AspNetCore": "[10.0.0, )",

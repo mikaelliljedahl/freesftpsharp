@@ -29,6 +29,7 @@ using SshServer.Settings.Sql;
 using SshServer.Settings.PostgreSql;
 using SshServer.Settings.SqlServer;
 using FxSsh.SshServerModule.Cli;
+using FreeSftpSharp.Ftp;
 using SshServer.Interfaces.Users;
 using SshServerModule.Authentication;
 using SshServer.Authentication.Http;
@@ -94,6 +95,7 @@ await new HostBuilder()
     services.AddSshServerConnections();
     services.AddSshServerListenOptions();
     services.AddSshServerCluster(hostContext.Configuration); // several nodes on one database (#75): off until Cluster:Enabled
+    services.AddFtp(hostContext.Configuration); // FTP and FTPS (#72): off until Ftp:Enabled is true
 })
 .RunConsoleAsync();
 

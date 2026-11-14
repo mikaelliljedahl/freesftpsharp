@@ -654,6 +654,13 @@
         "resolved": "9.0.18",
         "contentHash": "1/iz9Eex1TBMYdAk+m3igaMvL+nk+rY1EqL6u93an/j1ghxmB24vGOKXkVFy3NSPA39s1H/+SNoK257tHoXoLA=="
       },
+      "freesftpsharp.ftp": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServerModule": "[1.0.0, )"
+        }
+      },
       "freesftpsharp.webdav": {
         "type": "Project",
         "dependencies": {

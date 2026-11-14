@@ -804,6 +804,13 @@
         "resolved": "9.0.18",
         "contentHash": "pxuHw/tQXaHMRXEaKzzgpoGO8VeTPIzHbnp0KclXp6js5wPHn7VaqSCa8yRTAsZDcZ2XuIEnXGM2MbRDJFLBog=="
       },
+      "freesftpsharp.ftp": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServerModule": "[1.0.0, )"
+        }
+      },
       "fxssh": {
         "type": "Project"
       },

@@ -258,6 +258,8 @@ OpenSSH connects with its default settings.
   Finder and Linux clients, with Basic over HTTPS, per-user protocol flags and app passwords. See [docs/WEBDAV.md](docs/WEBDAV.md).
 - Web client (issue #69, opt-in): the users browse, upload, download and manage their account in the browser at `/client`,
   with the same permissions, quotas and audit events as SFTP. See [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md).
+- FTP and FTPS (issue #72, opt-in): the same users and storage over FTP with explicit TLS (required by default),
+  passive ports in a configured range, MLSD and resume, for FileZilla, WinSCP, lftp and curl. See [docs/FTP.md](docs/FTP.md).
 
 
 ### Features planned for the future

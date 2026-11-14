@@ -54,7 +54,8 @@ factory adds the decorator to its chain.
 ## Protocols and logins
 
 A protocol is a plug-in project with an `AddX()` (for example `FreeSftpSharp.WebDav`, `AddWebDav()` and `MapWebDav()`,
-see [WEBDAV.md](WEBDAV.md)); it is off until the operator turns it on. It uses only the shared services: the user's
+see [WEBDAV.md](WEBDAV.md), and `FreeSftpSharp.Ftp`, `AddFtp()`, a hosted service with its own listener, see
+[FTP.md](FTP.md)); it is off until the operator turns it on. It uses only the shared services: the user's
 `IFileSystem` from `IFileSystemFactory` (with a `ClientContext` of its protocol name), the `IConnectionRegistry`, the
 `IEventBus`, and for a user name and password the `PasswordLoginService` (`AddSshServerSecurity()`). That service has
 the login rules of the protocols other than SSH in one place: the global IP rules and the auto-ban, the IP whitelist of

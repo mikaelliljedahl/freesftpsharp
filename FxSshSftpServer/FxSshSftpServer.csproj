@@ -28,6 +28,7 @@
     <ProjectReference Include="..\SshServer.Settings.PostgreSql\SshServer.Settings.PostgreSql.csproj" />
     <ProjectReference Include="..\SshServer.Settings.SqlServer\SshServer.Settings.SqlServer.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
+    <ProjectReference Include="..\FreeSftpSharp.Ftp\FreeSftpSharp.Ftp.csproj" />
     <ProjectReference Include="..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
     <ProjectReference Include="..\FreeSftpSharp.WebDav\FreeSftpSharp.WebDav.csproj" />
     <ProjectReference Include="..\SshServer.TwoFactor\SshServer.TwoFactor.csproj" />

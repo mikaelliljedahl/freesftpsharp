@@ -131,6 +131,11 @@ jobs:
           docker logs azurite
           exit 1
 
+      # lftp for the FTPS end-to-end tests (#72); curl is on the runner already.
+      - name: Install lftp
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q lftp
+
       - name: Test
         env:
           FREESFTPSHARP_TEST_AZURITE: ${{ runner.os == 'Linux' && 'http://127.0.0.1:10000' || '' }}
