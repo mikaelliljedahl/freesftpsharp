@@ -3,6 +3,7 @@ using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
 using Microsoft.EntityFrameworkCore;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 using SshServer.Settings.Sql;
 
 namespace FreeSftpSharp.Tests.Settings;
@@ -53,12 +54,32 @@ public sealed class LiteDbImportTests : IDisposable
             UserRootDirectory = "/srv/bob",
             RsaPublicKey = "bob-public-key",
             WhitelistedIps = new List<string>(),
+            Permissions = new() { ["/"] = FilePermissions.List, ["/in"] = FilePermissions.Upload },
+            PathFilters = new() { ["/in"] = new PathFilter { DeniedPatterns = ["*.exe"] } },
         });
 
         return repository.ServerSettings.ServerRsaKey ?? throw new InvalidOperationException("The server RSA key was not stored.");
     }
 
     private string HashOfLiteDbFile() => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(LiteDbPath)));
+
+    [Fact]
+    public void The_LiteDB_repository_stores_and_updates_permissions_and_path_filters()
+    {
+        using var liteDb = new SettingsRepository(LiteDbPath);
+        ISettingsRepository repository = liteDb;
+        repository.AddUser(new User { Username = "carol", UserRootDirectory = "/srv/carol" });
+        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, repository.GetUser("carol").Permissions);
+
+        var user = repository.GetUser("carol");
+        user.Permissions = new() { ["/"] = FilePermissions.None, ["/a/b"] = FilePermissions.Download | FilePermissions.List };
+        user.PathFilters = new() { ["/a"] = new PathFilter { HiddenPatterns = [".*"] } };
+        Assert.True(repository.UpdateUser(user));
+
+        var stored = repository.GetUser("carol");
+        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.None, ["/a/b"] = FilePermissions.Download | FilePermissions.List }, stored.Permissions);
+        Assert.Equal([".*"], stored.PathFilters!["/a"].HiddenPatterns);
+    }
 
     [Fact]
     public void The_ecdsa_host_key_is_imported_when_config_db_has_one()
@@ -108,6 +129,9 @@ public sealed class LiteDbImportTests : IDisposable
         var bob = repository.GetUser("bob");
         Assert.Equal("bob-public-key", bob.RsaPublicKey);
         Assert.Null(bob.HashedPassword);
+        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.List, ["/in"] = FilePermissions.Upload }, bob.Permissions);
+        Assert.Equal(["*.exe"], bob.PathFilters!["/in"].DeniedPatterns);
+        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, alice.Permissions);
     }
 
     [Fact]

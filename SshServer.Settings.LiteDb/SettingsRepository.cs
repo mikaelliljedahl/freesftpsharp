@@ -39,6 +39,8 @@ namespace FxSsh.SshServerModule
             this.RsaPublicKey = user.RsaPublicKey;
             this.UserRootDirectory = user.UserRootDirectory;
             this.WhitelistedIps = user.WhitelistedIps;
+            this.Permissions = user.Permissions;
+            this.PathFilters = user.PathFilters;
             this.Id = new ObjectId();
         }
 
@@ -143,6 +145,8 @@ namespace FxSsh.SshServerModule
             user.RsaPublicKey = UpdatedUser.RsaPublicKey;
             user.UserRootDirectory = UpdatedUser.UserRootDirectory;
             user.WhitelistedIps = UpdatedUser.WhitelistedIps;
+            user.Permissions = UpdatedUser.Permissions;
+            user.PathFilters = UpdatedUser.PathFilters;
             return usercol.Update(user);
             
         }
