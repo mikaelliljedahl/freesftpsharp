@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces.Storage;
@@ -179,7 +180,7 @@ namespace FxSshSftpServer.WebClient
                 try
                 {
                     _logger.LogInformation("The unfinished upload of {Path} was aborted after {Minutes} minutes without a chunk.",
-                        upload.Path, _options.UploadIdleMinutes);
+                        LogText.Clean(upload.Path), _options.UploadIdleMinutes);
                     await AbortLockedAsync(key, upload);
                     aborted++;
                 }
@@ -232,7 +233,7 @@ namespace FxSshSftpServer.WebClient
             }
             catch (Exception ex) when (ex is FileSystemException or IOException)
             {
-                _logger.LogWarning(ex, "The unfinished upload of {Path} could not be aborted cleanly.", upload.Path);
+                _logger.LogWarning(ex, "The unfinished upload of {Path} could not be aborted cleanly.", LogText.Clean(upload.Path));
             }
         }
 

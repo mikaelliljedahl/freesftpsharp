@@ -33,11 +33,11 @@ namespace FxSshSftpServer.WebClient
         {
             services.AddOptions<WebClientOptions>().Bind(configuration.GetSection(WebClientOptions.SectionName)).ValidateOnStart();
             services.AddSingleton<IValidateOptions<WebClientOptions>, WebClientOptionsValidator>();
-            services.AddSingleton<IClientCredentialVerifier, PasswordCredentialVerifier>();
             services.AddSingleton<ClientSessions>();
             services.AddSingleton<UploadSessions>();
             services.AddSingleton<ClientStorageFactory>();
             services.AddSingleton<ClientAccountService>();
+            services.AddSingleton<ClientPasswordChange>();
             services.AddSingleton<ClientLoginFlow>();
             services.AddSingleton<ClientPendingLogin>();
             services.AddSingleton(sp =>

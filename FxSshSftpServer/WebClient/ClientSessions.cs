@@ -86,6 +86,16 @@ namespace FxSshSftpServer.WebClient
         /// <summary>Ends a session (logout, or a login that is not valid any more).</summary>
         public void End(Guid id) => _connections.Unregister(id);
 
+        /// <summary>Ends every browser session of the user except <paramref name="keep"/> (after a new password).</summary>
+        public void EndOthers(string username, Guid keep)
+        {
+            foreach (var (id, session) in _sessions)
+            {
+                if (id != keep && string.Equals(session.Username, username, StringComparison.OrdinalIgnoreCase))
+                    End(id);
+            }
+        }
+
         /// <summary>Ends the sessions without a request for <see cref="WebClientOptions.SessionIdleMinutes"/>. Returns how many.</summary>
         public int Sweep()
         {

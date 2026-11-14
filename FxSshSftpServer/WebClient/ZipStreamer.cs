@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Threading;
 using System.Threading.Tasks;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces.Storage;
 
@@ -59,50 +60,60 @@ namespace FxSshSftpServer.WebClient
         /// </summary>
         public static async Task WriteAsync(IFileSystem fileSystem, IReadOnlyList<ZipItem> items, Stream output, ILogger logger, CancellationToken ct)
         {
-            await using var archive = await ZipArchive.CreateAsync(output, ZipArchiveMode.Create, leaveOpen: true, entryNameEncoding: null, ct);
+            await using var stream = new PendingWriteStream(output);
             var buffer = ArrayPool<byte>.Shared.Rent(BlockSize);
             try
             {
-                foreach (var item in items)
-                {
-                    if (item.IsDirectory)
-                    {
-                        var folder = archive.CreateEntry(item.EntryName + "/", CompressionLevel.NoCompression);
-                        folder.LastWriteTime = ZipTime(item.LastWriteTimeUtc);
-                        continue;
-                    }
-
-                    IFileHandle handle;
-                    try
-                    {
-                        handle = await fileSystem.OpenAsync(item.Path, FileOpenFlags.Read, null, ct);
-                    }
-                    catch (FileSystemException ex)
-                    {
-                        logger.LogWarning("The zip download left out {Path}: {Reason}", item.Path, ex.Message);
-                        continue;
-                    }
-
-                    await using (handle)
-                    {
-                        var entry = archive.CreateEntry(item.EntryName, CompressionLevel.Fastest);
-                        entry.LastWriteTime = ZipTime(item.LastWriteTimeUtc);
-                        await using var target = await entry.OpenAsync(ct);
-                        long offset = 0;
-                        while (true)
-                        {
-                            var read = await handle.ReadAsync(offset, buffer.AsMemory(0, BlockSize), ct);
-                            if (read == 0)
-                                break;
-                            await target.WriteAsync(buffer.AsMemory(0, read), ct);
-                            offset += read;
-                        }
-                    }
-                }
+                await WriteEntriesAsync(fileSystem, items, stream, buffer, logger, ct);
+                await stream.SendPendingAsync(ct);
             }
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        private static async Task WriteEntriesAsync(IFileSystem fileSystem, IReadOnlyList<ZipItem> items, PendingWriteStream stream, byte[] buffer,
+            ILogger logger, CancellationToken ct)
+        {
+            await using var archive = await ZipArchive.CreateAsync(stream, ZipArchiveMode.Create, leaveOpen: true, entryNameEncoding: null, ct);
+            foreach (var item in items)
+            {
+                if (item.IsDirectory)
+                {
+                    var folder = archive.CreateEntry(item.EntryName + "/", CompressionLevel.NoCompression);
+                    folder.LastWriteTime = ZipTime(item.LastWriteTimeUtc);
+                    continue;
+                }
+
+                IFileHandle handle;
+                try
+                {
+                    handle = await fileSystem.OpenAsync(item.Path, FileOpenFlags.Read, null, ct);
+                }
+                catch (FileSystemException ex)
+                {
+                    logger.LogWarning("The zip download left out {Path}: {Reason}", LogText.Clean(item.Path), LogText.Clean(ex.Message));
+                    continue;
+                }
+
+                await using (handle)
+                {
+                    var entry = archive.CreateEntry(item.EntryName, CompressionLevel.Fastest);
+                    entry.LastWriteTime = ZipTime(item.LastWriteTimeUtc);
+                    await using var target = await entry.OpenAsync(ct);
+                    long offset = 0;
+                    while (true)
+                    {
+                        var read = await handle.ReadAsync(offset, buffer.AsMemory(0, BlockSize), ct);
+                        if (read == 0)
+                            break;
+                        await target.WriteAsync(buffer.AsMemory(0, read), ct);
+                        offset += read;
+                    }
+                }
+                // The records that the archive wrote synchronously for this entry.
+                await stream.SendPendingAsync(ct);
             }
         }
 

@@ -36,6 +36,8 @@ namespace FxSshSftpServer.WebClient
         /// <summary>The <see cref="ProviderEvent.Actor"/> of a change that users make themselves.</summary>
         public const string SelfActor = "self";
 
+        public const string WrongPasswordMessage = "The current password is wrong.";
+
         private readonly ISettingsRepository _repository;
         private readonly UserAdministrationService _users;
         private readonly TwoFactorService _twoFactor;
@@ -64,7 +66,7 @@ namespace FxSshSftpServer.WebClient
         {
             var user = RequireUser(username);
             if (!UserPasswordCheck.Verify(user, currentPassword ?? "", _repository, _logger))
-                throw new ClientAccountException("The current password is wrong.");
+                throw new ClientAccountException(WrongPasswordMessage);
             if (UserAdministrationService.ValidatePassword(newPassword) is { } problem)
                 throw new ClientAccountException(problem);
             if (newPassword != repeatPassword)
