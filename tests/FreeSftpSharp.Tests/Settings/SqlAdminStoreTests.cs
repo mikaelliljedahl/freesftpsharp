@@ -149,6 +149,6 @@ public sealed class SqlAdminStoreTests : IDisposable
         Assert.False(repository.AddUser(new User { Username = "OLD", UserRootDirectory = "/srv/x" }));
         Assert.False(await store.AnyAdminAsync(Ct));
         using (var db = new SettingsDbContext(options))
-            Assert.Equal("20261114105230_AddAdminsAndRoles", db.Database.GetAppliedMigrations().Last());
+            Assert.Equal("20261114112133_AddAdminsAndRoles", db.Database.GetAppliedMigrations().Last());
     }
 }

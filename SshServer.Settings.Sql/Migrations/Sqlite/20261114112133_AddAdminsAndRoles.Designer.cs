@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114105230_AddAdminsAndRoles")]
-partial class _20261114105230_AddAdminsAndRoles
+[Migration("20261114112133_AddAdminsAndRoles")]
+partial class _20261114112133_AddAdminsAndRoles
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -272,6 +272,139 @@ partial class _20261114105230_AddAdminsAndRoles
                 b.ToTable("Users");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.Webhooks.Webhook", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("EventTypes")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("FailOpen")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Headers")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Method")
+                    .IsRequired()
+                    .HasMaxLength(8)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("PathGlob")
+                    .HasMaxLength(1024)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("ProtectedSecret")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Sync")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("TimeoutSeconds")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Url")
+                    .IsRequired()
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("Users")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("Webhooks");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Webhooks.WebhookDelivery", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("Attempts")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("CreatedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<Guid>("DeliveryId")
+                    .HasColumnType("TEXT");
+
+                b.Property<Guid>("EventId")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("EventType")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastAttemptUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("LastError")
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("LastStatusCode")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("LeaseOwner")
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LeaseUntilUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("NextAttemptUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Payload")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("ResponseExcerpt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Sync")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("WebhookId")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("DeliveryId")
+                    .IsUnique();
+
+                b.HasIndex("Status", "NextAttemptUtc");
+
+                b.HasIndex("WebhookId", "CreatedUtc");
+
+                b.ToTable("WebhookDeliveries");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
             {
                 b.HasOne("SshServer.Interfaces.Admins.Role", null)
@@ -286,6 +419,15 @@ partial class _20261114105230_AddAdminsAndRoles
                     .WithMany()
                     .HasForeignKey("RoleId")
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Webhooks.WebhookDelivery", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Webhooks.Webhook", null)
+                    .WithMany()
+                    .HasForeignKey("WebhookId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 #pragma warning restore 612, 618
     }

@@ -52,6 +52,13 @@
             </NavLink>
         </li>
     </AuthorizeView>
+    <AuthorizeView Policy="@AdminPolicies.ManageEvents">
+        <li class="nav-item">
+            <NavLink class="nav-link" href="webhooks" @onclick="OnNavigate">
+                <i class="bi bi-broadcast"></i> Webhooks
+            </NavLink>
+        </li>
+    </AuthorizeView>
     <li class="nav-item mt-3 border-top pt-3">
         <a class="nav-link" href="ChangePassword" @onclick="ChangePassword" @onclick:preventDefault>
             <i class="bi bi-key"></i> Change password
