@@ -64,6 +64,9 @@ namespace FxSsh.SshServerModule
             _ipFilter = new IpFilter(logger);
         }
 
+        /// <summary>True while the SSH listeners are bound (after a successful start, until the stop). For the readiness check.</summary>
+        public bool IsListening { get; private set; }
+
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             FxSshLogSink.Configure(_logger);
@@ -100,12 +103,14 @@ namespace FxSsh.SshServerModule
                 throw;
             }
 
+            IsListening = true;
             Publish(new SystemEvent(SystemEventType.Started) { Timestamp = Now, Source = SshProtocol,
                 Message = $"Listening on port {listen.Port}." });
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
+            IsListening = false;
             Publish(new SystemEvent(SystemEventType.Stopping) { Timestamp = Now, Source = SshProtocol });
             await StopServersAsync();
             _settingsRepository.Dispose();

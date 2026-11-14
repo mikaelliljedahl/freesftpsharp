@@ -66,6 +66,13 @@ namespace FxSsh.Services.Sftp
 
         /// <summary>Modify the file's attributes. Maps to SSH_FXP_FSETSTAT.</summary>
         void SetAttributes(SftpFileAttributes attributes);
+
+        /// <summary>
+        /// Ends the file without a CLOSE request from the client: the session ended while the file was open. The
+        /// default closes the file like <see cref="IDisposable.Dispose"/>; a file system that publishes a file only
+        /// at the close can drop the unfinished file instead.
+        /// </summary>
+        void Abort() => Dispose();
     }
 
     /// <summary>

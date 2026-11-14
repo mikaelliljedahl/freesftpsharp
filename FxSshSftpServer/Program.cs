@@ -18,6 +18,7 @@ using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
+using SshServer.Observability;
 
 using FxSshSftpServer.Security;
 
@@ -62,6 +63,7 @@ builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
+builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
@@ -70,6 +72,8 @@ builder.Services.AddEncryptedLocalStorage(); // "local-encrypted", off until Sto
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();
+
+app.UseSshServerObservability(); // before the login: probes and scrapers have no cookie
 
 // Without an admin credential the whole UI answers 503 (the SSH server still runs).
 app.UseAdminUiRequiresCredential();

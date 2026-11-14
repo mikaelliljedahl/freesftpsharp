@@ -222,7 +222,12 @@ namespace SshServerModule.Events
 
             public ValueTask SetAttributesAsync(FileAttributesUpdate update, CancellationToken ct) => _inner.SetAttributesAsync(update, ct);
 
-            public async ValueTask DisposeAsync()
+            public ValueTask DisposeAsync() => CloseAsync(abort: false);
+
+            /// <summary>An aborted upload is published as a failed transfer: the file is not complete.</summary>
+            public ValueTask AbortAsync() => CloseAsync(abort: true);
+
+            private async ValueTask CloseAsync(bool abort)
             {
                 if (Interlocked.Exchange(ref _disposed, 1) != 0)
                     return;
@@ -242,7 +247,7 @@ namespace SshServerModule.Events
 
                 try
                 {
-                    await _inner.DisposeAsync();
+                    await (abort ? _inner.AbortAsync() : _inner.DisposeAsync());
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -250,6 +255,8 @@ namespace SshServerModule.Events
                     await PublishAsync(size);
                     throw;
                 }
+                if (abort && _upload)
+                    _failure ??= new FileSystemException(FileSystemError.Failure, $"The upload was aborted before the file was closed: {_path}");
                 await PublishAsync(size);
             }
 

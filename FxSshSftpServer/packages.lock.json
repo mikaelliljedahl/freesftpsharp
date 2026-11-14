@@ -142,6 +142,67 @@
         "resolved": "11.0.0",
         "contentHash": "K6M9zulTQ3OU0myKAcBb/Gbfw/aTKa3wlxyDhwfOmT7Wavoxe0lzAkeDjS5+/1dqcgGDUZtIykJIo3T4W7zKbQ=="
       },
+      "OpenTelemetry": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "ynAzNO/ebDTPxARbz4z/HgL8azMk/iDk4GXFuIRQ6krr1+a5QMC4eoiXRl+e7COd+3RLyL/yTuE6bevwqbv4Bw==",
+        "dependencies": {
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.21.0"
+        }
+      },
+      "OpenTelemetry.Api": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw=="
+      },
+      "OpenTelemetry.Api.ProviderBuilderExtensions": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "ZcBCBTGbzjj8Y+9UnZKbSjnRyKc2ub2IvvU68fFHKmyKzTS4hU+4/f0PO1GoIf7FTYLKTyw+l/EwLL/PPIDkxg==",
+        "dependencies": {
+          "OpenTelemetry.Api": "1.21.0"
+        }
+      },
+      "OpenTelemetry.Exporter.OpenTelemetryProtocol": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "Xo/3lqiZhv+an00t5N9Jxt3U2vIOcY6/bu0wo5LiQrrRIwd/8dv9FdlIVB3k3ypiyG1VkbCXhWH1tiC48HQS4w==",
+        "dependencies": {
+          "OpenTelemetry": "1.21.0"
+        }
+      },
+      "OpenTelemetry.Exporter.Prometheus.AspNetCore": {
+        "type": "Transitive",
+        "resolved": "1.21.0-beta.1",
+        "contentHash": "Q0aAozCDzs28KmfdnpF8DQ5z/rywf+Htc19mVQj1345LEHkSm5zrbr0fwlxsr/tPGqNzRf8a13Ae97l6hwyY+A==",
+        "dependencies": {
+          "OpenTelemetry": "[1.21.0, 2.0.0)"
+        }
+      },
+      "OpenTelemetry.Extensions.Hosting": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "+cOZFDBLktHT8V/aUb2SXQVFNP5JrcX/F24TgHcbD2kd4SFcKlBMChYeU/K+Tg3nuL+4HAS7dcR7Y2+tcSnFbQ==",
+        "dependencies": {
+          "OpenTelemetry": "1.21.0"
+        }
+      },
+      "OpenTelemetry.Instrumentation.AspNetCore": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "mHX+dOb0uGLGuVJxoKdYTsndz8pNg+Uxe7YqTp6IY3No9tmoLCiUjXf/fI82IrTRnF1PraVzU+VWymzLR1CmFw==",
+        "dependencies": {
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "[1.21.0, 2.0.0)"
+        }
+      },
+      "OpenTelemetry.Instrumentation.Runtime": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "CpkfBbVIHR6Jn8QrGwt7RtOEDyKOHL2rs9HL+5ckzvlsvQiJ5lHD/qvB7NqJuFZIvXnACSYB7AD0ycXITPQFPg==",
+        "dependencies": {
+          "OpenTelemetry.Api": "[1.21.0, 2.0.0)"
+        }
+      },
       "Portable.BouncyCastle": {
         "type": "Transitive",
         "resolved": "1.9.0",
@@ -253,6 +314,18 @@
       },
       "sshserver.interfaces": {
         "type": "Project"
+      },
+      "sshserver.observability": {
+        "type": "Project",
+        "dependencies": {
+          "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.21.0, )",
+          "OpenTelemetry.Exporter.Prometheus.AspNetCore": "[1.21.0-beta.1, )",
+          "OpenTelemetry.Extensions.Hosting": "[1.21.0, )",
+          "OpenTelemetry.Instrumentation.AspNetCore": "[1.21.0, )",
+          "OpenTelemetry.Instrumentation.Runtime": "[1.21.0, )",
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServerModule": "[1.0.0, )"
+        }
       },
       "sshserver.settings.litedb": {
         "type": "Project",

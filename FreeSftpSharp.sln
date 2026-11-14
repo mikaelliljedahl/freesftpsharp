@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Filesystem.Encryp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Webhooks", "SshServer.Webhooks\SshServer.Webhooks.csproj", "{8149F006-5EDE-496A-8B41-C0CB21E4AE83}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Observability", "SshServer.Observability\SshServer.Observability.csproj", "{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -91,6 +93,10 @@ Global
 		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
