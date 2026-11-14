@@ -1,6 +1,10 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Audit;
+using SshServer.Interfaces.Permissions;
 
 namespace SshServer.Settings.Sql;
 
@@ -8,8 +12,9 @@ namespace SshServer.Settings.Sql;
 /// EF Core model for the server settings (one row) and the users. The entities are the
 /// <see cref="ServerSettings"/> and <see cref="User"/> classes from SshServer.Interfaces, so the stored
 /// fields are the same as in the LiteDB file. Lists of strings are stored as JSON text columns
-/// (EF Core primitive collections), which works on SQLite and on SQL Server. The audit log (<see cref="AuditEntry"/>)
-/// is in the same database.
+/// (EF Core primitive collections), which works on SQLite and on SQL Server. The permissions and path filters of a
+/// user are JSON text columns too, with the permission flags as names (<c>{"/":"All","/in":"Upload"}</c>). The audit
+/// log (<see cref="AuditEntry"/>) is in the same database.
 /// </summary>
 public class SettingsDbContext : DbContext
 {
@@ -49,6 +54,10 @@ public class SettingsDbContext : DbContext
             b.Property(u => u.HashedPassword).IsRequired(false);
             b.Property(u => u.RsaPublicKey).IsRequired(false);
             b.PrimitiveCollection(u => u.WhitelistedIps).IsRequired(false);
+            b.Property(u => u.Permissions).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<Dictionary<string, FilePermissions>>(v), JsonComparer<Dictionary<string, FilePermissions>>());
+            b.Property(u => u.PathFilters).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<Dictionary<string, PathFilter>>(v), JsonComparer<Dictionary<string, PathFilter>>());
         });
 
         modelBuilder.Entity<AuditEntry>(b =>
@@ -67,4 +76,16 @@ public class SettingsDbContext : DbContext
             b.HasIndex(a => a.Username);
         });
     }
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { Converters = { new JsonStringEnumConverter() } };
+
+    private static string ToJson<T>(T value) => JsonSerializer.Serialize(value, JsonOptions);
+
+    private static T FromJson<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonOptions)!;
+
+    /// <summary>Compares by the JSON text, so a change inside a dictionary or a filter is saved too.</summary>
+    private static ValueComparer<T?> JsonComparer<T>() where T : class => new(
+        (a, b) => ToJson(a) == ToJson(b),
+        v => ToJson(v).GetHashCode(),
+        v => v == null ? null : FromJson<T>(ToJson(v)));
 }

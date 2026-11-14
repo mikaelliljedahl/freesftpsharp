@@ -20,7 +20,8 @@ public sealed class LocalFileSystemConformanceTests : FileSystemConformanceTests
         public IFileSystem FileSystem { get; }
 
         public StorageCapabilities ExpectedCapabilities => StorageCapabilities.RandomAccessWrite | StorageCapabilities.Append
-            | StorageCapabilities.Rename | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions;
+            | StorageCapabilities.Rename | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions
+            | (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StorageCapabilities.CaseInsensitivePaths : StorageCapabilities.None);
 
         public void Dispose()
         {

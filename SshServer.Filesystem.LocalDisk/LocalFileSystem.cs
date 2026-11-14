@@ -193,7 +193,8 @@ namespace SshServer.Filesystem.LocalDisk
         /// </summary>
         public StorageCapabilities Capabilities =>
             StorageCapabilities.RandomAccessWrite | StorageCapabilities.Append | StorageCapabilities.Rename
-            | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions;
+            | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions
+            | (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StorageCapabilities.CaseInsensitivePaths : StorageCapabilities.None);
 
         // The local disk is fast and FileStream does synchronous I/O, so every member completes synchronously and
         // returns a completed ValueTask: no thread pool hop per SFTP request, and the synchronous SFTP bridge

@@ -154,6 +154,11 @@ OpenSSH connects with its default settings.
   server does not have to choose an order, because it refuses the request in both cases. If links are
   supported later, the server must read the arguments in the OpenSSH order, like OpenSSH sftp-server.
   Links that exist on the disk and point outside the user root are not listed and cannot be opened.
+- Per-path permissions and path filters (issue #59): each user has permissions per virtual directory (list,
+  download, upload, overwrite, delete, rename, create directories, chmod, times), for example "upload only" in
+  `/incoming`; the most specific path wins. Path filters allow or deny file name patterns (`*.csv`, `*.exe`) and
+  hide names completely. Edit them in the user form of the admin UI. Every user starts with `/` = all
+  permissions, also users from an older database, so nothing changes until you set rules.
 - Running commands (shell and exec) is not implemented. `EnableCommand` is off by default; when it is on, the
   server only echoes the command and closes the channel.
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
@@ -164,7 +169,7 @@ OpenSSH connects with its default settings.
 ### Features planned for the future
 
 The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub issue for each feature. For
-example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, per-path permissions,
+example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, groups, quotas,
 an audit log, webhooks, a REST API, WebDAV and FTP, and more settings databases.
 
 ## Network access settings
@@ -231,6 +236,12 @@ logs the effective port and addresses and whether they come from the configurati
 `FxSshSftpServer` reads `SshServer:Port` and `SshServer:BindToAddress` from `appsettings.json` and environment
 variables (the `--port` and `--bind` shortcuts exist only in `ServerConsoleApp`); its settings page shows when the
 port is overridden.
+
+## Encrypted storage
+
+The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
+Set `Storage:Encryption:Enabled` to `true` and configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md)
+for the configuration, the limits and the file format.
 
 ## Settings storage
 

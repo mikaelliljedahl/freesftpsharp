@@ -95,7 +95,25 @@ Permissions, path filters, quotas, bandwidth limits and events wrap an `IFileSys
 - One decorator handles one rule.
 - The storage factory (`StorageFileSystemFactory`) builds the decorator chain in one place, in a documented order.
 - Protocols never repeat a rule. SFTP, WebDAV, FTP and the web client get it from the chain.
-- Test each decorator alone with `InMemoryFileSystem`.
+- Test each decorator alone with `InMemoryFileSystem`, and run the conformance suite through it.
+
+The chain today, from the backend outwards:
+
+1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
+   `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
+   factory leaves it out for a user who may do everything. It compares paths like the backend does
+   (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
+2. `EventingFileSystem` (#65): the file events of the client (see "Events"). It is outside the permissions, so an
+   operation that the permissions refuse still gives an event (status `Error`) in the audit log, and the `Pre*`
+   hooks are asked before the permissions. A hook deny never reaches the permissions or the backend.
+3. `ConnectionTrackingFileSystem` (#57): the activity and open files of the connection (see "Connections"), for a
+   client with a connection id in its `ClientContext`. Outermost, so every request is activity, also a refused one.
+
+All three are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
+to `IFileSystemFactory.CreateAsync`.
+
+The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
+groups, #61). No protocol and no backend reads `User.Permissions` itself.
 
 ## General rules
 

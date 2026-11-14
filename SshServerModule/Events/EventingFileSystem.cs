@@ -60,7 +60,7 @@ namespace SshServerModule.Events
 
             var isNew = false;
             if (upload && (flags & FileOpenFlags.Create) != 0)
-                isNew = await _inner.StatAsync(normalized, followLinks: true, ct) == null;
+                isNew = await TryStatAsync(normalized, followLinks: true, ct) is (true, null);
 
             var pre = NewEvent(upload ? FileEventType.PreUpload : FileEventType.PreDownload, normalized) with { OpenFlags = flags };
             await AskAsync(pre, ct);
@@ -87,7 +87,7 @@ namespace SshServerModule.Events
         public async ValueTask DeleteFileAsync(string path, CancellationToken ct)
         {
             var normalized = VirtualPath.Normalize(path);
-            var entry = await _inner.StatAsync(normalized, followLinks: false, ct);
+            var (_, entry) = await TryStatAsync(normalized, followLinks: false, ct);
             var pre = NewEvent(FileEventType.PreDelete, normalized) with { FileSize = entry is { IsDirectory: false } ? entry.Size : null };
             await AskAsync(pre, ct);
             await RunAsync(pre with { Type = FileEventType.Delete }, () => _inner.DeleteFileAsync(path, ct));
@@ -103,6 +103,22 @@ namespace SshServerModule.Events
         {
             var e = NewEvent(FileEventType.Rename, VirtualPath.Normalize(oldPath)) with { VirtualTargetPath = VirtualPath.Normalize(newPath) };
             await RunAsync(e, () => _inner.RenameAsync(oldPath, newPath, flags, ct));
+        }
+
+        /// <summary>
+        /// The entry for the values of an event. The inner chain can refuse the stat (for example the permissions without
+        /// List); then the value is unknown and the operation itself gives the error.
+        /// </summary>
+        private async ValueTask<(bool Known, FileSystemEntry? Entry)> TryStatAsync(string path, bool followLinks, CancellationToken ct)
+        {
+            try
+            {
+                return (true, await _inner.StatAsync(path, followLinks, ct));
+            }
+            catch (FileSystemException)
+            {
+                return (false, null);
+            }
         }
 
         private FileEvent NewEvent(FileEventType type, string normalizedPath) => new(type)

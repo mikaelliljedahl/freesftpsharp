@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 using SshServer.Settings.Sql;
 
 namespace FreeSftpSharp.Tests.Settings;
@@ -213,6 +214,108 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.NotNull(stored.WhitelistedIps);
         Assert.Empty(stored.WhitelistedIps);
         Assert.Equal(user.LastSuccessfulLogin, stored.LastSuccessfulLogin);
+    }
+
+    private static Dictionary<string, FilePermissions> SamplePermissions() => new()
+    {
+        ["/"] = FilePermissions.List | FilePermissions.Download,
+        ["/incoming"] = FilePermissions.Upload,
+        ["/incoming/sub"] = FilePermissions.All,
+    };
+
+    private static Dictionary<string, PathFilter> SampleFilters() => new()
+    {
+        ["/"] = new PathFilter { DeniedPatterns = ["*.exe"], HiddenPatterns = [".git"] },
+        ["/data"] = new PathFilter { AllowedPatterns = ["*.csv", "*.txt"] },
+    };
+
+    private static void AssertSamplePermissions(User stored)
+    {
+        Assert.Equal(SamplePermissions(), stored.Permissions);
+        Assert.NotNull(stored.PathFilters);
+        Assert.Equal(["/", "/data"], stored.PathFilters.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(["*.exe"], stored.PathFilters["/"].DeniedPatterns);
+        Assert.Equal([".git"], stored.PathFilters["/"].HiddenPatterns);
+        Assert.Equal(["*.csv", "*.txt"], stored.PathFilters["/data"].AllowedPatterns);
+    }
+
+    [Fact]
+    public void Permissions_and_path_filters_of_a_user_are_stored()
+    {
+        var user = NewUser("perms");
+        user.Permissions = SamplePermissions();
+        user.PathFilters = SampleFilters();
+
+        Assert.True(_repository.AddUser(user));
+
+        AssertSamplePermissions(_repository.GetUser("perms"));
+    }
+
+    [Fact]
+    public void Updated_permissions_and_path_filters_are_stored()
+    {
+        _repository.AddUser(NewUser("perms2"));
+        var user = _repository.GetUser("perms2");
+        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, user.Permissions);
+        Assert.Null(user.PathFilters);
+
+        user.Permissions = SamplePermissions();
+        user.PathFilters = SampleFilters();
+        Assert.True(_repository.UpdateUser(user));
+        AssertSamplePermissions(_repository.GetUser("perms2"));
+
+        // A change inside the same dictionary is seen too.
+        user = _repository.GetUser("perms2");
+        user.Permissions!["/incoming"] = FilePermissions.None;
+        user.PathFilters!.Remove("/data");
+        Assert.True(_repository.UpdateUser(user));
+        var stored = _repository.GetUser("perms2");
+        Assert.Equal(FilePermissions.None, stored.Permissions!["/incoming"]);
+        Assert.Equal(["/"], stored.PathFilters!.Keys);
+    }
+
+    [Fact]
+    public async Task Users_of_a_database_before_per_path_permissions_keep_their_data_and_get_full_access()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connection).Options;
+        using (var db = new SettingsDbContext(options))
+        {
+            // The schema before issue #59, with a user row as an older version wrote it.
+            db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().Migrate("20261113221412_AddIpFilterAndBanSettings");
+            db.Database.ExecuteSqlRaw(
+                "INSERT INTO ServerSettings (ServerRsaKey, ServerBanner, ListenToPort, BindToAddress, BlacklistedIps, MaxLoginAttemptsBeforeBan, " +
+                "IdleTimeout, EnableCommand, EnableDirectTcpIp, OnlyWhitelistedIps, LoginFailureWindowSeconds, BanDurationSeconds, ExemptLoopbackFromBan) " +
+                "VALUES ('old-key', NULL, 22, NULL, NULL, 0, 600, 0, 0, 0, 600, 1800, 1)");
+            db.Database.ExecuteSqlRaw(
+                "INSERT INTO Users (Username, UserRootDirectory, HashedPassword, RsaPublicKey, OnlyWhitelistedIps, WhitelistedIps, LastSuccessfulLogin) " +
+                "VALUES ('old', '/srv/old', 'hash', 'key', 1, '[\"10.0.0.0/8\"]', '2026-01-02 03:04:05')");
+        }
+
+        using var repository = new SqlSettingsRepository(options, createHostKey: () => throw new InvalidOperationException("must not be called"));
+
+        var user = repository.GetUser("old");
+        Assert.Equal("/srv/old", user.UserRootDirectory);
+        Assert.Equal("hash", user.HashedPassword);
+        Assert.Equal("key", user.RsaPublicKey);
+        Assert.Equal(new[] { "10.0.0.0/8" }, user.WhitelistedIps);
+        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, user.Permissions);
+        Assert.Null(user.PathFilters);
+        Assert.True(new EffectivePermissionsService().Resolve(user).IsUnrestricted);
+
+        // The migrated user can get rules like a new one.
+        user.Permissions = SamplePermissions();
+        Assert.True(repository.UpdateUser(user));
+        Assert.Equal(SamplePermissions(), repository.GetUser("old").Permissions);
+
+        // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions.
+        using (var db = new SettingsDbContext(options))
+            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog"], db.Database.GetAppliedMigrations().TakeLast(2));
+        var audit = new SshServer.Settings.Sql.Audit.SqlAuditLog(options);
+        await audit.AppendAsync(new SshServer.Interfaces.Audit.AuditEntry { Category = "File", Type = "Upload", Status = "Ok", Username = "old" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(1, (await audit.QueryAsync(new SshServer.Interfaces.Audit.AuditQuery { Username = "old" }, TestContext.Current.CancellationToken)).TotalCount);
     }
 
     [Fact]

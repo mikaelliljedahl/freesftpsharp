@@ -197,6 +197,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             OnlyWhitelistedIps = newUser.OnlyWhitelistedIps,
             WhitelistedIps = newUser.WhitelistedIps,
             LastSuccessfulLogin = newUser.LastSuccessfulLogin,
+            Permissions = newUser.Permissions,
+            PathFilters = newUser.PathFilters,
         };
         db.Users.Add(stored);
         db.SaveChanges();
@@ -222,6 +224,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.RsaPublicKey = updatedUser.RsaPublicKey;
         stored.UserRootDirectory = updatedUser.UserRootDirectory;
         stored.WhitelistedIps = updatedUser.WhitelistedIps;
+        stored.Permissions = updatedUser.Permissions;
+        stored.PathFilters = updatedUser.PathFilters;
         db.SaveChanges();
 
         var changed = ChangedFields(before, UserSnapshot.From(stored));

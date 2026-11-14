@@ -4,7 +4,9 @@ using Microsoft.Extensions.Time.Testing;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Permissions;
 using SshServerModule.Events;
+using SshServerModule.Storage;
 
 namespace FreeSftpSharp.Tests.Events;
 
@@ -153,6 +155,22 @@ public sealed class EventingFileSystemTests
     {
         await Assert.ThrowsAsync<FileSystemException>(async () => await _fileSystem.OpenAsync("/missing/a.txt", CreateForWriting, null, Ct));
 
+        Assert.Equal([FileEventType.PreUpload, FileEventType.Upload], _bus.FileEvents.Select(e => e.Type));
+        Assert.Equal(FileEventStatus.Error, _bus.FileEvents[1].Status);
+    }
+
+    [Fact]
+    public async Task An_upload_that_the_permissions_refuse_gives_an_Upload_with_Error_and_no_file()
+    {
+        // The chain of the factory: events outside the permissions. Upload only, so the stat before the open is refused too.
+        var user = new User { Username = "alice", Permissions = new() { ["/"] = FilePermissions.Download } };
+        var permitted = PermissionFileSystem.Wrap(_storage, new EffectivePermissionsService().Resolve(user));
+        var fileSystem = new EventingFileSystem(permitted, _bus, user, new ClientContext("SFTP", "192.0.2.7"), "memory", _time);
+
+        var ex = await Assert.ThrowsAsync<FileSystemException>(async () => await fileSystem.OpenAsync("/a.txt", CreateForWriting, null, Ct));
+
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
+        Assert.Null(await _storage.StatAsync("/a.txt", true, Ct));
         Assert.Equal([FileEventType.PreUpload, FileEventType.Upload], _bus.FileEvents.Select(e => e.Type));
         Assert.Equal(FileEventStatus.Error, _bus.FileEvents[1].Status);
     }
