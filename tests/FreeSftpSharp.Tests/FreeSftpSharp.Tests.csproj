@@ -44,6 +44,7 @@
     <ProjectReference Include="..\..\SshServer.Api\SshServer.Api.csproj" />
     <!-- Built for ZeroConfigStartTests, which starts the real ServerConsoleApp as a process. Not referenced as an assembly. -->
     <ProjectReference Include="..\..\ServerConsoleApp\ServerConsoleApp.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\FreeSftpSharp.WebDav\FreeSftpSharp.WebDav.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114130842_AddApiKeys")]
-partial class _20261114130842_AddApiKeys
+[Migration("20261114131126_AddUserProtocolsAndAppPasswords")]
+partial class _20261114131126_AddUserProtocolsAndAppPasswords
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -94,55 +94,6 @@ partial class _20261114130842_AddApiKeys
                     .IsUnique();
 
                 b.ToTable("Roles");
-            });
-
-        modelBuilder.Entity("SshServer.Interfaces.Api.ApiKey", b =>
-            {
-                b.Property<int>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("INTEGER");
-
-                b.Property<int>("AdminId")
-                    .HasColumnType("INTEGER");
-
-                b.Property<DateTime>("CreatedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime?>("ExpiresAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("KeyHash")
-                    .IsRequired()
-                    .HasMaxLength(64)
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime?>("LastUsedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(100)
-                    .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
-
-                b.Property<string>("Prefix")
-                    .IsRequired()
-                    .HasMaxLength(16)
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("Scopes")
-                    .HasMaxLength(512)
-                    .HasColumnType("TEXT");
-
-                b.HasKey("Id");
-
-                b.HasIndex("KeyHash")
-                    .IsUnique();
-
-                b.HasIndex("AdminId", "Name")
-                    .IsUnique();
-
-                b.ToTable("ApiKeys");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Audit.AuditEntry", b =>
@@ -463,6 +414,14 @@ partial class _20261114130842_AddApiKeys
                     .HasMaxLength(128)
                     .HasColumnType("TEXT");
 
+                b.Property<string>("AllowedProtocols")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AppPasswords")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("Bandwidth")
                     .HasColumnType("TEXT");
 
@@ -687,23 +646,6 @@ partial class _20261114130842_AddApiKeys
                 b.ToTable("WebhookDeliveries");
             });
 
-        modelBuilder.Entity("SshServer.Settings.Sql.Api.ApiSigningKey", b =>
-            {
-                b.Property<int>("Id")
-                    .HasColumnType("INTEGER");
-
-                b.Property<DateTime>("CreatedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("ProtectedKey")
-                    .IsRequired()
-                    .HasColumnType("TEXT");
-
-                b.HasKey("Id");
-
-                b.ToTable("ApiSigningKeys");
-            });
-
         modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>
             {
                 b.Property<string>("Scope")
@@ -790,15 +732,6 @@ partial class _20261114130842_AddApiKeys
                     .WithMany()
                     .HasForeignKey("ScopeRoleId")
                     .OnDelete(DeleteBehavior.Restrict);
-            });
-
-        modelBuilder.Entity("SshServer.Interfaces.Api.ApiKey", b =>
-            {
-                b.HasOne("SshServer.Interfaces.Admins.Admin", null)
-                    .WithMany()
-                    .HasForeignKey("AdminId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
             });
 
         modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>

@@ -33,7 +33,7 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Event sink | `IEventSink` / `IEventHook` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
 | Event rule action | `IEventRuleAction` | email, command, move, copy, delete, retention, webhook | #68 |
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
-| Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
+| Protocol | hosted service or web host branch over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
 ## Connections
 
@@ -43,9 +43,23 @@ callback that closes the connection, so `DisconnectAsync` works for every protoc
 a stable `ConnectionInfo.Id` (a GUID) for the whole connection; later features (session limits, events, metrics) use it.
 The registry is in memory and per node.
 
+A protocol without connections (WebDAV over HTTP) registers a session instead: one entry per client address and
+credential, from the first successful login until it is idle (`WebDavSessionStore`).
+
 The `ConnectionTrackingFileSystem` decorator keeps the registry entry up to date (last activity, open files with their
 byte counts). The protocol passes the connection id in the `ClientContext` of `IFileSystemFactory.CreateAsync`, and the
 factory adds the decorator to its chain.
+
+## Protocols and logins
+
+A protocol is a plug-in project with an `AddX()` (for example `FreeSftpSharp.WebDav`, `AddWebDav()` and `MapWebDav()`,
+see [WEBDAV.md](WEBDAV.md)); it is off until the operator turns it on. It uses only the shared services: the user's
+`IFileSystem` from `IFileSystemFactory` (with a `ClientContext` of its protocol name), the `IConnectionRegistry`, the
+`IEventBus`, and for a user name and password the `PasswordLoginService` (`AddSshServerSecurity()`). That service has
+the login rules of the protocols other than SSH in one place: the global IP rules and the auto-ban, the IP whitelist of
+the user, the password (`AllowedAuthMethods`; not alone for a multi-step login or a TOTP user), the app passwords
+(`User.AppPasswords`, per protocol) and the protocol flags (`User.AllowedProtocols`). The SFTP login of `HostedServer`
+checks the same flags. A protocol never repeats a storage rule.
 
 ## Events
 

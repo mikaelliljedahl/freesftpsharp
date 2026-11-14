@@ -240,6 +240,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             PublicKeys = newUser.PublicKeys,
             AllowedAuthMethods = newUser.AllowedAuthMethods,
             RequireAllOf = newUser.RequireAllOf,
+            AllowedProtocols = newUser.AllowedProtocols,
+            AppPasswords = newUser.AppPasswords,
             OnlyWhitelistedIps = newUser.OnlyWhitelistedIps,
             WhitelistedIps = newUser.WhitelistedIps,
             LastLoginAt = newUser.LastLoginAt,
@@ -278,6 +280,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.PublicKeys = updatedUser.PublicKeys;
         stored.AllowedAuthMethods = updatedUser.AllowedAuthMethods;
         stored.RequireAllOf = updatedUser.RequireAllOf;
+        stored.AllowedProtocols = updatedUser.AllowedProtocols;
+        stored.AppPasswords = updatedUser.AppPasswords;
         stored.UserRootDirectory = updatedUser.UserRootDirectory;
         stored.WhitelistedIps = updatedUser.WhitelistedIps;
         stored.Permissions = updatedUser.Permissions;

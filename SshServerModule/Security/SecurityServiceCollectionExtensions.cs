@@ -9,13 +9,15 @@ namespace FxSsh.SshServerModule.Security
     {
         /// <summary>
         /// Registers the auto-ban state (<see cref="LoginBanTracker"/>) as a singleton, also as
-        /// <see cref="IIpBanService"/> for the admin UI. Call it together with AddHostedService&lt;HostedServer&gt;.
+        /// <see cref="IIpBanService"/> for the admin UI, and the <see cref="PasswordLoginService"/> of the protocols that are
+        /// not SSH. Call it together with AddHostedService&lt;HostedServer&gt;.
         /// </summary>
         public static IServiceCollection AddSshServerSecurity(this IServiceCollection services)
         {
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton(sp => new LoginBanTracker(sp.GetRequiredService<TimeProvider>()));
             services.TryAddSingleton<IIpBanService>(sp => sp.GetRequiredService<LoginBanTracker>());
+            services.TryAddSingleton<PasswordLoginService>(); // the password login of WebDAV (and later FTP)
             return services;
         }
     }

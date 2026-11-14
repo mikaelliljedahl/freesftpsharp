@@ -24,6 +24,7 @@ using SshServer.TwoFactor;
 using SshServer.EventRules;
 using SshServer.Observability;
 using SshServer.Api;
+using FreeSftpSharp.WebDav;
 
 using FxSshSftpServer.Security;
 
@@ -90,11 +91,13 @@ builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a 
 builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (used only when a user or virtual folder selects it)
 builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a user or virtual folder selects it)
 builder.Services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
+builder.Services.AddWebDav(builder.Configuration); // WebDAV (#71): off until WebDav:Enabled is true
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();
 
 app.UseSshServerObservability(); // before the login: probes and scrapers have no cookie
+app.MapWebDav(); // WebDAV has its own Basic login; nothing is mapped while it is off
 
 // Without an admin credential the whole UI answers 503 (the SSH server still runs).
 app.UseAdminUiRequiresCredential();
