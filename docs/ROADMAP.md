@@ -46,6 +46,8 @@ server stays a zero-configuration local test server by default, and every new fe
 
 ## Milestones
 
+Status (2026-11-14): M1 to M6 are done. All their issues are closed; the remaining ideas are in "Later and not planned".
+
 ### M1 Foundation: finish the current work
 
 Done when the server runs on the upstream SFTP engine, the admin UI has no third-party component library,
