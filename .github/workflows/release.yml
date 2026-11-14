@@ -127,7 +127,9 @@ jobs:
         run: deploy/docker/smoke-test.sh freesftpsharp:release-check "${{ needs.version.outputs.version }}"
 
       - name: Scan the image (no critical findings)
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pinned to the commit of v0.36.0 (an immutable release). Versions below 0.35.0 were affected by the
+        # March 2026 supply chain compromise (GHSA-69fq-xp46-6x23), when most version tags were force-pushed.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: freesftpsharp:release-check
           severity: CRITICAL
