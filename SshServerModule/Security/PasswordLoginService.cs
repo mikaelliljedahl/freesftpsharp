@@ -98,7 +98,7 @@ namespace FxSsh.SshServerModule.Security
             var filter = CheckAddress(address);
             if (filter != IpFilterResult.Allowed)
             {
-                _logger.LogInformation("{Protocol} login of {Username} refused: {Address} is {Reason}.", protocolName, username, address, filter);
+                _logger.LogInformation("{Protocol} login of {Username} refused: {Address} is {Reason}.", protocolName, LogText.Clean(username), address, filter);
                 return new PasswordLoginResult(PasswordLoginStatus.AddressRefused, null, null, $"the address is {filter.ToString().ToLowerInvariant()}");
             }
 
@@ -106,7 +106,7 @@ namespace FxSsh.SshServerModule.Security
             var (method, failure) = await VerifyAsync(user, password, protocol, address, ct);
             if (failure != null)
             {
-                _logger.LogInformation("{Protocol} login of {Username} from {Address} failed: {Reason}.", protocolName, username, address, failure);
+                _logger.LogInformation("{Protocol} login of {Username} from {Address} failed: {Reason}.", protocolName, LogText.Clean(username), address, failure);
                 await PublishAsync(new AuthEvent(AuthEventType.LoginFailed)
                 {
                     Timestamp = Time.GetUtcNow(), Username = username, RemoteIp = address.ToString(), Protocol = protocolName,
@@ -119,7 +119,7 @@ namespace FxSsh.SshServerModule.Security
             if (!user!.AllowedProtocols.Allows(protocol))
             {
                 const string reason = "the protocol is not allowed for the user";
-                _logger.LogInformation("{Protocol} login of {Username} from {Address} refused: {Reason}.", protocolName, username, address, reason);
+                _logger.LogInformation("{Protocol} login of {Username} from {Address} refused: {Reason}.", protocolName, LogText.Clean(username), address, reason);
                 await PublishAsync(new AuthEvent(AuthEventType.LoginFailed)
                 {
                     Timestamp = Time.GetUtcNow(), Username = user.Username, RemoteIp = address.ToString(), Protocol = protocolName,
@@ -128,7 +128,7 @@ namespace FxSsh.SshServerModule.Security
                 return new PasswordLoginResult(PasswordLoginStatus.ProtocolNotAllowed, null, method, reason);
             }
 
-            _logger.LogInformation("{Protocol} login of {Username} from {Address} with {Method} succeeded.", protocolName, user.Username, address, method);
+            _logger.LogInformation("{Protocol} login of {Username} from {Address} with {Method} succeeded.", protocolName, LogText.Clean(user.Username), address, method);
             return new PasswordLoginResult(PasswordLoginStatus.Ok, user, method, null);
         }
 
@@ -184,7 +184,7 @@ namespace FxSsh.SshServerModule.Security
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "The second factor of user {Username} cannot be read; the login is refused.", user.Username);
+                _logger.LogError(ex, "The second factor of user {Username} cannot be read; the login is refused.", LogText.Clean(user.Username));
                 UserLogics.SimulatePasswordCheck();
                 return (null, "the second factor cannot be checked");
             }

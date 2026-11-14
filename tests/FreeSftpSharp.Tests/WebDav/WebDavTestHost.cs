@@ -33,6 +33,9 @@ public sealed class InMemoryStorageProvider(StorageCapabilities capabilities) : 
 
     public override string Name => "memory";
 
+    /// <summary>When set, every open of a file fails with <see cref="FileSystemError.Failure"/> (a broken storage).</summary>
+    public bool FailOpens { get; set; }
+
     public InMemoryFileSystem Store(string name)
     {
         lock (_stores)
@@ -46,7 +49,22 @@ public sealed class InMemoryStorageProvider(StorageCapabilities capabilities) : 
     protected override IReadOnlyList<string> ValidateOptions(InMemoryStorageOptions options) => [];
 
     protected override ValueTask<IFileSystem> CreateFileSystemAsync(InMemoryStorageOptions options, CancellationToken ct) =>
-        ValueTask.FromResult<IFileSystem>(Store(options.Store));
+        ValueTask.FromResult<IFileSystem>(FailOpens ? new FailingOpenFileSystem(Store(options.Store)) : Store(options.Store));
+
+    private sealed class FailingOpenFileSystem(IFileSystem inner) : IFileSystem
+    {
+        public StorageCapabilities Capabilities => inner.Capabilities;
+        public ValueTask<FileSystemEntry?> StatAsync(string path, bool followLinks, CancellationToken ct) => inner.StatAsync(path, followLinks, ct);
+        public IAsyncEnumerable<FileSystemEntry> ListAsync(string path, CancellationToken ct) => inner.ListAsync(path, ct);
+        public ValueTask<IFileHandle> OpenAsync(string path, FileOpenFlags flags, FileAttributesUpdate? initial, CancellationToken ct) =>
+            throw new FileSystemException(FileSystemError.Failure, "The storage is broken.");
+        public ValueTask CreateDirectoryAsync(string path, CancellationToken ct) => inner.CreateDirectoryAsync(path, ct);
+        public ValueTask DeleteFileAsync(string path, CancellationToken ct) => inner.DeleteFileAsync(path, ct);
+        public ValueTask DeleteDirectoryAsync(string path, CancellationToken ct) => inner.DeleteDirectoryAsync(path, ct);
+        public ValueTask RenameAsync(string oldPath, string newPath, RenameFlags flags, CancellationToken ct) => inner.RenameAsync(oldPath, newPath, flags, ct);
+        public ValueTask SetAttributesAsync(string path, FileAttributesUpdate update, CancellationToken ct) => inner.SetAttributesAsync(path, update, ct);
+        public ValueTask<StorageSpace?> GetStorageSpaceAsync(string path, CancellationToken ct) => inner.GetStorageSpaceAsync(path, ct);
+    }
 }
 
 public sealed record InMemoryStorageOptions
@@ -69,11 +87,15 @@ public sealed class WebDavTestHost : IAsyncDisposable
 
     private readonly WebApplication _app;
 
-    private WebDavTestHost(WebApplication app, InMemoryStorageProvider provider)
+    private WebDavTestHost(WebApplication app, InMemoryStorageProvider provider, LogCapture logs)
     {
         _app = app;
         Provider = provider;
+        Logs = logs;
     }
+
+    /// <summary>The formatted log messages of the host.</summary>
+    public LogCapture Logs { get; }
 
     public InMemoryStorageProvider Provider { get; }
     public InMemorySettingsRepository Repository => (InMemorySettingsRepository)_app.Services.GetRequiredService<ISettingsRepository>();
@@ -94,6 +116,8 @@ public sealed class WebDavTestHost : IAsyncDisposable
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
+        var logs = new LogCapture();
+        builder.Logging.AddProvider(logs);
         var configuration = new Dictionary<string, string?> { ["WebDav:Enabled"] = "true" };
         foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
             configuration[key] = value;
@@ -133,7 +157,7 @@ public sealed class WebDavTestHost : IAsyncDisposable
             return Task.CompletedTask;
         });
         await app.StartAsync();
-        return new WebDavTestHost(app, provider);
+        return new WebDavTestHost(app, provider, logs);
     }
 
     /// <summary>Adds a user with <see cref="Password"/> (minimum PBKDF2 iterations, to keep the tests fast).</summary>
@@ -165,6 +189,32 @@ public sealed class WebDavTestHost : IAsyncDisposable
     private sealed class PerUserResolver(SshServerModule.Storage.StorageOptionsCodec codec) : IUserStorageResolver
     {
         public UserStorage Resolve(User user) => new(codec.Encode("memory", new InMemoryStorageOptions { Store = user.Username }), []);
+    }
+}
+
+/// <summary>
+/// Keeps the formatted log messages of the server's own code (not of the Microsoft.* framework categories), to check
+/// what a client can put in the log.
+/// </summary>
+public sealed class LogCapture : ILoggerProvider
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
+
+    public IReadOnlyList<string> Messages => _messages.ToArray();
+
+    public ILogger CreateLogger(string categoryName) =>
+        categoryName.StartsWith("Microsoft.", StringComparison.Ordinal) ? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance : new Logger(this);
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class Logger(LogCapture owner) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            owner._messages.Enqueue(formatter(state, exception));
     }
 }
 

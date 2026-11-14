@@ -1,5 +1,6 @@
 using System.Net;
 using System.Xml;
+using FxSsh.SshServerModule.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.StaticFiles;
@@ -711,7 +712,8 @@ internal sealed partial class WebDavHandler
     private async Task WriteErrorAsync(WebDavRequest request, FileSystemException ex, int status)
     {
         if (status >= 500 && status != StatusCodes.Status502BadGateway && status != StatusCodes.Status507InsufficientStorage)
-            _logger.LogWarning(ex, "WebDAV {Method} {Path} of {Username} failed.", request.Request.Method, request.Path, request.Owner);
+            _logger.LogWarning(ex, "WebDAV {Method} {Path} of {Username} failed.", LogText.Clean(request.Request.Method), LogText.Clean(request.Path),
+                LogText.Clean(request.Owner));
         if (request.Response.HasStarted)
             return; // a GET that failed in the middle of the body: the connection ends without the rest
         request.Response.Headers.Remove("ETag");

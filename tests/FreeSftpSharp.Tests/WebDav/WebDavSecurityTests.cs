@@ -302,6 +302,28 @@ public sealed class WebDavSecurityTests
     }
 
     [Fact]
+    public async Task ClientValues_InTheLog_CannotStartANewLine()
+    {
+        await using var host = await WebDavTestHost.StartAsync();
+        host.AddUser("alice");
+        await using (var handle = await host.StorageOf("alice").OpenAsync("/a\nFORGED b", FileOpenFlags.Write | FileOpenFlags.Create, null, CancellationToken.None))
+            await handle.WriteAsync(0, "x"u8.ToArray(), CancellationToken.None);
+        host.Provider.FailOpens = true;
+
+        // The storage fails, so the handler logs the request with its decoded path.
+        var response = await host.Client("alice").GetAsync("/dav/a%0AFORGED%20b", Ct);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var line = Assert.Single(host.Logs.Messages, m => m.StartsWith("WebDAV GET", StringComparison.Ordinal));
+        Assert.Equal("WebDAV GET /a\\nFORGED b of alice failed.", line);
+        Assert.All(host.Logs.Messages.Where(m => m.Contains("FORGED")), m => Assert.DoesNotContain('\n', m));
+
+        // The user name of a Basic login, too.
+        await host.Client("eve\nFORGED-LOGIN").SendAsync("OPTIONS", "/dav/");
+        Assert.All(host.Logs.Messages.Where(m => m.Contains("FORGED-LOGIN")), m => Assert.DoesNotContain('\n', m));
+        Assert.Contains(host.Logs.Messages, m => m.Contains("eve\\nFORGED-LOGIN"));
+    }
+
+    [Fact]
     public async Task Disabled_MapsNothing()
     {
         await using var host = await WebDavTestHost.StartAsync(settings: new Dictionary<string, string?> { ["WebDav:Enabled"] = "false" });

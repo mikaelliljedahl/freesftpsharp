@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
@@ -135,7 +136,7 @@ internal sealed class WebDavSessionStore
             return;
         var info = _connections.Get(session.ConnectionId);
         _connections.Unregister(session.ConnectionId);
-        _logger.LogInformation("WebDAV session {ConnectionId} of {Username} ended: {Reason}.", session.ConnectionId, session.User.Username, reason);
+        _logger.LogInformation("WebDAV session {ConnectionId} of {Username} ended: {Reason}.", session.ConnectionId, LogText.Clean(session.User.Username), LogText.Clean(reason));
         await PublishAsync(new AuthEvent(AuthEventType.Logout)
         {
             Timestamp = _time.GetUtcNow(), Username = session.User.Username, RemoteIp = RemoteIpOf(info), Protocol = ConnectionProtocols.WebDav,

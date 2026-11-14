@@ -120,7 +120,7 @@ internal sealed class WebDavAuthenticator
         catch (Exception ex) when (ex is ArgumentException or FileSystemException or KeyNotFoundException)
         {
             _connections.Unregister(connection.Id);
-            _logger.LogError(ex, "The storage of user {Username} cannot be created; the WebDAV request is refused.", user.Username);
+            _logger.LogError(ex, "The storage of user {Username} cannot be created; the WebDAV request is refused.", LogText.Clean(user.Username));
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             return null;
         }
@@ -145,11 +145,11 @@ internal sealed class WebDavAuthenticator
                 return;
             user.LastLoginAt = _login.Time.GetUtcNow().UtcDateTime;
             if (!_repository.UpdateUser(user))
-                _logger.LogWarning("Could not save the last login time of user {Username}.", username);
+                _logger.LogWarning("Could not save the last login time of user {Username}.", LogText.Clean(username));
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not save the last login time of user {Username}.", username);
+            _logger.LogWarning(ex, "Could not save the last login time of user {Username}.", LogText.Clean(username));
         }
     }
 
