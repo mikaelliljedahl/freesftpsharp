@@ -66,10 +66,11 @@ load balancers) gives it the address of the client.
 | `Proxy:AllowedSources` | empty (off) | The addresses or CIDR networks of the load balancers, a list or a comma separated text |
 | `Proxy:HeaderTimeoutSeconds` | `5` | The time for the PROXY header after the connection (1-60) |
 
-With `Proxy:AllowedSources` every SSH connection must come from an allowed source and start with a PROXY header
+With `Proxy:AllowedSources` every SSH and FTP connection must come from an allowed source and start with a PROXY header
 (version 1 or 2). The client address of the header is then used for the IP rules, the bans, the connections and the
 audit log. A connection from another source, without a header, or with a header that is not valid is closed before the
-SSH handshake. A `LOCAL` (v2) or `UNKNOWN` (v1) header keeps the address of the balancer (health checks).
+SSH handshake. A `LOCAL` (v2) or `UNKNOWN` (v1) header keeps the address of the balancer (health checks). For the FTP data
+connections behind a balancer see [FTP.md](FTP.md#behind-a-load-balancer-proxy-protocol).
 
 The admin UI and the REST API are HTTP. With `DataProtection:Store=Database` the login cookie works on every node; the
 interactive Blazor UI keeps its circuit on one node, so give the browser a sticky cookie (the example does). The REST API

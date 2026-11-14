@@ -62,13 +62,17 @@ namespace SshServerModule.Proxy
                 TimeSpan.FromSeconds(seconds));
         }
 
+        /// <summary>True when <paramref name="remote"/> is the address of an allowed load balancer.</summary>
+        public bool IsAllowedSource(EndPoint? remote) =>
+            remote is IPEndPoint ip && CidrNotation.Contains(AllowedSources, CidrNotation.Normalize(ip.Address));
+
         /// <summary>
         /// The step before the SSH session (<c>FxSsh.SshServer.ConnectionPreface</c>): refuses a source that is not allowed,
         /// reads the header and returns the client address of the header (null: the address of the connection).
         /// </summary>
         public async Task<EndPoint?> AcceptAsync(Socket socket, CancellationToken ct)
         {
-            if (socket.RemoteEndPoint is not IPEndPoint remote || !CidrNotation.Contains(AllowedSources, CidrNotation.Normalize(remote.Address)))
+            if (!IsAllowedSource(socket.RemoteEndPoint))
                 throw new ProxyProtocolException($"{socket.RemoteEndPoint} is not an allowed source of the PROXY protocol (Proxy:AllowedSources).");
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

@@ -4,6 +4,7 @@ using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces.Net;
+using SshServerModule.Proxy;
 
 namespace FreeSftpSharp.Ftp;
 
@@ -56,17 +57,21 @@ internal interface IFtpDataSource : IDisposable
 /// <summary>
 /// A passive data connection (PASV, EPSV): the listener accepts only a connection from the address of the control
 /// connection. A connection from another address (a stolen port, RFC 2577 section 5) is closed, and the listener waits on.
+/// With the PROXY protocol (#75) a connection from an allowed balancer must start with a PROXY header with the address of
+/// the client (the balancer forwards the passive ports with <c>send-proxy</c> too); the client may also connect directly.
 /// </summary>
 internal sealed class FtpPassiveSource : IFtpDataSource
 {
     private readonly TcpListener _listener;
     private readonly IPAddress _client;
+    private readonly ProxyProtocolOptions _proxy;
     private readonly ILogger _logger;
 
-    public FtpPassiveSource(TcpListener listener, IPAddress client, ILogger logger)
+    public FtpPassiveSource(TcpListener listener, IPAddress client, ProxyProtocolOptions proxy, ILogger logger)
     {
         _listener = listener;
         _client = CidrNotation.Normalize(client);
+        _proxy = proxy;
         _logger = logger;
     }
 
@@ -79,12 +84,30 @@ internal sealed class FtpPassiveSource : IFtpDataSource
         while (true)
         {
             var socket = await _listener.AcceptSocketAsync(wait.Token);
-            var remote = socket.RemoteEndPoint is IPEndPoint ip ? CidrNotation.Normalize(ip.Address) : null;
+            var remote = await ClientOfAsync(socket, wait.Token);
             if (_client.Equals(remote))
                 return socket;
             _logger.LogWarning("Refused a data connection from {Remote} to passive port {Port}: the control connection is from {Client}.",
-                LogText.Clean(socket.RemoteEndPoint?.ToString()), Port, _client);
+                LogText.Clean(remote?.ToString() ?? socket.RemoteEndPoint?.ToString()), Port, _client);
             socket.Dispose();
+        }
+    }
+
+    /// <summary>The client address of a data connection: of its PROXY header when it is from a balancer, else its own.</summary>
+    private async Task<IPAddress?> ClientOfAsync(Socket socket, CancellationToken ct)
+    {
+        if (!_proxy.Enabled || !_proxy.IsAllowedSource(socket.RemoteEndPoint))
+            return socket.RemoteEndPoint is IPEndPoint ip ? CidrNotation.Normalize(ip.Address) : null;
+        try
+        {
+            // A LOCAL header has no client address: never the data connection of a client.
+            return await _proxy.AcceptAsync(socket, ct) is IPEndPoint header ? CidrNotation.Normalize(header.Address) : null;
+        }
+        catch (Exception ex) when (ex is ProxyProtocolException or IOException or SocketException)
+        {
+            _logger.LogWarning("Refused a data connection from {Remote} to passive port {Port}: {Message}",
+                LogText.Clean(socket.RemoteEndPoint?.ToString()), Port, ex.Message);
+            return null;
         }
     }
 

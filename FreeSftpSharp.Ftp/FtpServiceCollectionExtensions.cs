@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Users;
 using SshServerModule.Connections;
+using SshServerModule.Proxy;
 
 namespace FreeSftpSharp.Ftp;
 
@@ -28,6 +29,8 @@ public static class FtpServiceCollectionExtensions
         services.AddSshServerSecurity();
         services.AddSshServerConnections();
         services.TryAddSingleton<IEffectiveUserSettingsService>(sp => new EffectiveUserSettingsService(sp.GetRequiredService<ISettingsRepository>()));
+        // The PROXY protocol of a load balancer (#75), the same Proxy section as the SSH listener: off until Proxy:AllowedSources is set.
+        services.TryAddSingleton(_ => ProxyProtocolOptions.FromConfiguration(configuration));
         services.TryAddSingleton<FtpPassivePorts>();
         services.TryAddSingleton<FtpCertificate>();
         services.TryAddSingleton<FtpServices>();

@@ -96,7 +96,8 @@ the cached connections of the other nodes. The caches (webhooks, event rules) re
 Off, everything is as on one node: no table is written and nothing polls.
 
 The PROXY protocol (`Proxy:AllowedSources`, `ProxyProtocolOptions`) runs in the `ConnectionPreface` step of FxSsh, before
-the SSH session exists, so every rule after it sees the client address of the header.
+the SSH session exists, so every rule after it sees the client address of the header. The FTP listener reads the
+header with the same options before its session starts (also on the passive data connections from a balancer).
 
 ## Events
 

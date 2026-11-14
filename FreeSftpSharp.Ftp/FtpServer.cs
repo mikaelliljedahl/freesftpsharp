@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Net;
+using SshServerModule.Proxy;
 
 namespace FreeSftpSharp.Ftp;
 
@@ -137,7 +138,9 @@ public sealed class FtpServer : IHostedService
 
     private async Task ServeAsync(Socket socket, CancellationToken stopping)
     {
-        var remote = socket.RemoteEndPoint is IPEndPoint ip ? CidrNotation.Normalize(ip.Address) : IPAddress.None;
+        if (await ClientEndPointAsync(socket, stopping) is not { } client)
+            return;
+        var remote = CidrNotation.Normalize(client.Address);
         var filter = _services.Login.CheckAddress(remote);
         if (filter != IpFilterResult.Allowed)
         {
@@ -156,7 +159,7 @@ public sealed class FtpServer : IHostedService
                 await RefuseAsync(socket, "421 Too many connections from your address.\r\n");
                 return;
             }
-            await new FtpSession(_services, socket, stopping).RunAsync();
+            await new FtpSession(_services, socket, client, stopping).RunAsync();
         }
         catch (Exception ex)
         {
@@ -167,6 +170,29 @@ public sealed class FtpServer : IHostedService
         {
             if (_perAddress.AddOrUpdate(remote, 0, (_, c) => c - 1) <= 0)
                 _perAddress.TryRemove(new KeyValuePair<IPAddress, int>(remote, 0));
+        }
+    }
+
+    /// <summary>
+    /// The address of the client: with the PROXY protocol (<c>Proxy:AllowedSources</c>, #75) the one of the header, which
+    /// the connection must start with and only an allowed balancer may send; else the address of the connection. Null when
+    /// the connection is refused (closed without a reply, before the greeting).
+    /// </summary>
+    private async Task<IPEndPoint?> ClientEndPointAsync(Socket socket, CancellationToken stopping)
+    {
+        var connection = socket.RemoteEndPoint as IPEndPoint ?? new IPEndPoint(IPAddress.None, 0);
+        var proxy = _services.Proxy;
+        if (!proxy.Enabled)
+            return connection;
+        try
+        {
+            return await proxy.AcceptAsync(socket, stopping) as IPEndPoint ?? connection;
+        }
+        catch (Exception ex) when (ex is ProxyProtocolException or IOException or SocketException or OperationCanceledException)
+        {
+            _logger.LogWarning("Refused the FTP connection from {Remote}: {Message}", connection, ex.Message);
+            socket.Dispose();
+            return null;
         }
     }
 
