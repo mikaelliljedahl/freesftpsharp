@@ -39,12 +39,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Webhooks", "SshSe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Observability", "SshServer.Observability\SshServer.Observability.csproj", "{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.TwoFactor", "SshServer.TwoFactor\SshServer.TwoFactor.csproj", "{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Release|Any CPU.Build.0 = Release|Any CPU
 		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Release|Any CPU.ActiveCfg = Release|Any CPU

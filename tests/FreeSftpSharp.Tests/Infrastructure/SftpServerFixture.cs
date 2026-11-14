@@ -13,6 +13,8 @@ using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
+using SshServer.Interfaces.TwoFactor;
+using SshServer.TwoFactor;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -53,6 +55,10 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
     /// <summary>The event bus of the server (file, auth and system events). Null: no events. Override it in a derived fixture.</summary>
     protected virtual IEventBus? CreateEventBus() => null;
+    /// <summary>The TOTP second factor of the server (#63). Null: no second factor. Override it in a derived fixture.</summary>
+    protected virtual TwoFactorService? CreateTwoFactor(TimeProvider time) => null;
+    /// <summary>The TOTP second factor of the running server, or null.</summary>
+    public TwoFactorService? TwoFactor { get; private set; }
     /// <summary>The auto-ban state of the running server.</summary>
     public LoginBanTracker BanTracker { get; private set; } = null!;
     /// <summary>The open connections of the running server.</summary>
@@ -208,9 +214,10 @@ public class SftpServerFixture : IAsyncLifetime
         BanTracker = new LoginBanTracker(time);
         Connections = new ConnectionRegistry(time);
         _eventBus ??= CreateEventBus(); // one bus for all start attempts
+        TwoFactor ??= CreateTwoFactor(time);
         return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(Connections, _eventBus), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
-            Connections, _eventBus);
+            Connections, _eventBus, TwoFactor);
     }
 
     /// <summary>

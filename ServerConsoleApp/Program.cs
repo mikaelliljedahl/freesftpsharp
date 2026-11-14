@@ -20,6 +20,7 @@ using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
+using SshServer.TwoFactor;
 using FxSshSftpServer.Security;
 using SshServerModule.Observability;
 using SshServer.Settings.Sql;
@@ -65,8 +66,9 @@ await new HostBuilder()
     });
     services.AddSshServerSettings(hostContext.Configuration);
     services.AddSshServerEvents();
-    services.AddServerDataProtection(hostContext.Configuration); // encrypts the webhook secrets
+    services.AddServerDataProtection(hostContext.Configuration); // encrypts the webhook and TOTP secrets
     services.AddWebhooks(hostContext.Configuration); // webhooks (#66): nothing is sent until one is configured
+    services.AddTwoFactor(hostContext.Configuration); // TOTP second factor (#63): off until a user has an app set up
     services.AddSshServerMetrics(); // meter and activities only; no exporter and no port
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();

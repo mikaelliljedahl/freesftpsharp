@@ -13,6 +13,8 @@ using SshServer.Settings.Sql.Admins;
 using SshServer.Settings.Sql.Audit;
 using SshServer.Settings.Sql.Webhooks;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Interfaces.TwoFactor;
+using SshServer.Settings.Sql.TwoFactor;
 using Microsoft.Extensions.Options;
 
 namespace SshServer.Settings.Sql
@@ -26,7 +28,8 @@ namespace SshServer.Settings.Sql
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>),
         /// and the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
-        /// provider keeps them in memory only.
+        /// provider keeps them in memory only. The TOTP enrolments (<see cref="ITwoFactorStore"/>, #63) are in the same
+        /// database; the LiteDB provider has none.
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -53,6 +56,11 @@ namespace SshServer.Settings.Sql
                         sp.GetRequiredService<ISettingsRepository>();
                         return new SqlAdminStore(dbOptions);
                     });
+                    services.TryAddSingleton<ITwoFactorStore>(sp =>
+                    {
+                        sp.GetRequiredService<ISettingsRepository>(); // creates and migrates the database
+                        return new SqlTwoFactorStore(dbOptions);
+                    });
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -65,6 +73,7 @@ namespace SshServer.Settings.Sql
                     services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
                     services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
                     services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
+                    services.TryAddSingleton<ITwoFactorStore, DisabledTwoFactorStore>();
                     break;
 
                 default:
