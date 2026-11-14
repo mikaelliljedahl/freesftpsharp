@@ -8,6 +8,7 @@ using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -91,7 +92,7 @@ public class SftpServerFixture : IAsyncLifetime
         throw new InvalidOperationException("Could not start the test SFTP server on a free port.", lastError);
     }
 
-    public async ValueTask DisposeAsync()
+    public virtual async ValueTask DisposeAsync()
     {
         if (_server != null)
         {
@@ -186,13 +187,16 @@ public class SftpServerFixture : IAsyncLifetime
         });
 
         BanTracker = new LoginBanTracker(CreateTimeProvider());
-        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(), repository, BanTracker,
+        return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
     }
 
-    /// <summary>The storage of the hosts: the "local" provider at the user root (AddSshServerStorage + AddLocalDiskStorage).</summary>
-    private static StorageFileSystemFactory LocalDiskFileSystemFactory()
-        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
+    /// <summary>
+    /// The storage of the users. The default is the one of the hosts: the "local" provider at the user root
+    /// (AddSshServerStorage + AddLocalDiskStorage). Override it in a derived fixture for another backend.
+    /// </summary>
+    protected virtual IFileSystemFactory CreateFileSystemFactory()
+        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
 
     private static int GetFreeTcpPort()
     {

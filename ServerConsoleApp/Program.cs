@@ -12,6 +12,7 @@ using FxSsh.SshServerModule;
 
 using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Filesystem.S3;
 using SshServerModule.Storage;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
@@ -51,6 +52,7 @@ await new HostBuilder()
     services.AddSshServerSettings(hostContext.Configuration);
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
+    services.AddS3Storage();
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
     services.AddSshServerListenOptions();
