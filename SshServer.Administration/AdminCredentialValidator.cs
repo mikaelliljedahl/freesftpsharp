@@ -18,7 +18,8 @@ namespace SshServer.Administration
 
         /// <summary>
         /// The administrator when the name and password are correct, the account is enabled and the client address is
-        /// allowed; otherwise null. An unknown name costs the same time as a wrong password.
+        /// allowed; otherwise null. An administrator of an identity provider (<see cref="Admin.AuthenticationProvider"/>)
+        /// has no local password and is never accepted here. An unknown name costs the same time as a wrong password.
         /// </summary>
         public async Task<Admin> ValidateAsync(string userName, string password, IPAddress client, CancellationToken ct)
         {
@@ -30,6 +31,12 @@ namespace SshServer.Administration
                 return null;
             }
 
+            // An administrator of an identity provider (#145) has no local password: the same time as a wrong one.
+            if (admin.AuthenticationProvider != null)
+            {
+                PasswordHasher.BurnEquivalentWork();
+                return null;
+            }
             if (!PasswordHasher.Verify(password ?? "", admin.PasswordHash))
                 return null;
             if (admin.Status != AdminStatus.Enabled || !AdminClaims.IsAddressAllowed(admin, client))

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Users;
 
 namespace FxSshSftpServer.Models
@@ -32,6 +33,9 @@ namespace FxSshSftpServer.Models
 
         public int? ScopeRoleId { get; set; }
 
+        /// <summary>The identity provider that owns the password (#145), or null for a local administrator.</summary>
+        public string AuthenticationProvider { get; set; }
+
         [CidrList]
         public string AllowedIps { get; set; } = "";
 
@@ -46,6 +50,7 @@ namespace FxSshSftpServer.Models
             MustChangePassword = admin.MustChangePassword,
             Permissions = admin.Permissions,
             ScopeRoleId = admin.ScopeRoleId,
+            AuthenticationProvider = admin.AuthenticationProvider,
             AllowedIps = EntryList.Format(admin.AllowedIps),
         };
 
@@ -69,7 +74,9 @@ namespace FxSshSftpServer.Models
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (IsNew || !string.IsNullOrEmpty(NewPassword))
+            if (!string.IsNullOrEmpty(AuthenticationProvider) && (!string.IsNullOrEmpty(NewPassword) || MustChangePassword))
+                yield return new ValidationResult(ExternalCredentials.PasswordManagedMessage(AuthenticationProvider), new[] { nameof(NewPassword) });
+            else if (IsNew || !string.IsNullOrEmpty(NewPassword))
             {
                 var error = AdminAdministrationService.ValidatePassword(NewPassword);
                 if (error != null)

@@ -148,6 +148,10 @@ public sealed class SettingsProviderTests
         Assert.True(await admins.AddAdminAsync(admin, Ct));
         Assert.False(await admins.AddAdminAsync(new Admin { Username = "ALICE", PasswordHash = "y" }, Ct));
         Assert.Equal(admin.Permissions, (await admins.GetAdminAsync("alice", Ct))!.Permissions);
+        Assert.Null((await admins.GetAdminAsync("alice", Ct))!.AuthenticationProvider);
+        admin.AuthenticationProvider = "oidc"; // #145
+        Assert.True(await admins.UpdateAdminAsync(admin, Ct));
+        Assert.Equal("oidc", (await admins.GetAdminAsync("alice", Ct))!.AuthenticationProvider);
 
         var keys = new SqlApiKeyStore(db.Options);
         var key = new ApiKey { Name = "ci", Prefix = "fss_abc", KeyHash = new string('a', 64), AdminId = admin.Id, CreatedAt = Now };

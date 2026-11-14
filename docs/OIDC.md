@@ -51,8 +51,18 @@ The administrator with the name of the user name claim must exist (create it on 
 
 With `AutoProvision`, an administrator that does not exist is created at its first sign-in. It gets the union of the
 permissions of its role values in `RolePermissions`, and a scope role (#60) when one of its role values is the name of
-a scope role. A sign-in without a mapped role value is refused. The new administrator has no usable local password (a
-random one that nobody knows). The permissions are set once, at the creation; change them later on the Admins page.
+a scope role. A sign-in without a mapped role value is refused.
+
+The new administrator belongs to the provider `oidc` (#145, `Admin.AuthenticationProvider`, a badge on the Admins page
+and `authenticationProvider` in the REST API and the dump). It has no local password: the password form cannot log it
+in, and the Admins page (disabled fields with a hint), the REST API and the own password change refuse to set one ("The
+password of this account is managed by oidc"). A local administrator (created on the Admins page or with
+`--create-admin`) stays local: it can use both its password and the provider.
+
+By default the permissions are set once, at the creation; change them later on the Admins page. With
+`SyncRolesOnSignIn`, the permissions and the scope role of an `oidc` administrator follow its role values at every
+sign-in (mapped with `RolePermissions` as at the creation); a sign-in without a mapped role value is then refused and the
+administrator is not changed. A local administrator is never changed by the sign-in.
 The first administrator of an installation still comes from `--create-admin` or `AdminAuth`: without one, the admin
 UI stays closed.
 
@@ -88,7 +98,8 @@ A user of the sign-in has no password for SFTP or WebDAV. An administrator can g
 | `DisplayName` | `single sign-on` | The text of the button: "Sign in with ...". |
 | `DisableLocalLogin` | `false` | Remove the password form of the area; `POST /Login` (or `POST /client/login`) answers 404. For the admin UI also `POST /api/v1/token` of the REST API answers 403. Turn it on when the sign-in works. The command line (`--create-admin`) still works. |
 | `RequireHttpsMetadata` | `true` | The discovery document over HTTPS only. Turn it off only for a test provider on the same host. |
-| `RolePermissions` (admin) | empty | For `AutoProvision`: role value -> comma separated `AdminPermissions`, for example `{ "sftp-admins": "SuperAdmin", "sftp-helpdesk": "ViewConnections, ViewAudit" }`. Required with `AutoProvision`. |
+| `RolePermissions` (admin) | empty | For `AutoProvision`: role value -> comma separated `AdminPermissions`, for example `{ "sftp-admins": "SuperAdmin", "sftp-helpdesk": "ViewConnections, ViewAudit" }`. Required with `AutoProvision` and `SyncRolesOnSignIn`. |
+| `SyncRolesOnSignIn` (admin) | `false` | The permissions and the scope of an `oidc` administrator follow its role values at every sign-in. Off: they are set once, at the creation. |
 | `TemplateGroup` (client) | empty | The primary group of a new user. |
 | `GroupsClaim` (client) | `groups` | The claim with the groups. Empty: the groups are not mapped. |
 | `GroupMap` (client) | empty | Group of the provider -> local group, for example the object ids of Entra ID. Empty: the local group with the same name (a leading `/` of a Keycloak group path is removed). |

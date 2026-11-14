@@ -32,6 +32,9 @@ public sealed class ApiDumpTests : IDisposable
         using var sourceClient = await source.SuperAdminAsync();
         var roleId = await source.AddRoleAsync("dump-tenant");
         await source.AddAdminAsync("dump-admin", AdminPermissions.ManageUsers, roleId);
+        var sso = await source.AddAdminAsync("dump-sso", AdminPermissions.ViewAudit);
+        sso.AuthenticationProvider = "oidc"; // #145
+        Assert.True(await source.Admins.UpdateAdminAsync(sso, Ct));
         var folder = await (await sourceClient.PostAsJsonAsync("/api/v1/virtual-folders", new
         {
             name = "dump-folder",
@@ -105,6 +108,8 @@ public sealed class ApiDumpTests : IDisposable
         var admin = (await target.Admins.GetAdminAsync("dump-admin", Ct))!;
         Assert.Equal((await source.Admins.GetAdminAsync("dump-admin", Ct))!.PasswordHash, admin.PasswordHash);
         Assert.Equal(targetRole.Id, admin.ScopeRoleId);
+        Assert.Null(admin.AuthenticationProvider);
+        Assert.Equal("oidc", (await target.Admins.GetAdminAsync("dump-sso", Ct))!.AuthenticationProvider);
 
         // The secret is encrypted again on the target: the API shows that it is stored.
         var view = (await targetClient.GetFromJsonAsync<JsonObject>($"/api/v1/virtual-folders/{targetFolder.Id}", Ct))!;

@@ -320,7 +320,9 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
   client), with its own callback path. Each handler signs in to the local cookie scheme of its area with a local
   principal (no tokens), so it never opens the other area. The account check is `AdminOidcAccounts` and
   `ClientOidcAccounts`; the new users of the web client come from the `ExternalUserProvisioner` of the authentication
-  providers (#64) with the provider name `oidc`. Nothing is registered without configuration.
+  providers (#64) with the provider name `oidc`. The administrators that the sign-in creates have the same owner
+  (`Admin.AuthenticationProvider`, #145): `AdminAdministrationService` and `AdminCredentialValidator` refuse a local
+  password for them. Nothing is registered without configuration.
 - **One application layer for the UI and the API.** The claims, the policies, `CurrentAdmin` and the scoped views are in
   `SshServer.Administration`; the admin UI (`FxSshSftpServer`) and the REST API (`SshServer.Api`) both reference it.
 

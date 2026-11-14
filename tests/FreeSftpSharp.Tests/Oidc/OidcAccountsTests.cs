@@ -230,7 +230,76 @@ public sealed class AdminOidcAccountsTests
         Assert.Equal(AdminPermissions.ViewConnections | AdminPermissions.ViewAudit | AdminPermissions.ManageUsers, admin.Permissions);
         Assert.Null(admin.ScopeRoleId);
         Assert.False(admin.MustChangePassword);
-        Assert.NotNull(await _store.GetAdminAsync("bob", Ct));
+        Assert.Equal(OidcClaims.ProviderName, admin.AuthenticationProvider);
+        Assert.Equal(OidcClaims.ProviderName, (await _store.GetAdminAsync("bob", Ct))?.AuthenticationProvider);
+    }
+
+    [Fact]
+    public async Task Without_SyncRolesOnSignIn_the_permissions_stay_as_created()
+    {
+        var accounts = Create(o => o.AutoProvision = true);
+        await accounts.ResolveAsync(OidcPrincipal.Of("frank", roles: ["helpdesk"]), IPAddress.Loopback, Ct);
+
+        var result = await accounts.ResolveAsync(OidcPrincipal.Of("frank", roles: ["usermanager"]), IPAddress.Loopback, Ct);
+
+        Assert.Equal(AdminPermissions.ViewConnections | AdminPermissions.ViewAudit, result.Account?.Permissions);
+    }
+
+    [Fact]
+    public async Task With_SyncRolesOnSignIn_an_oidc_administrator_follows_its_role_values_and_scope()
+    {
+        var role = new Role { Name = "tenant-b" };
+        await _store.AddRoleAsync(role, Ct);
+        var accounts = Create(o =>
+        {
+            o.AutoProvision = true;
+            o.SyncRolesOnSignIn = true;
+        });
+        await accounts.ResolveAsync(OidcPrincipal.Of("grace", roles: ["helpdesk"]), IPAddress.Loopback, Ct);
+
+        var result = await accounts.ResolveAsync(OidcPrincipal.Of("grace", roles: ["usermanager", "tenant-b"]), IPAddress.Loopback, Ct);
+
+        Assert.Equal(AdminPermissions.ManageUsers, result.Account?.Permissions);
+        Assert.Equal(role.Id, result.Account?.ScopeRoleId);
+        var stored = await _store.GetAdminAsync("grace", Ct);
+        Assert.Equal(AdminPermissions.ManageUsers, stored?.Permissions);
+        Assert.Equal(role.Id, stored?.ScopeRoleId);
+    }
+
+    [Fact]
+    public async Task With_SyncRolesOnSignIn_an_oidc_administrator_without_a_mapped_role_is_refused_and_unchanged()
+    {
+        var accounts = Create(o =>
+        {
+            o.AutoProvision = true;
+            o.SyncRolesOnSignIn = true;
+        });
+        await accounts.ResolveAsync(OidcPrincipal.Of("heidi", roles: ["helpdesk"]), IPAddress.Loopback, Ct);
+
+        var result = await accounts.ResolveAsync(OidcPrincipal.Of("heidi", roles: ["unmapped"]), IPAddress.Loopback, Ct);
+
+        Assert.Equal(OidcRefusal.MissingRole, result.Refusal);
+        Assert.Equal(AdminPermissions.ViewConnections | AdminPermissions.ViewAudit, (await _store.GetAdminAsync("heidi", Ct))?.Permissions);
+    }
+
+    [Fact]
+    public async Task SyncRolesOnSignIn_never_changes_a_local_administrator()
+    {
+        await _store.AddAdminAsync(new Admin { Username = "ivan", PasswordHash = "x", Permissions = AdminPermissions.SuperAdmin }, Ct);
+        var accounts = Create(o => o.SyncRolesOnSignIn = true);
+
+        var result = await accounts.ResolveAsync(OidcPrincipal.Of("ivan", roles: ["helpdesk"]), IPAddress.Loopback, Ct);
+
+        Assert.Equal(AdminPermissions.SuperAdmin, result.Account?.Permissions);
+        Assert.Equal(AdminPermissions.SuperAdmin, (await _store.GetAdminAsync("ivan", Ct))?.Permissions);
+    }
+
+    [Fact]
+    public void SyncRolesOnSignIn_needs_the_role_permissions()
+    {
+        var options = new AdminOidcOptions { Authority = "https://idp.test", ClientId = "admin", SyncRolesOnSignIn = true };
+
+        Assert.Contains(options.Validate(AdminOidcOptions.SectionName), e => e.Contains("SyncRolesOnSignIn needs", StringComparison.Ordinal));
     }
 
     [Fact]

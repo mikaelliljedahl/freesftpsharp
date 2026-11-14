@@ -68,6 +68,7 @@ public sealed class SqlAdminStore : IAdminStore
         stored.ScopeRoleId = admin.ScopeRoleId;
         stored.LastLoginAt = admin.LastLoginAt;
         stored.MustChangePassword = admin.MustChangePassword;
+        stored.AuthenticationProvider = admin.AuthenticationProvider;
         await db.SaveChangesAsync(ct);
         return true;
     }

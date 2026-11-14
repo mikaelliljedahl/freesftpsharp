@@ -94,6 +94,13 @@ namespace FxSshSftpServer.Security.Oidc
         /// </summary>
         public Dictionary<string, string> RolePermissions { get; set; } = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// The permissions and the scope of an administrator that the sign-in created (provider <c>oidc</c>, #145) follow
+        /// its role values at each sign-in, mapped with <see cref="RolePermissions"/>; one without a mapped value is
+        /// refused. Default false: they are set once, at the creation. A local administrator is never changed.
+        /// </summary>
+        public bool SyncRolesOnSignIn { get; set; }
+
         /// <summary>The permissions of the role values, or the errors of their names.</summary>
         public Dictionary<string, AdminPermissions> ParseRolePermissions(List<string>? errors = null)
         {
@@ -123,6 +130,10 @@ namespace FxSshSftpServer.Security.Oidc
                 errors.Add($"{section}:AutoProvision needs {section}:RolePermissions (role value -> permissions).");
             if (AutoProvision && string.IsNullOrWhiteSpace(RoleClaim))
                 errors.Add($"{section}:AutoProvision needs {section}:RoleClaim.");
+            if (SyncRolesOnSignIn && !parsed.Values.Any(p => p != AdminPermissions.None))
+                errors.Add($"{section}:SyncRolesOnSignIn needs {section}:RolePermissions (role value -> permissions).");
+            if (SyncRolesOnSignIn && string.IsNullOrWhiteSpace(RoleClaim))
+                errors.Add($"{section}:SyncRolesOnSignIn needs {section}:RoleClaim.");
             return errors;
         }
     }

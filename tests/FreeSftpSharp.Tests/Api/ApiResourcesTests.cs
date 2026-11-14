@@ -96,6 +96,24 @@ public sealed class ApiResourcesTests : IClassFixture<ApiFactory>, IDisposable
     }
 
     [Fact]
+    public async Task An_administrator_of_the_single_sign_on_gets_no_password()
+    {
+        using var client = await _factory.SuperAdminAsync();
+        var sso = await _factory.AddAdminAsync("api-sso", AdminPermissions.ViewAudit);
+        sso.AuthenticationProvider = "oidc";
+        Assert.True(await _factory.Admins.UpdateAdminAsync(sso, Ct));
+
+        var view = await (await client.GetAsync("/api/v1/admins/api-sso", Ct)).JsonAsync();
+        Assert.Equal("oidc", view["authenticationProvider"]!.GetValue<string>());
+
+        var patched = await client.PatchJsonAsync("/api/v1/admins/api-sso", new { password = "new-password-123" });
+        Assert.Equal(HttpStatusCode.BadRequest, patched.StatusCode);
+        Assert.Contains("managed by oidc", await patched.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(sso.PasswordHash, (await _factory.Admins.GetAdminAsync("api-sso", Ct))!.PasswordHash);
+        Assert.Equal(HttpStatusCode.OK, (await client.PatchJsonAsync("/api/v1/admins/api-sso", new { email = "sso@example.com" })).StatusCode);
+    }
+
+    [Fact]
     public async Task Connections_audit_and_ip_bans_are_readable()
     {
         await _factory.AddAdminAsync("monitor", AdminPermissions.ViewConnections | AdminPermissions.DisconnectConnections | AdminPermissions.ViewAudit);

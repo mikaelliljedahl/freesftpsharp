@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Net;
 using SshServer.Interfaces.Security;
@@ -15,8 +16,15 @@ public sealed record AdminInput(string Username)
     public int? ScopeRoleId { get; init; }
     public bool MustChangePassword { get; init; }
 
+    /// <summary>
+    /// The owner of the password (#145, <see cref="Admin.AuthenticationProvider"/>). Used when an administrator is created
+    /// or loaded from a dump; an update keeps the stored owner.
+    /// </summary>
+    public string? AuthenticationProvider { get; init; }
+
     public static AdminInput From(Admin admin) => new(admin.Username)
     {
+        AuthenticationProvider = admin.AuthenticationProvider,
         Email = admin.Email,
         Status = admin.Status,
         Permissions = admin.Permissions,
@@ -36,6 +44,8 @@ public sealed record AdminInput(string Username)
 /// that has more permissions than itself (so only a super admin manages super admins).</item>
 /// <item>Nobody changes its own permissions, status or scope, or removes itself: the last super admin stays.</item>
 /// <item>A super admin has no scope; a scoped administrator has only <see cref="AdminPermissionRules.Scopable"/> flags.</item>
+/// <item>An administrator of an identity provider (<see cref="Admin.AuthenticationProvider"/>, #145) gets no local
+/// password: its provider owns it (<see cref="ExternalCredentials.PasswordManagedMessage"/>).</item>
 /// </list>
 /// Every change is published as a <see cref="ProviderEvent"/> with the actor, without the password hash.
 /// </summary>
@@ -44,6 +54,7 @@ public sealed class AdminAdministrationService
     public const int MinimumPasswordLength = UserAdministrationService.MinimumPasswordLength;
     public const int MaximumEmailLength = 256;
     public const int MaximumRoleNameLength = 100;
+    public const int MaximumProviderNameLength = 64;
 
     private readonly IAdminStore _store;
     private readonly ISettingsRepository _settings;
@@ -81,6 +92,7 @@ public sealed class AdminAdministrationService
         {
             Username = name,
             PasswordHash = PasswordHasher.Hash(password, _hashIterations),
+            AuthenticationProvider = NormalizeProvider(input.AuthenticationProvider),
         };
         Apply(input, admin);
         if (!await _store.AddAdminAsync(admin, ct))
@@ -95,6 +107,8 @@ public sealed class AdminAdministrationService
     {
         actor.Demand(AdminPermissions.ManageAdmins);
         var stored = await GetManageableAsync(actor, input.Username, ct);
+        if ((newPassword != null || (input.MustChangePassword && !stored.MustChangePassword)) && stored.AuthenticationProvider is { } owner)
+            throw new AdminAdministrationException(ExternalCredentials.PasswordManagedMessage(owner));
         if (newPassword != null)
             Throw(ValidatePassword(newPassword));
         await ValidateAsync(input, ct);
@@ -138,6 +152,8 @@ public sealed class AdminAdministrationService
     public async Task<Admin> ChangeOwnPasswordAsync(string username, string currentPassword, string newPassword, CancellationToken ct)
     {
         var stored = await _store.GetAdminAsync(username, ct);
+        if (stored?.AuthenticationProvider is { } owner)
+            throw new AdminAdministrationException(ExternalCredentials.PasswordManagedMessage(owner));
         if (stored == null || stored.Status != AdminStatus.Enabled || !PasswordHasher.Verify(currentPassword ?? "", stored.PasswordHash))
             throw new AdminAccessDeniedException("The current password is not correct.");
         Throw(ValidatePassword(newPassword));
@@ -195,7 +211,7 @@ public sealed class AdminAdministrationService
         var stored = await _store.GetAdminAsync(name, ct);
         if (stored == null)
         {
-            var admin = new Admin { Username = name, PasswordHash = passwordHash };
+            var admin = new Admin { Username = name, PasswordHash = passwordHash, AuthenticationProvider = NormalizeProvider(input.AuthenticationProvider) };
             Apply(input, admin);
             if (!await _store.AddAdminAsync(admin, ct))
                 throw new AdminAdministrationException($"The administrator '{name}' already exists.");
@@ -209,6 +225,7 @@ public sealed class AdminAdministrationService
         var hashChanged = stored.PasswordHash != passwordHash;
         Apply(input, stored);
         stored.PasswordHash = passwordHash;
+        stored.AuthenticationProvider = NormalizeProvider(input.AuthenticationProvider);
         if (!await _store.UpdateAdminAsync(stored, ct))
             throw new AdminAdministrationException($"The administrator '{stored.Username}' does not exist any more.");
         var changed = ChangedFields(before, AdminSnapshot.From(stored));
@@ -345,6 +362,14 @@ public sealed class AdminAdministrationService
     }
 
     private static string? Normalize(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+    private static string? NormalizeProvider(string? provider)
+    {
+        var name = Normalize(provider);
+        if (name != null && name.Length > MaximumProviderNameLength)
+            throw new AdminAdministrationException($"The authentication provider name can have at most {MaximumProviderNameLength} characters.");
+        return name;
+    }
 
     private static void Throw(string? error)
     {
