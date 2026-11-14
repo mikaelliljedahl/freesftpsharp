@@ -39,6 +39,19 @@ public class User
     /// </summary>
     public List<AuthMethods>? RequireAllOf { get; set; }
 
+    /// <summary>
+    /// The protocols that the user may log in with (issue #71). Default: all, so a user stored before this property
+    /// existed keeps SFTP. A protocol must also be turned on for the server (WebDAV is off by default).
+    /// </summary>
+    public UserProtocols AllowedProtocols { get; set; } = UserProtocols.All;
+
+    /// <summary>
+    /// The app passwords of the user (issue #71): random secrets for one or more protocols, for clients that cannot do
+    /// the normal login (for example WebDAV with a multi-step login). Null or empty: none. Make them with
+    /// <see cref="AppPasswordGenerator"/>.
+    /// </summary>
+    public List<AppPassword>? AppPasswords { get; set; }
+
     public bool OnlyWhitelistedIps { get; set; }
     public List<string>? WhitelistedIps { get; set; }
 

@@ -247,6 +247,8 @@ OpenSSH connects with its default settings.
 - Server is started using IHostedService interface (useful for standalone service or hosted inside Asp.Net Core)
 - Server settings and users are saved in a SQLite database (EF Core). See [Settings storage](#settings-storage).
 - Global IP blacklist, optional global IP whitelist, auto-ban after failed logins, and `BindToAddress`. See [Network access settings](#network-access-settings).
+- WebDAV (issue #71, opt-in): the same users and storage over WebDAV class 1 and 2 for Windows Explorer, macOS
+  Finder and Linux clients, with Basic over HTTPS, per-user protocol flags and app passwords. See [docs/WEBDAV.md](docs/WEBDAV.md).
 
 
 ### Features planned for the future
