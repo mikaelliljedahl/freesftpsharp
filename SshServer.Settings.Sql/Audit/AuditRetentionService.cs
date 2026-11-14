@@ -54,6 +54,10 @@ public sealed class AuditRetentionService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Start the timer before the run, so the next run is one interval after the start of this run.
+            // The timer then exists before the run gives a result, and a test with a fake TimeProvider
+            // that advances the time after the result cannot miss the timer.
+            var next = Task.Delay(Interval, _time, stoppingToken);
             try
             {
                 await RunOnceAsync(stoppingToken);
@@ -69,7 +73,7 @@ public sealed class AuditRetentionService : BackgroundService
 
             try
             {
-                await Task.Delay(Interval, _time, stoppingToken);
+                await next;
             }
             catch (OperationCanceledException)
             {
