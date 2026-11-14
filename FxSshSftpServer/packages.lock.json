@@ -594,6 +594,7 @@
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[11.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[11.0.0, )",
           "SshServer.Administration": "[1.0.0, )",
+          "SshServer.EventRules": "[1.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )",
           "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"

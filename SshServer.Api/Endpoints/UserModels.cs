@@ -5,7 +5,10 @@ using SshServer.Interfaces.Storage;
 
 namespace SshServer.Api.Endpoints;
 
-/// <summary>An SFTP user in the API. The password hash and the storage secrets are never returned.</summary>
+/// <summary>
+/// An SFTP user in the API: its own settings (the groups, #61, give the settings that are not set here). The password hash
+/// and the storage secrets are never returned.
+/// </summary>
 public sealed record UserView(
     string Username,
     string RootDirectory,
@@ -15,12 +18,19 @@ public sealed record UserView(
     IReadOnlyList<string> RequireAllOf,
     bool OnlyWhitelistedIps,
     IReadOnlyList<string> WhitelistedIps,
-    IReadOnlyDictionary<string, IReadOnlyList<string>> Permissions,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? Permissions,
     IReadOnlyDictionary<string, PathFilterModel> PathFilters,
     StorageView? Storage,
     IReadOnlyList<VirtualFolderMountModel> VirtualFolders,
     int? RoleId,
-    DateTime? LastSuccessfulLogin)
+    string? Description,
+    UserStatus Status,
+    DateTime? ExpiresAt,
+    int MaxSessions,
+    int? PrimaryGroupId,
+    IReadOnlyList<int> SecondaryGroupIds,
+    DateTime? LastLoginAt,
+    DateTime? PasswordChangedAt)
 {
     public static UserView From(User user, StorageMapper storage) => new(
         user.Username,
@@ -36,7 +46,14 @@ public sealed record UserView(
         storage.View(user.Storage),
         (user.VirtualFolders ?? []).Select(m => new VirtualFolderMountModel(m.VirtualFolderId, m.MountPath)).ToList(),
         user.RoleId,
-        user.LastSuccessfulLogin == default ? null : user.LastSuccessfulLogin);
+        user.Description,
+        user.Status,
+        user.ExpiresAt,
+        user.MaxSessions,
+        user.PrimaryGroupId,
+        user.SecondaryGroupIds?.ToList() ?? [],
+        user.LastLoginAt,
+        user.PasswordChangedAt);
 }
 
 /// <summary>A public key of a user: the type, the fingerprint and the comment; the key blob is not needed by a client.</summary>
@@ -97,18 +114,42 @@ public sealed record UserWrite
     /// <summary>Networks in CIDR notation (or single addresses).</summary>
     public List<string>? WhitelistedIps { get; init; }
 
-    /// <summary>The permissions per virtual directory, for example {"/": ["All"], "/in": ["List","Upload"]}. Default: All at "/".</summary>
+    /// <summary>
+    /// The permissions per virtual directory, for example {"/": ["All"], "/in": ["List","Upload"]}. Not given: not set,
+    /// the groups give them, else All at "/".
+    /// </summary>
     public Dictionary<string, List<string>>? Permissions { get; init; }
 
     public Dictionary<string, PathFilterModel>? PathFilters { get; init; }
 
-    /// <summary>The storage of "/". Not given: the default storage, the local disk at <see cref="RootDirectory"/>.</summary>
+    /// <summary>
+    /// The storage of "/". Not given: the storage template of a group, else the default storage, the local disk at
+    /// <see cref="RootDirectory"/>.
+    /// </summary>
     public StorageWrite? Storage { get; init; }
 
     public List<VirtualFolderMountModel>? VirtualFolders { get; init; }
 
     /// <summary>The scope role (#60). An administrator with a scope role always gives its own role.</summary>
     public int? RoleId { get; init; }
+
+    /// <summary>A note of the administrator (at most 1000 characters).</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Enabled (default) or Disabled: a disabled user cannot log in, its open sessions are closed.</summary>
+    public UserStatus? Status { get; init; }
+
+    /// <summary>The time (UTC) from which the user cannot log in. Not given: never.</summary>
+    public DateTime? ExpiresAt { get; init; }
+
+    /// <summary>The sessions the user may have open at the same time, 0 to 10000. 0 (default): no limit.</summary>
+    public int? MaxSessions { get; init; }
+
+    /// <summary>The primary group (#61).</summary>
+    public int? PrimaryGroupId { get; init; }
+
+    /// <summary>The other groups, in the order in which their settings apply.</summary>
+    public List<int>? SecondaryGroupIds { get; init; }
 
     /// <summary>The write model of a stored user, for a PATCH (no password, no keys: they keep their stored values).</summary>
     public static UserWrite From(User user, StorageMapper storage) => new()
@@ -119,16 +160,24 @@ public sealed record UserWrite
         RequireAllOf = (user.RequireAllOf ?? []).Select(AuthMethodRules.ToSshName).ToList(),
         OnlyWhitelistedIps = user.OnlyWhitelistedIps,
         WhitelistedIps = user.WhitelistedIps?.ToList() ?? [],
-        Permissions = PermissionsOf(user).ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal),
+        Permissions = PermissionsOf(user)?.ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal),
         PathFilters = (user.PathFilters ?? []).ToDictionary(f => f.Key, f => PathFilterModel.From(f.Value), StringComparer.Ordinal),
         Storage = storage.WriteModel(user.Storage),
         VirtualFolders = (user.VirtualFolders ?? []).Select(m => new VirtualFolderMountModel(m.VirtualFolderId, m.MountPath)).ToList(),
         RoleId = user.RoleId,
+        Description = user.Description,
+        Status = user.Status,
+        ExpiresAt = user.ExpiresAt,
+        MaxSessions = user.MaxSessions,
+        PrimaryGroupId = user.PrimaryGroupId,
+        SecondaryGroupIds = user.SecondaryGroupIds?.ToList() ?? [],
     };
 
-    internal static IReadOnlyDictionary<string, IReadOnlyList<string>> PermissionsOf(User user) =>
-        (user.Permissions ?? new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All })
-            .ToDictionary(p => p.Key, p => FlagNames.Of(p.Value), StringComparer.Ordinal);
+    /// <summary>The own permissions of the user, or null when it sets none (the groups give them, else All at "/").</summary>
+    internal static IReadOnlyDictionary<string, IReadOnlyList<string>>? PermissionsOf(User user) =>
+        user.Permissions is { Count: > 0 } permissions
+            ? permissions.ToDictionary(p => p.Key, p => FlagNames.Of(p.Value), StringComparer.Ordinal)
+            : null;
 }
 
 /// <summary>Public keys to add to a user: the text of an authorized_keys file, or one PEM public key.</summary>

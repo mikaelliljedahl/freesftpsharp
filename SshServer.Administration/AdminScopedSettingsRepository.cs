@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Administration
@@ -17,6 +18,9 @@ namespace SshServer.Administration
     /// also by name. A new user gets its role; it cannot create a user without a role or with another role, and it
     /// cannot move a user to another role.</item>
     /// <item>A change of the server settings needs <see cref="AdminPermissions.ManageSettings"/>.</item>
+    /// <item>Groups (#61) need <see cref="AdminPermissions.ManageGroups"/> to change; an administrator who manages users
+    /// may read them (to give them to users). A scoped administrator sees only the groups of its role, creates groups with
+    /// its role, and adds or removes only those groups for its users: a group outside its scope stays as it is.</item>
     /// </list>
     /// </summary>
     public sealed class AdminScopedSettingsRepository : ISettingsRepository
@@ -72,6 +76,7 @@ namespace SshServer.Administration
                 if (newUser.RoleId != scope)
                     throw new AdminAccessDeniedException("You can only create users with your own role.");
             }
+            DemandGroupChanges(actor, null, newUser);
             return _inner.AddUser(newUser);
         }
 
@@ -84,6 +89,7 @@ namespace SshServer.Administration
                 return false;
             if (actor.ScopeRoleId != null)
                 updatedUser.RoleId = stored.RoleId;
+            DemandGroupChanges(actor, stored, updatedUser);
             return _inner.UpdateUser(updatedUser);
         }
 
@@ -126,6 +132,84 @@ namespace SshServer.Administration
         {
             _current.Actor.Demand(AdminPermissions.ManageFolders);
             return _inner.RemoveVirtualFolder(id);
+        }
+
+        /// <summary>The groups in the scope of an administrator who manages groups or users.</summary>
+        public List<Group> GetGroups()
+        {
+            var actor = _current.Actor;
+            return CanReadGroups(actor) ? _inner.GetGroups().Where(actor.CanSee).ToList() : new List<Group>();
+        }
+
+        public Group GetGroup(int id)
+        {
+            var actor = _current.Actor;
+            var group = CanReadGroups(actor) ? _inner.GetGroup(id) : null;
+            return actor.CanSee(group) ? group : null;
+        }
+
+        public bool AddGroup(Group group)
+        {
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageGroups);
+            if (actor.ScopeRoleId is { } scope)
+            {
+                group.RoleId ??= scope;
+                if (group.RoleId != scope)
+                    throw new AdminAccessDeniedException("You can only create groups with your own role.");
+            }
+            return _inner.AddGroup(group);
+        }
+
+        public bool UpdateGroup(Group group)
+        {
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageGroups);
+            var stored = _inner.GetGroup(group.Id);
+            if (!actor.CanSee(stored))
+                return false;
+            if (actor.ScopeRoleId != null)
+                group.RoleId = stored.RoleId;
+            return _inner.UpdateGroup(group);
+        }
+
+        public bool RemoveGroup(int id)
+        {
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageGroups);
+            return actor.CanSee(_inner.GetGroup(id)) && _inner.RemoveGroup(id);
+        }
+
+        private static bool CanReadGroups(AdminActor actor) =>
+            actor.Has(AdminPermissions.ManageGroups) || actor.Has(AdminPermissions.ManageUsers);
+
+        /// <summary>
+        /// A scoped administrator adds and removes only groups of its scope: a group of another role (or a global one)
+        /// could give its users the storage or the permissions of another tenant, or take restrictions away that an
+        /// administrator without a scope set. The groups of the user outside the scope must stay as they are.
+        /// </summary>
+        private void DemandGroupChanges(AdminActor actor, User stored, User updated)
+        {
+            if (actor.ScopeRoleId == null)
+                return;
+            var before = GroupIds(stored);
+            var after = GroupIds(updated);
+            var changed = before.Except(after).Concat(after.Except(before));
+            if (stored?.PrimaryGroupId != updated.PrimaryGroupId)
+                changed = changed.Concat(new[] { stored?.PrimaryGroupId, updated.PrimaryGroupId }.OfType<int>());
+            foreach (var id in changed.Distinct())
+            {
+                if (!actor.CanSee(_inner.GetGroup(id)))
+                    throw new AdminAccessDeniedException("You can only add or remove the groups of your own role.");
+            }
+        }
+
+        private static HashSet<int> GroupIds(User user)
+        {
+            var ids = new HashSet<int>(user?.SecondaryGroupIds ?? new List<int>());
+            if (user?.PrimaryGroupId is { } primary)
+                ids.Add(primary);
+            return ids;
         }
 
         /// <summary>

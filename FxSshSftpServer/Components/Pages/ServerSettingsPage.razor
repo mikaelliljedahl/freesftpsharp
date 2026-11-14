@@ -74,6 +74,12 @@
                         <ValidationMessage For="() => form.IdleTimeout" />
                         <div class="form-text">A client that sends nothing for this time is disconnected. 0: no timeout; the server sends keepalive probes instead.</div>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="password-max-age">Maximum password age (days)</label>
+                        <InputNumber id="password-max-age" class="form-control" @bind-Value="form.PasswordMaxAgeDays" />
+                        <ValidationMessage For="() => form.PasswordMaxAgeDays" />
+                        <div class="form-text">An SFTP login with an older password is refused; the user logs in with a key, or an administrator sets a new password. 0: passwords do not expire.</div>
+                    </div>
                     <div class="form-check form-switch mb-2">
                         <InputCheckbox id="enable-command" class="form-check-input" @bind-Value="form.EnableCommand" />
                         <label class="form-check-label" for="enable-command">Accept shell and exec requests</label>

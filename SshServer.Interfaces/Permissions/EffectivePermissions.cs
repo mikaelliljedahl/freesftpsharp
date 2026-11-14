@@ -1,7 +1,7 @@
 namespace SshServer.Interfaces.Permissions;
 
 /// <summary>
-/// The permissions and path filters that apply to one user, from <see cref="IEffectivePermissionsService"/>. The keys
+/// The permissions and path filters that apply to one user, from <see cref="Users.IEffectiveUserSettingsService"/>. The keys
 /// are normalized virtual directories (<see cref="Storage.VirtualPath.Normalize"/>); "/" is always present.
 /// </summary>
 public sealed class EffectivePermissions

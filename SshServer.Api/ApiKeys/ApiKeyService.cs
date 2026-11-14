@@ -74,7 +74,7 @@ public sealed class ApiKeyService
         if (trimmed.Length > MaximumNameLength)
             throw new AdminAdministrationException($"The name of the API key can have at most {MaximumNameLength} characters.");
         var now = _time.GetUtcNow().UtcDateTime;
-        if (expiresAtUtc is { } expires && expires.ToUniversalTime() <= now)
+        if (expiresAtUtc is { } expires && ApiTime.ToUtc(expires) <= now)
             throw new AdminAdministrationException("The expiry of the API key must be in the future.");
         if (scopes is { } mask)
         {
@@ -94,7 +94,7 @@ public sealed class ApiKeyService
             AdminId = self.Id,
             Scopes = scopes,
             CreatedAt = now,
-            ExpiresAt = expiresAtUtc?.ToUniversalTime(),
+            ExpiresAt = ApiTime.ToUtc(expiresAtUtc),
         };
         if (!await _keys.AddAsync(apiKey, ct))
             throw new AdminAdministrationException($"You have an API key with the name '{trimmed}' already.");

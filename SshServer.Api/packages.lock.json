@@ -20,6 +20,11 @@
           "Microsoft.OpenApi": "[3.11.0, 4.0.0)"
         }
       },
+      "Cronos": {
+        "type": "Transitive",
+        "resolved": "0.11.0",
+        "contentHash": "ovNrFIuKTbeNYx+1Tne8DkY/nJ+bRoS0/bTrCBzeAuMvLbX2nJprwcdRqZIwwLRsaghqBU932QvJ6mryTycc/A=="
+      },
       "IPNetwork2": {
         "type": "Transitive",
         "resolved": "3.0.667",
@@ -29,6 +34,14 @@
         "type": "Transitive",
         "resolved": "5.0.21",
         "contentHash": "ykJ7ffFl7P9YQKR/PLci6zupiLrsSCNkOTiw6OtzntH7d2kCYp5L1+3a/pksKgTEHcJBoPXFtg7VZSGVBseN9w=="
+      },
+      "MailKit": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "PG6hnsklTzd/iK9A6j03OxDOas9mh8zOBkbPzcsLmFOODE8Hw3HTy7HAKiJvVHXNpKc3/KMVG/4QvOAKCBbGhA==",
+        "dependencies": {
+          "MimeKit.Core": "5.0.0"
+        }
       },
       "Microsoft.Bcl.Cryptography": {
         "type": "Transitive",
@@ -87,6 +100,11 @@
         "resolved": "3.11.0",
         "contentHash": "kvQz+mL/fnDw2VaE8zMyQhbMv7FmOYUydIhCVNKxQdrLu9XiMT/07DHwJ5YkRO2uzcxTFvMAKFKKywxoyLKHcA=="
       },
+      "MimeKit.Core": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "0RLaVyex/BjUGqiw9xtGwzyCMaBcsu33Rth61bDCeVeQaaQK7tjcy4TA+nHKTqwUdp4OGd+gnhuq2fuR+c20qA=="
+      },
       "Portable.BouncyCastle": {
         "type": "Transitive",
         "resolved": "1.9.0",
@@ -107,6 +125,14 @@
       "sshserver.administration": {
         "type": "Project",
         "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
+      "sshserver.eventrules": {
+        "type": "Project",
+        "dependencies": {
+          "Cronos": "[0.11.0, )",
+          "MailKit": "[5.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )"
         }
       },

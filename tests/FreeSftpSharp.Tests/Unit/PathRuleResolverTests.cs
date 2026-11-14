@@ -1,26 +1,27 @@
+using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Permissions;
 
 namespace FreeSftpSharp.Tests.Unit;
 
 /// <summary>
-/// <see cref="EffectivePermissionsService"/> and <see cref="PathRuleResolver"/>: the longest matching directory wins,
+/// <see cref="EffectiveUserSettingsService"/> and <see cref="PathRuleResolver"/>: the longest matching directory wins,
 /// "/" defaults to All, and paths are compared like the storage compares them (issue #59).
 /// </summary>
 public sealed class PathRuleResolverTests
 {
-    private static readonly EffectivePermissionsService Service = new();
+    private static readonly EffectiveUserSettingsService Service = new();
 
     private static PathRuleResolver Resolver(Dictionary<string, FilePermissions>? permissions, Dictionary<string, PathFilter>? filters = null, bool caseInsensitive = false)
-        => new(Service.Resolve(new User { Username = "u", Permissions = permissions, PathFilters = filters }), caseInsensitive);
+        => new(Service.Resolve(new User { Username = "u", Permissions = permissions, PathFilters = filters }).Permissions, caseInsensitive);
 
     [Fact]
     public void A_new_user_has_all_permissions_at_the_root_and_is_unrestricted()
     {
         var user = new User { Username = "u" };
 
-        Assert.Equal(FilePermissions.All, user.Permissions!["/"]);
-        Assert.True(Service.Resolve(user).IsUnrestricted);
+        Assert.Null(user.Permissions); // not set (#61): the groups, else All at the root
+        Assert.True(Service.Resolve(user).Permissions.IsUnrestricted);
     }
 
     [Theory]
@@ -158,9 +159,9 @@ public sealed class PathRuleResolverTests
             PathFilters = new() { ["/b"] = new PathFilter() },
         };
 
-        Assert.True(Service.Resolve(user).IsUnrestricted);
+        Assert.True(Service.Resolve(user).Permissions.IsUnrestricted);
         user.Permissions["/a"] = FilePermissions.All & ~FilePermissions.Delete;
-        Assert.False(Service.Resolve(user).IsUnrestricted);
+        Assert.False(Service.Resolve(user).Permissions.IsUnrestricted);
     }
 
     [Fact]

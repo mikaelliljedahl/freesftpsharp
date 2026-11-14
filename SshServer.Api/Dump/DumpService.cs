@@ -4,6 +4,8 @@ using SshServer.Api.Endpoints;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Authentication;
+using SshServer.Interfaces.Groups;
+using SshServer.EventRules;
 using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Users;
@@ -16,9 +18,9 @@ namespace SshServer.Api.Dump;
 /// <summary>
 /// The dump and load of the REST API (#67) over the same services as the admin UI: roles and administrators
 /// (<see cref="AdminAdministrationService"/>), virtual folders, users and settings (the scoped repository and services),
-/// and webhooks (<see cref="WebhookAdministrationService"/>). Both need <see cref="AdminPermissions.SuperAdmin"/>, because
-/// a dump has the password hashes of every administrator and user. Groups (#61), quotas (#62) and event rules (#68) are
-/// added here when they exist.
+/// groups (<see cref="GroupService"/>), webhooks (<see cref="WebhookAdministrationService"/>) and event rules
+/// (<see cref="EventRuleAdministrationService"/>). Both need <see cref="AdminPermissions.SuperAdmin"/>, because a dump has the
+/// password hashes of every administrator and user. Quotas (#62) are added here when they exist.
 /// </summary>
 public sealed class DumpService
 {
@@ -31,12 +33,17 @@ public sealed class DumpService
     private readonly StorageConfigService _storage;
     private readonly WebhookAdministrationService _webhooks;
     private readonly WebhookSecretProtector _webhookSecrets;
+    private readonly GroupService _groups;
+    private readonly EventRuleAdministrationService _rules;
     private readonly TimeProvider _time;
 
     public DumpService(CurrentAdmin current, AdminAdministrationService admins, AdminScopedSettingsRepository repository,
         VirtualFolderService folders, UserAdministrationService users, UserResource userResource, StorageConfigService storage,
-        WebhookAdministrationService webhooks, WebhookSecretProtector webhookSecrets, TimeProvider time)
+        WebhookAdministrationService webhooks, WebhookSecretProtector webhookSecrets, GroupService groups, EventRuleAdministrationService rules,
+        TimeProvider time)
     {
+        _groups = groups;
+        _rules = rules;
         _current = current;
         _admins = admins;
         _repository = repository;
@@ -76,6 +83,10 @@ public sealed class DumpService
         var roleNames = roles.ToDictionary(r => r.Id, r => r.Name);
         var folders = _repository.GetVirtualFolders();
         var folderNames = folders.ToDictionary(f => f.Id, f => f.Name);
+        var groups = _groups.List();
+        var groupNames = groups.ToDictionary(g => g.Id, g => g.Name);
+        List<DumpMount> Mounts(IEnumerable<VirtualFolderMount>? mounts) =>
+            (mounts ?? []).Select(m => new DumpMount(folderNames.GetValueOrDefault(m.VirtualFolderId) ?? "", m.MountPath)).ToList();
 
         return new DumpDocument
         {
@@ -92,11 +103,17 @@ public sealed class DumpService
                 u.Username, u.UserRootDirectory ?? "", u.HashedPassword, u.PublicKeys?.ToList() ?? [],
                 AuthMethodNames.Of(u.AllowedAuthMethods).ToList(), (u.RequireAllOf ?? []).Select(AuthMethodRules.ToSshName).ToList(),
                 u.OnlyWhitelistedIps, u.WhitelistedIps?.ToList() ?? [],
-                UserWrite.PermissionsOf(u).ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal),
-                (u.PathFilters ?? []).ToDictionary(p => p.Key, p => PathFilterModel.From(p.Value), StringComparer.Ordinal),
+                PermissionModels.Names(u.Permissions), PermissionModels.Models(u.PathFilters),
                 u.Storage is { } storage ? ExportStorage(storage, (option, text) => Secret($"users/{u.Username}", option, text)) : null,
-                (u.VirtualFolders ?? []).Select(m => new DumpMount(folderNames.GetValueOrDefault(m.VirtualFolderId) ?? "", m.MountPath)).ToList(),
-                u.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null)).ToList(),
+                Mounts(u.VirtualFolders), u.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null,
+                u.Description, u.Status, u.ExpiresAt, u.MaxSessions, u.PasswordChangedAt,
+                u.PrimaryGroupId is { } primary ? groupNames.GetValueOrDefault(primary) : null,
+                (u.SecondaryGroupIds ?? []).Select(id => groupNames.GetValueOrDefault(id)).OfType<string>().ToList())).ToList(),
+            Groups = groups.Select(g => new DumpGroup(g.Name, g.Description, PermissionModels.Names(g.Permissions), PermissionModels.Models(g.PathFilters),
+                g.Storage is { } storage ? ExportStorage(storage, (option, text) => Secret($"groups/{g.Name}", option, text)) : null,
+                Mounts(g.VirtualFolders), g.AllowedAuthMethods is { } methods ? AuthMethodNames.Of(methods).ToList() : null, g.AllowedIps?.ToList(),
+                g.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null)).ToList(),
+            EventRules = (await _rules.ListAsync(actor, ct)).Select(EventRuleWrite.From).ToList(),
             Webhooks = (await _webhooks.ListAsync(actor, ct)).Select(w => new DumpWebhook(w.Name, w.Url, w.Method,
                 w.ProtectedSecret is { } secret && _webhookSecrets.TryUnprotect(secret) is { } plain ? Secret($"webhooks/{w.Name}", "secret", plain) : null,
                 new Dictionary<string, string>(w.Headers), [.. w.EventTypes], [.. w.Users], w.PathGlob, w.Sync, w.FailOpen, w.TimeoutSeconds,
@@ -125,12 +142,17 @@ public sealed class DumpService
         var roleIds = (await _admins.ListRolesAsync(actor, ct)).ToDictionary(r => r.Name, r => r.Id, StringComparer.OrdinalIgnoreCase);
         LoadFolders(dump, report, Secret);
         var folderIds = _repository.GetVirtualFolders().ToDictionary(f => f.Name, f => f.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var group in dump.Groups ?? [])
+            report.Run($"group {group.Name}", () => LoadGroup(group, roleIds, folderIds, report, Secret));
+        var groupIds = _groups.List().ToDictionary(g => g.Name, g => g.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var user in dump.Users ?? [])
-            await report.RunAsync($"user {user.Username}", () => LoadUserAsync(user, roleIds, folderIds, mode, Secret, ct));
+            await report.RunAsync($"user {user.Username}", () => LoadUserAsync(user, roleIds, folderIds, groupIds, mode, Secret, ct));
         foreach (var admin in dump.Admins ?? [])
             await report.RunAsync($"administrator {admin.Username}", () => LoadAdminAsync(actor, admin, roleIds, mode, ct));
         foreach (var webhook in dump.Webhooks ?? [])
             await report.RunAsync($"webhook {webhook.Name}", () => LoadWebhookAsync(actor, webhook, mode, cipher, ct));
+        foreach (var rule in dump.EventRules ?? [])
+            await report.RunAsync($"event rule {rule.Name}", () => LoadRuleAsync(actor, rule, mode, ct));
         if (dump.Settings != null)
         {
             await report.RunAsync("settings", () =>
@@ -186,8 +208,61 @@ public sealed class DumpService
         }
     }
 
-    private async Task<Outcome> LoadUserAsync(DumpUser dumped, Dictionary<string, int> roleIds, Dictionary<string, int> folderIds, LoadMode mode,
-        Func<string, string> secret, CancellationToken ct)
+    private Outcome LoadGroup(DumpGroup dumped, Dictionary<string, int> roleIds, Dictionary<string, int> folderIds, Report report,
+        Func<string, string> secret)
+    {
+        var stored = _groups.List().FirstOrDefault(g => string.Equals(g.Name, dumped.Name?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (stored != null && report.Exists())
+            return Outcome.Skipped;
+        var unknown = new List<string>();
+        var errors = new ValidationErrors();
+        var group = new Group
+        {
+            Id = stored?.Id ?? 0,
+            Name = dumped.Name?.Trim() ?? "",
+            Description = dumped.Description,
+            Permissions = PermissionModels.Parse(dumped.Permissions, errors),
+            PathFilters = PermissionModels.ParseFilters(dumped.PathFilters),
+            Storage = ImportStorage(dumped.Storage, secret),
+            VirtualFolders = PermissionModels.Mounts(Mounts(dumped.VirtualFolders, folderIds)),
+            AllowedAuthMethods = dumped.AllowedAuthMethods is { } methods ? AuthMethodNames.Parse(methods, unknown) : null,
+            AllowedIps = dumped.AllowedIps,
+            RoleId = dumped.Role == null ? null : roleIds.TryGetValue(dumped.Role, out var role) ? role : throw new ApiValidationException("role", $"The role '{dumped.Role}' does not exist."),
+        };
+        errors.AddRange("allowedAuthMethods", unknown.Select(n => $"'{n}' is not a login method."));
+        errors.AddRange("", GroupService.Validate(group));
+        errors.AddRange("virtualFolders", _folders.ValidateMounts(group.VirtualFolders));
+        errors.ThrowIfAny();
+        if (stored == null)
+            return _groups.TryAdd(group) ? Outcome.Added : throw new ApiConflictException("The name is used.");
+        return _groups.TryUpdate(group) ? Outcome.Updated : throw new ApiConflictException("The group could not be saved.");
+    }
+
+    private static List<VirtualFolderMountModel> Mounts(IEnumerable<DumpMount>? mounts, Dictionary<string, int> folderIds)
+    {
+        var result = new List<VirtualFolderMountModel>();
+        foreach (var mount in mounts ?? [])
+        {
+            if (!folderIds.TryGetValue(mount.VirtualFolder ?? "", out var id))
+                throw new ApiValidationException("virtualFolders", $"The virtual folder '{mount.VirtualFolder}' is not in the dump or on the server.");
+            result.Add(new VirtualFolderMountModel(id, mount.MountPath));
+        }
+        return result;
+    }
+
+    private async Task<Outcome> LoadRuleAsync(AdminActor actor, EventRuleWrite dumped, LoadMode mode, CancellationToken ct)
+    {
+        var stored = (await _rules.ListAsync(actor, ct)).FirstOrDefault(r => string.Equals(r.Name, dumped.Name?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (stored != null && mode != LoadMode.Update)
+            return mode == LoadMode.Skip ? Outcome.Skipped : throw new ApiConflictException("It exists already.");
+        var result = await _rules.SaveAsync(actor, dumped.ToInput(stored?.Id), ct);
+        if (!result.Succeeded)
+            throw new ApiValidationException("", string.Join(" ", result.Errors));
+        return stored == null ? Outcome.Added : Outcome.Updated;
+    }
+
+    private async Task<Outcome> LoadUserAsync(DumpUser dumped, Dictionary<string, int> roleIds, Dictionary<string, int> folderIds,
+        Dictionary<string, int> groupIds, LoadMode mode, Func<string, string> secret, CancellationToken ct)
     {
         var stored = _userResource.Get(dumped.Username ?? "");
         if (stored != null && mode != LoadMode.Update)
@@ -195,13 +270,8 @@ public sealed class DumpService
         if (dumped.PasswordHash != null && !PasswordHasher.IsWellFormed(dumped.PasswordHash))
             throw new ApiValidationException("passwordHash", "The password hash is not valid.");
 
-        var mounts = new List<VirtualFolderMountModel>();
-        foreach (var mount in dumped.VirtualFolders ?? [])
-        {
-            if (!folderIds.TryGetValue(mount.VirtualFolder ?? "", out var id))
-                throw new ApiValidationException("virtualFolders", $"The virtual folder '{mount.VirtualFolder}' is not in the dump or on the server.");
-            mounts.Add(new VirtualFolderMountModel(id, mount.MountPath));
-        }
+        var mounts = Mounts(dumped.VirtualFolders, folderIds);
+        int GroupId(string name) => groupIds.TryGetValue(name, out var id) ? id : throw new ApiValidationException("groups", $"The group '{name}' does not exist.");
         int? roleId = null;
         if (dumped.Role != null)
             roleId = roleIds.TryGetValue(dumped.Role, out var id) ? id : throw new ApiValidationException("role", $"The role '{dumped.Role}' does not exist.");
@@ -218,6 +288,12 @@ public sealed class DumpService
             PathFilters = dumped.PathFilters,
             VirtualFolders = mounts,
             RoleId = roleId,
+            Description = dumped.Description,
+            Status = dumped.Status,
+            ExpiresAt = dumped.ExpiresAt,
+            MaxSessions = dumped.MaxSessions,
+            PrimaryGroupId = dumped.PrimaryGroup is { } primary ? GroupId(primary) : null,
+            SecondaryGroupIds = (dumped.SecondaryGroups ?? []).Select(GroupId).ToList(),
         };
         var user = stored ?? new User();
         await _userResource.ApplyAsync(write, user, stored == null, errors =>
@@ -234,6 +310,7 @@ public sealed class DumpService
             }
         }, ct);
         user.HashedPassword = dumped.PasswordHash;
+        user.PasswordChangedAt = dumped.PasswordChangedAt;
         user.PublicKeys = dumped.PublicKeys?.ToList();
 
         if (stored == null)

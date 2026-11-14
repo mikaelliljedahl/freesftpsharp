@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Users;
 using System.Text;
 using FreeSftpSharp.Tests.Storage;
 using Microsoft.Extensions.Time.Testing;
@@ -164,7 +165,7 @@ public sealed class EventingFileSystemTests
     {
         // The chain of the factory: events outside the permissions. Upload only, so the stat before the open is refused too.
         var user = new User { Username = "alice", Permissions = new() { ["/"] = FilePermissions.Download } };
-        var permitted = PermissionFileSystem.Wrap(_storage, new EffectivePermissionsService().Resolve(user));
+        var permitted = PermissionFileSystem.Wrap(_storage, new EffectiveUserSettingsService().Resolve(user).Permissions);
         var fileSystem = new EventingFileSystem(permitted, _bus, user, new ClientContext("SFTP", "192.0.2.7"), "memory", _time);
 
         var ex = await Assert.ThrowsAsync<FileSystemException>(async () => await fileSystem.OpenAsync("/a.txt", CreateForWriting, null, Ct));

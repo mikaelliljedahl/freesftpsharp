@@ -37,6 +37,15 @@ public sealed class ApiDumpTests : IDisposable
             name = "dump-folder",
             storage = new { provider = "s3", options = new Dictionary<string, object> { ["Bucket"] = "b", ["AccessKey"] = "AK", ["SecretKey"] = "s3-secret" } },
         }, Ct)).JsonAsync();
+        var group = await (await sourceClient.PostAsJsonAsync("/api/v1/groups", new
+        {
+            name = "dump-group", permissions = new Dictionary<string, string[]> { ["/"] = ["List"] },
+        }, Ct).ExpectAsync(HttpStatusCode.Created)).JsonAsync();
+        await sourceClient.PostAsJsonAsync("/api/v1/event-rules", new
+        {
+            name = "dump-rule", trigger = "OnDemand",
+            actions = new[] { new { type = "CreateDirectory", options = new Dictionary<string, string> { ["Paths"] = "/in" } } },
+        }, Ct).ExpectAsync(HttpStatusCode.Created);
         var key = TestUserKeys.Ed25519();
         await sourceClient.PostAsJsonAsync("/api/v1/users", new
         {
@@ -47,6 +56,8 @@ public sealed class ApiDumpTests : IDisposable
             permissions = new Dictionary<string, string[]> { ["/"] = ["List", "Download"] },
             virtualFolders = new[] { new { virtualFolderId = folder["id"]!.GetValue<int>(), mountPath = "/shared" } },
             roleId,
+            secondaryGroupIds = new[] { group["id"]!.GetValue<int>() },
+            maxSessions = 3,
         }, Ct).ExpectAsync(HttpStatusCode.Created);
         await sourceClient.PostAsJsonAsync("/api/v1/webhooks", new
         {
@@ -85,6 +96,11 @@ public sealed class ApiDumpTests : IDisposable
         var targetFolder = Assert.Single(target.Repository.GetVirtualFolders(), f => f.Name == "dump-folder");
         Assert.Equal("/shared", Assert.Single(user.VirtualFolders).MountPath);
         Assert.Equal(targetFolder.Id, user.VirtualFolders[0].VirtualFolderId);
+        var targetGroup = Assert.Single(target.Repository.GetGroups(), g => g.Name == "dump-group");
+        Assert.Equal([targetGroup.Id], user.SecondaryGroupIds);
+        Assert.Equal(3, user.MaxSessions);
+        var rules = await (await targetClient.GetAsync("/api/v1/event-rules", Ct)).JsonAsync();
+        Assert.Equal("dump-rule", Assert.Single(rules["items"]!.AsArray())!["name"]!.GetValue<string>());
         Assert.DoesNotContain("s3-secret", targetFolder.Storage.Options);
         var admin = (await target.Admins.GetAdminAsync("dump-admin", Ct))!;
         Assert.Equal((await source.Admins.GetAdminAsync("dump-admin", Ct))!.PasswordHash, admin.PasswordHash);

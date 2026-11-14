@@ -84,6 +84,8 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | Route | Permission | Operations |
 |---|---|---|
 | `/users` | ManageUsers (and the scope role) | list (`?search`, `?roleId`), get, create, `PUT`, `PATCH`, delete |
+| `/groups` | read: ManageUsers or ManageGroups; change: ManageGroups (and the scope role) | list, get, create, `PUT`, `PATCH`, delete (only without members); `GET /{id}/members` |
+| `/groups/{id}/members` | ManageUsers | `POST {username, primary}` adds a user (primary or secondary group), `DELETE /{id}/members/{username}` removes it |
 | `/users/{username}/public-keys` | ManageUsers | list, add (authorized_keys text), remove (`?fingerprint=SHA256:...`), `POST .../generate` (returns the private key once) |
 | `/virtual-folders` | read: ManageUsers or ManageFolders; change: ManageFolders | list, get, create, `PUT`, `PATCH`, delete |
 | `/storage-providers` | any administrator | the storage providers and their options; `POST /storage-providers/test` tries a storage |
@@ -92,13 +94,19 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/connections` | ViewConnections; DisconnectConnections to close one | list, `DELETE /connections/{id}` |
 | `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to` |
 | `/webhooks` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/test`, `GET /{id}/deliveries`, `POST /deliveries/{id}/redeliver`, `GET /event-types` |
+| `/event-rules` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/run` (scheduled and on-demand rules), `GET /{id}/runs`, `GET /action-types` |
 | `/ip-bans` | ManageSettings | the active auto-bans, `DELETE /ip-bans/{address}` |
 | `/settings` | read: any administrator; change: ManageSettings | get (with the host key fingerprints), `PUT`/`PATCH` (a value that is not given stays) |
 | `/status` | any administrator | version, start time, uptime, node, and the permissions of the caller |
 | `/dump`, `/load` | SuperAdmin | export and import of every stored object (below) |
 
-Groups (#61), quotas (#62) and shares (#70) get their routes with their features. Event rules and actions (#68) and
-the second-factor administration (#63, set up or reset a TOTP app) have no routes yet; they come in a follow-up.
+Quotas (#62) and shares (#70) get their routes with their features. The second-factor administration (#63: set up
+or reset the TOTP app of a user or an administrator) has no routes yet.
+
+A user has its own settings and the settings of its groups (#61): `primaryGroupId`, `secondaryGroupIds`; a value that
+the user does not set (`permissions` and `pathFilters` not given, no `storage`) comes from the groups. The lifecycle
+fields are `status` (`Enabled`, `Disabled`), `expiresAt` (UTC), `maxSessions` (0: no limit) and `description`; the views
+also have `lastLoginAt` and `passwordChangedAt`. All times are UTC; a time without an offset is UTC.
 
 ### Conventions
 
@@ -143,9 +151,9 @@ curl -s -X PATCH https://sftp.example.com/api/v1/users/alice -H "X-API-Key: $KEY
 
 ## Dump and load
 
-`GET /api/v1/dump` exports the roles, administrators, virtual folders, users, webhooks and settings as one JSON
+`GET /api/v1/dump` exports the roles, administrators, virtual folders, groups, users, webhooks, event rules and settings as one JSON
 document, independent of the settings database. Objects refer to each other by name, so the dump can be loaded into
-another server. Passwords and keys are in it as their hashes and public keys. The storage and webhook secrets are in
+another server. Passwords and keys are in it as their hashes and public keys. The storage (also of groups) and webhook secrets are in
 it only when the request has a passphrase (at least 12 characters) in the header `X-Dump-Passphrase`: they are then
 encrypted with it (AES-256-GCM, key from PBKDF2-SHA256). Without the header the secrets are left out and listed in
 `omittedSecrets`. Keep a dump safe: it has the password hashes.

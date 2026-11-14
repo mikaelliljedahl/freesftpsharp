@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114124514_AddApiKeys")]
-partial class _20261114124514_AddApiKeys
+[Migration("20261114125151_AddApiKeys")]
+partial class _20261114125151_AddApiKeys
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -312,6 +312,51 @@ partial class _20261114124514_AddApiKeys
                 b.ToTable("EventRuleRuns");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.Groups.Group", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("AllowedAuthMethods")
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("AllowedIps")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("PathFilters")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Permissions")
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("RoleId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.HasIndex("RoleId");
+
+                b.ToTable("Groups");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.ServerSettings", b =>
             {
                 b.Property<int>("Id")
@@ -349,6 +394,9 @@ partial class _20261114124514_AddApiKeys
                     .HasColumnType("INTEGER");
 
                 b.Property<bool>("OnlyWhitelistedIps")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("PasswordMaxAgeDays")
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("ServerBanner")
@@ -406,20 +454,36 @@ partial class _20261114124514_AddApiKeys
                     .HasMaxLength(128)
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("ExpiresAt")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("HashedPassword")
                     .HasColumnType("TEXT");
 
-                b.Property<DateTime>("LastSuccessfulLogin")
+                b.Property<DateTime?>("LastLoginAt")
                     .HasColumnType("TEXT");
+
+                b.Property<int>("MaxSessions")
+                    .HasColumnType("INTEGER");
 
                 b.Property<bool>("OnlyWhitelistedIps")
                     .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("PasswordChangedAt")
+                    .HasColumnType("TEXT");
 
                 b.Property<string>("PathFilters")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Permissions")
                     .HasColumnType("TEXT");
+
+                b.Property<int?>("PrimaryGroupId")
+                    .HasColumnType("INTEGER");
 
                 b.Property<string>("PublicKeys")
                     .HasColumnType("TEXT");
@@ -431,6 +495,15 @@ partial class _20261114124514_AddApiKeys
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("RsaPublicKey")
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("SecondaryGroupIds")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Storage")
@@ -449,6 +522,8 @@ partial class _20261114124514_AddApiKeys
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
+
+                b.HasIndex("PrimaryGroupId");
 
                 b.HasIndex("RoleId");
 
@@ -688,8 +763,59 @@ partial class _20261114124514_AddApiKeys
                     .IsRequired();
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.Groups.Group", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Role", null)
+                    .WithMany()
+                    .HasForeignKey("RoleId")
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                b.OwnsMany("SshServer.Interfaces.Storage.VirtualFolderMount", "VirtualFolders", b1 =>
+                    {
+                        b1.Property<int>("Id")
+                            .ValueGeneratedOnAdd()
+                            .HasColumnType("INTEGER");
+
+                        b1.Property<int>("GroupId")
+                            .HasColumnType("INTEGER");
+
+                        b1.Property<string>("MountPath")
+                            .IsRequired()
+                            .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<int>("VirtualFolderId")
+                            .HasColumnType("INTEGER");
+
+                        b1.HasKey("Id");
+
+                        b1.HasIndex("VirtualFolderId");
+
+                        b1.HasIndex("GroupId", "MountPath")
+                            .IsUnique();
+
+                        b1.ToTable("GroupVirtualFolders");
+
+                        b1.WithOwner()
+                            .HasForeignKey("GroupId");
+
+                        b1.HasOne("SshServer.Interfaces.Storage.VirtualFolder", null)
+                            .WithMany()
+                            .HasForeignKey("VirtualFolderId")
+                            .OnDelete(DeleteBehavior.Cascade)
+                            .IsRequired();
+                    });
+
+                b.Navigation("VirtualFolders");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
             {
+                b.HasOne("SshServer.Interfaces.Groups.Group", null)
+                    .WithMany()
+                    .HasForeignKey("PrimaryGroupId")
+                    .OnDelete(DeleteBehavior.Restrict);
+
                 b.HasOne("SshServer.Interfaces.Admins.Role", null)
                     .WithMany()
                     .HasForeignKey("RoleId")

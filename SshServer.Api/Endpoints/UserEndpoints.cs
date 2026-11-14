@@ -69,7 +69,7 @@ internal static class UserEndpoints
             {
                 if (resource.Get(username) == null)
                     return NotFound(username);
-                var expires = request.ExpiresAt is { } at ? DateTime.SpecifyKind(at.ToUniversalTime(), DateTimeKind.Utc) : (DateTime?)null;
+                var expires = ApiTime.ToUtc(request.ExpiresAt);
                 var (added, skipped) = service.AddPublicKeys(username, request.Keys ?? "", expires);
                 return TypedResults.Ok(new PublicKeysAdded(added, skipped));
             })

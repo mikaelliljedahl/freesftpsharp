@@ -46,7 +46,7 @@ namespace FxSsh.SshServerModule.Security
             _nextCleanup = time.GetUtcNow() + CleanupInterval;
         }
 
-        /// <summary>The clock of the tracker. The server also uses it for <c>User.LastSuccessfulLogin</c>.</summary>
+        /// <summary>The clock of the tracker. The server also uses it for <c>User.LastLoginAt</c>.</summary>
         public TimeProvider Time { get; }
 
         /// <summary>The number of addresses with failure records (for tests).</summary>

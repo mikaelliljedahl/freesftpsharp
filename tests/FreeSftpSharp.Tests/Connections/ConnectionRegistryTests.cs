@@ -28,6 +28,38 @@ public sealed class ConnectionRegistryTests
         }));
 
     [Fact]
+    public void TrySetAuthenticated_refuses_a_login_over_the_session_limit_and_counts_without_case()
+    {
+        var first = Register();
+        var second = Register();
+        var third = Register();
+
+        Assert.True(_registry.TrySetAuthenticated(first.Id, "alice", "password", maxSessions: 2));
+        Assert.True(_registry.TrySetAuthenticated(second.Id, "ALICE", "password", maxSessions: 2));
+        Assert.False(_registry.TrySetAuthenticated(third.Id, "alice", "password", maxSessions: 2));
+
+        Assert.Null(_registry.Get(third.Id)!.Username);
+        Assert.Equal(2, _registry.CountSessions("Alice", third.Id));
+        Assert.Equal(1, _registry.CountSessions("alice", first.Id));
+        Assert.Equal(2, _events.Count(e => e.Kind == ConnectionEventKind.Authenticated));
+        Assert.True(_registry.TrySetAuthenticated(third.Id, "bob", "password", maxSessions: 1));
+        Assert.True(_registry.TrySetAuthenticated(Register().Id, "alice", "password", maxSessions: 0)); // 0: no limit
+        Assert.False(_registry.TrySetAuthenticated(Guid.NewGuid(), "carol", "password", maxSessions: 0));
+    }
+
+    [Fact]
+    public async Task Logins_at_the_same_time_never_take_more_than_the_session_limit()
+    {
+        var connections = Enumerable.Range(0, 50).Select(_ => Register()).ToList();
+        _registry.Changed -= _events.Add; // the list is not thread safe
+
+        var results = await Task.WhenAll(connections.Select(c => Task.Run(() => _registry.TrySetAuthenticated(c.Id, "alice", "password", maxSessions: 3))));
+
+        Assert.Equal(3, results.Count(r => r));
+        Assert.Equal(3, _registry.CountSessions("alice", Guid.Empty));
+    }
+
+    [Fact]
     public void Register_adds_an_unauthenticated_connection_and_raises_Connected()
     {
         var connection = Register("192.0.2.10:40001");

@@ -45,8 +45,8 @@ internal static class MonitoringEndpoints
                     Username = Clean(username),
                     Type = Clean(type),
                     Status = Clean(status),
-                    FromUtc = from?.ToUniversalTime(),
-                    ToUtc = to?.ToUniversalTime(),
+                    FromUtc = ApiTime.ToUtc(from),
+                    ToUtc = ApiTime.ToUtc(to),
                     Skip = skip,
                     Take = take,
                 }, ct);

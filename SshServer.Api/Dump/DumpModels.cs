@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using SshServer.Api.Endpoints;
+using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Authentication;
 
@@ -7,8 +8,9 @@ namespace SshServer.Api.Dump;
 
 /// <summary>
 /// The provider-independent export of the stored objects (<c>GET /api/v1/dump</c>), for backup, migration and
-/// infrastructure as code. Objects refer to each other by name, not by id. Passwords are their hashes; the secrets of
-/// storages and webhooks are in the dump only when the caller gives a passphrase (<see cref="Secrets"/>), encrypted with it.
+/// infrastructure as code: roles, administrators, virtual folders, groups, users, webhooks, event rules and settings.
+/// Objects refer to each other by name, not by id. Passwords are their hashes; the secrets of storages and webhooks are
+/// in the dump only when the caller gives a passphrase (<see cref="Secrets"/>), encrypted with it.
 /// </summary>
 public sealed record DumpDocument
 {
@@ -33,9 +35,14 @@ public sealed record DumpDocument
 
     public List<DumpVirtualFolder> VirtualFolders { get; init; } = [];
 
+    public List<DumpGroup> Groups { get; init; } = [];
+
     public List<DumpUser> Users { get; init; } = [];
 
     public List<DumpWebhook> Webhooks { get; init; } = [];
+
+    /// <summary>The event rules (#68); they have no secrets (the SMTP account is in the configuration).</summary>
+    public List<EventRuleWrite> EventRules { get; init; } = [];
 
     public SettingsModel? Settings { get; init; }
 }
@@ -57,8 +64,14 @@ public sealed record DumpMount(string VirtualFolder, string MountPath);
 
 public sealed record DumpUser(string Username, string RootDirectory, string? PasswordHash, List<PublicKeyEntry> PublicKeys,
     List<string> AllowedAuthMethods, List<string> RequireAllOf, bool OnlyWhitelistedIps, List<string> WhitelistedIps,
-    Dictionary<string, List<string>> Permissions, Dictionary<string, PathFilterModel> PathFilters, DumpStorage? Storage,
-    List<DumpMount> VirtualFolders, string? Role);
+    Dictionary<string, List<string>>? Permissions, Dictionary<string, PathFilterModel>? PathFilters, DumpStorage? Storage,
+    List<DumpMount> VirtualFolders, string? Role, string? Description, UserStatus Status, DateTime? ExpiresAt, int MaxSessions,
+    DateTime? PasswordChangedAt, string? PrimaryGroup, List<string> SecondaryGroups);
+
+/// <summary>A group (#61); its storage is a template.</summary>
+public sealed record DumpGroup(string Name, string? Description, Dictionary<string, List<string>>? Permissions,
+    Dictionary<string, PathFilterModel>? PathFilters, DumpStorage? Storage, List<DumpMount> VirtualFolders, List<string>? AllowedAuthMethods,
+    List<string>? AllowedIps, string? Role);
 
 public sealed record DumpWebhook(string Name, string Url, string Method, string? Secret, Dictionary<string, string> Headers,
     List<string> EventTypes, List<string> Users, string? PathGlob, bool Sync, bool FailOpen, int TimeoutSeconds, bool Enabled);

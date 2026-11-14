@@ -65,4 +65,75 @@ namespace FxSshSftpServer.Models
         private static List<string> Patterns(string text) =>
             (text ?? "").Split([',', ' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToList();
     }
+
+    /// <summary>The table rows of permissions and path filters and their checks, for the user and the group forms.</summary>
+    public static class PermissionTables
+    {
+        /// <summary>The rows of the stored permissions: "/" first (All when it is not stored), then by path.</summary>
+        public static List<PermissionRow> RowsOf(Dictionary<string, FilePermissions> permissions)
+        {
+            var rows = (permissions ?? new Dictionary<string, FilePermissions>())
+                .Select(p => new PermissionRow { Path = p.Key, Permissions = p.Value })
+                .ToList();
+            if (!rows.Any(r => r.IsRoot))
+                rows.Add(PermissionRow.Root());
+            return rows.OrderBy(r => r.IsRoot ? 0 : 1).ThenBy(r => r.Path, StringComparer.Ordinal).ToList();
+        }
+
+        public static List<PathFilterRow> FilterRowsOf(Dictionary<string, PathFilter> filters) =>
+            (filters ?? new Dictionary<string, PathFilter>())
+                .OrderBy(f => f.Key, StringComparer.Ordinal)
+                .Select(f => PathFilterRow.From(f.Key, f.Value))
+                .ToList();
+
+        public static Dictionary<string, FilePermissions> ToDictionary(IEnumerable<PermissionRow> rows)
+        {
+            var result = new Dictionary<string, FilePermissions>(StringComparer.Ordinal);
+            foreach (var row in rows)
+                result.TryAdd(NormalizedOrRaw(row.Path), row.Permissions);
+            return result;
+        }
+
+        public static Dictionary<string, PathFilter> ToDictionary(IEnumerable<PathFilterRow> rows)
+        {
+            var result = new Dictionary<string, PathFilter>(StringComparer.Ordinal);
+            foreach (var row in rows)
+                result.TryAdd(NormalizedOrRaw(row.Path), row.ToFilter());
+            return result;
+        }
+
+        /// <summary>The filters without the empty ones; null when none is left (not set).</summary>
+        public static Dictionary<string, PathFilter> NonEmptyFilters(IEnumerable<PathFilterRow> rows)
+        {
+            var filters = ToDictionary(rows).Where(f => !f.Value.IsEmpty).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
+            return filters.Count == 0 ? null : filters;
+        }
+
+        /// <summary>True for the rows of a new user: "/" with every permission and nothing else, the same as no permissions.</summary>
+        public static bool IsRootAllOnly(IReadOnlyCollection<PermissionRow> rows) =>
+            rows.Count == 1 && rows.First().IsRoot && rows.First().Permissions == FilePermissions.All;
+
+        /// <summary>A valid path is stored normalized; an invalid one is kept as typed, so the validation can tell about it.</summary>
+        public static string NormalizedOrRaw(string path)
+        {
+            var trimmed = (path ?? "").Trim();
+            return trimmed.StartsWith('/') ? VirtualPath.Normalize(trimmed) : trimmed;
+        }
+
+        /// <summary>The problems of the permission rows (first) and the filter rows (second).</summary>
+        public static (IReadOnlyList<string> Permissions, IReadOnlyList<string> Filters) Problems(
+            IReadOnlyCollection<PermissionRow> permissions, IReadOnlyCollection<PathFilterRow> filters)
+        {
+            var permissionProblems = new List<string>();
+            var filterProblems = new List<string>();
+            // Rows that are typed twice are found here; the dictionaries keep only the first of them.
+            foreach (var path in permissions.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
+                permissionProblems.Add($"The path {path.Key} has permissions twice.");
+            foreach (var path in filters.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
+                filterProblems.Add($"The path {path.Key} has a filter twice.");
+            permissionProblems.AddRange(PermissionRulesValidator.Validate(ToDictionary(permissions), null));
+            filterProblems.AddRange(PermissionRulesValidator.Validate(null, ToDictionary(filters)));
+            return (permissionProblems, filterProblems);
+        }
+    }
 }

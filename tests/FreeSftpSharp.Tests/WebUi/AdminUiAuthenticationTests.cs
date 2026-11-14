@@ -18,6 +18,7 @@ public sealed partial class AdminUiAuthenticationTests : IClassFixture<AdminUiFa
     [InlineData("/users")]
     [InlineData("/general")]
     [InlineData("/virtual-folders")]
+    [InlineData("/groups")]
     [InlineData("/Users")]
     [InlineData("/some/unknown/page")]
     public async Task Anonymous_page_request_redirects_to_the_login_page(string path)
