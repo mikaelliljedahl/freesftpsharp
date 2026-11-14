@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.Api;
+using SshServer.Settings.Sql.Api;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Authentication;
@@ -27,8 +29,9 @@ namespace SshServer.Settings.Sql;
 /// names (<c>All</c>, <c>Password, PublicKey</c>). The audit
 /// log (<see cref="AuditEntry"/>), the webhooks with their outbox (<see cref="Webhook"/>, <see cref="WebhookDelivery"/>),
 /// the administrators (<see cref="Admin"/>), the scope roles (<see cref="Role"/>, referenced by
-/// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>) and the event rules with their runs
-/// (<see cref="EventRule"/>, <see cref="EventRuleRun"/>; conditions and actions as JSON text columns) are in the same database.
+/// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>), the event rules with their runs
+/// (<see cref="EventRule"/>, <see cref="EventRuleRun"/>; conditions and actions as JSON text columns), the REST API keys
+/// (<see cref="ApiKey"/>, removed with their administrator) and the signing key of the API tokens (#67) are in the same database.
 /// <para>
 /// A <see cref="StorageConfig"/> (the storage of a user or of a <see cref="VirtualFolder"/>) is a JSON text column
 /// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
@@ -67,6 +70,8 @@ public class SettingsDbContext : DbContext
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
     public DbSet<Admin> Admins => Set<Admin>();
     public DbSet<Role> Roles => Set<Role>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<ApiSigningKey> ApiSigningKeys => Set<ApiSigningKey>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<TwoFactorRecord> TwoFactorEnrolments => Set<TwoFactorRecord>();
     public DbSet<EventRule> EventRules => Set<EventRule>();
@@ -230,6 +235,29 @@ public class SettingsDbContext : DbContext
             b.Property(a => a.Permissions).HasConversion<string>().HasMaxLength(512);
             b.PrimitiveCollection(a => a.AllowedIps).IsRequired(false);
             b.HasOne<Role>().WithMany().HasForeignKey(a => a.ScopeRoleId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ApiKey>(b =>
+        {
+            b.ToTable("ApiKeys");
+            b.HasKey(k => k.Id);
+            var name = b.Property(k => k.Name).IsRequired().HasMaxLength(100);
+            if (Database.IsSqlite())
+                name.UseCollation("NOCASE");
+            b.Property(k => k.Prefix).IsRequired().HasMaxLength(16);
+            b.Property(k => k.KeyHash).IsRequired().HasMaxLength(64);
+            b.HasIndex(k => k.KeyHash).IsUnique();
+            b.HasIndex(k => new { k.AdminId, k.Name }).IsUnique();
+            b.Property(k => k.Scopes).HasConversion<string>().HasMaxLength(512);
+            b.HasOne<Admin>().WithMany().HasForeignKey(k => k.AdminId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ApiSigningKey>(b =>
+        {
+            b.ToTable("ApiSigningKeys");
+            b.HasKey(k => k.Id);
+            b.Property(k => k.Id).ValueGeneratedNever();
+            b.Property(k => k.ProtectedKey).IsRequired();
         });
 
         modelBuilder.Entity<TwoFactorRecord>(b =>

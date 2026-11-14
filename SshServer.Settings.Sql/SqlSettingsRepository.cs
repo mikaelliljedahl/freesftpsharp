@@ -527,7 +527,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         catch (Exception ex)
         {
             // The change is saved; only its event is lost.
-            _logger.LogError(ex, "Could not publish the {Action} event of {ObjectType} {Name}.", @event.Action, @event.ObjectType, @event.ObjectName);
+            _logger.LogError(ex, "Could not publish the {Action} event of a {ObjectType}.", @event.Action, @event.ObjectType);
         }
     }
 

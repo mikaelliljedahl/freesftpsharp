@@ -2,7 +2,7 @@ using System;
 using Microsoft.AspNetCore.Authorization;
 using SshServer.Interfaces.Admins;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// One authorization policy per <see cref="AdminPermissions"/> flag, named like the flag. The pages use them with

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// Counts failed admin logins per client (remote IP). After <c>maxFailures</c> failures inside the lockout

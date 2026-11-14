@@ -10,6 +10,8 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Events;
 using SshServer.Settings.Sql.Admins;
+using SshServer.Settings.Sql.Api;
+using SshServer.Interfaces.Api;
 using SshServer.Settings.Sql.Audit;
 using SshServer.Settings.Sql.Webhooks;
 using SshServer.Settings.Sql.Quotas;
@@ -36,7 +38,8 @@ namespace SshServer.Settings.Sql
         /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
         /// provider keeps them in memory only. The TOTP enrolments (<see cref="ITwoFactorStore"/>, #63) are in the same
-        /// database; the LiteDB provider has none.
+        /// database; the LiteDB provider has none. The REST API keys and the token signing key (<see cref="IApiKeyStore"/>,
+        /// <see cref="IApiSigningKeyStore"/>, #67) are in the same database; the LiteDB provider keeps them in memory only.
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -68,6 +71,13 @@ namespace SshServer.Settings.Sql
                         sp.GetRequiredService<ISettingsRepository>();
                         return new SqlAdminStore(dbOptions);
                     });
+                    services.TryAddSingleton(sp =>
+                    {
+                        sp.GetRequiredService<ISettingsRepository>();
+                        return new SqlApiKeyStore(dbOptions);
+                    });
+                    services.TryAddSingleton<IApiKeyStore>(sp => sp.GetRequiredService<SqlApiKeyStore>());
+                    services.TryAddSingleton<IApiSigningKeyStore>(sp => sp.GetRequiredService<SqlApiKeyStore>());
                     services.TryAddSingleton<ITwoFactorStore>(sp =>
                     {
                         sp.GetRequiredService<ISettingsRepository>(); // creates and migrates the database
@@ -86,6 +96,9 @@ namespace SshServer.Settings.Sql
                     services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
                     services.TryAddSingleton<IEventRuleStore, DisabledEventRuleStore>();
                     services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
+                    services.TryAddSingleton<InMemoryApiKeyStore>();
+                    services.TryAddSingleton<IApiKeyStore>(sp => sp.GetRequiredService<InMemoryApiKeyStore>());
+                    services.TryAddSingleton<IApiSigningKeyStore>(sp => sp.GetRequiredService<InMemoryApiKeyStore>());
                     services.TryAddSingleton<ITwoFactorStore, DisabledTwoFactorStore>();
                     break;
 

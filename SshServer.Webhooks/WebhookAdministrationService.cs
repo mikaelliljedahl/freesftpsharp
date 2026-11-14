@@ -194,7 +194,7 @@ public sealed class WebhookAdministrationService
         await _events.PublishAsync(new ProviderEvent(action, ProviderObjectType.Webhook, webhook.Name)
         {
             Timestamp = _time.GetUtcNow(),
-            Actor = actor.Username,
+            Actor = actor.AuditName,
             Object = WebhookSnapshot.From(webhook),
             ChangedFields = changed,
         }, ct);

@@ -26,6 +26,7 @@ using SshServer.Observability;
 using SshServerModule.Authentication;
 using SshServer.Authentication.Http;
 using SshServer.Authentication.Ldap;
+using SshServer.Api;
 using FreeSftpSharp.WebDav;
 
 using FxSshSftpServer.Security;
@@ -88,6 +89,7 @@ builder.Services.AddSshServerAuthentication(builder.Configuration); // the crede
 builder.Services.AddHttpAuthHook(builder.Configuration); // the external HTTP hook (#64): off until Auth:HttpHook:Url is set
 builder.Services.AddLdapAuthentication(builder.Configuration); // LDAP / Active Directory (#64): off until Auth:Ldap:Server is set
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
+builder.Services.AddRestApi(builder.Configuration); // the REST API under /api/v1 (#67), only with Api:Enabled
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
@@ -129,6 +131,7 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorPages(); // Login, Logout, Error
 app.MapRazorComponents<FxSshSftpServer.Components.App>()
     .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
+app.MapRestApi(); // bearer token or API key, never the login cookie
 
 
 try

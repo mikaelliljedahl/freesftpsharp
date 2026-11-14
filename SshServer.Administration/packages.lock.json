@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net11.0": {
+      "sshserver.interfaces": {
+        "type": "Project"
+      }
+    }
+  }
+}
