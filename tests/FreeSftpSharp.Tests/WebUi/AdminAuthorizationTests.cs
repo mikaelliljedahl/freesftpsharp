@@ -74,6 +74,7 @@ public sealed partial class AdminAuthorizationTests : IClassFixture<StoredAdmins
             ("/admins", AdminPermissions.ManageAdmins),
             ("/roles", AdminPermissions.ManageAdmins),
             ("/webhooks", AdminPermissions.ManageEvents),
+            ("/eventrules", AdminPermissions.ManageEvents),
         };
         var admins = new (string Name, AdminPermissions Effective)[]
         {

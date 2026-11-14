@@ -1,0 +1,226 @@
+@using System.Threading
+@using SshServer.TwoFactor
+@using SshServer.Interfaces.TwoFactor
+@inject TwoFactorAdministration TwoFactor
+@inject ToastService Toasts
+
+@* The TOTP second factor (#63) of one user or administrator: setup with a QR code, the recovery codes (shown once) and
+   the reset. Plain buttons and inputs, no form: the panel can be inside the form of the user page. *@
+<div class="two-factor-panel" id="two-factor-panel">
+    @if (error is not null)
+    {
+        <div class="alert alert-danger py-2 small" role="alert" id="two-factor-error">@error</div>
+    }
+
+    @if (recoveryCodes is not null)
+    {
+        <div class="alert alert-warning small" id="recovery-codes">
+            <p class="mb-2 fw-semibold"><i class="bi bi-exclamation-triangle"></i> Recovery codes. They are shown only now.</p>
+            <p class="mb-2">Each code works once instead of a code of the app. @(isSelf ? "Keep them" : "Give them to the user") in a safe place.</p>
+            <ul class="list-unstyled font-monospace mb-2 row row-cols-2 g-1">
+                @foreach (var recovery in recoveryCodes)
+                {
+                    <li class="col recovery-code">@recovery</li>
+                }
+            </ul>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="HideCodes" id="recovery-codes-done">I have saved them</button>
+        </div>
+    }
+    else if (status is null)
+    {
+        <div class="small text-body-secondary">Loading...</div>
+    }
+    else if (setup is not null)
+    {
+        <p class="small mb-2">
+            Scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy or a TOTP token),
+            or enter the key by hand. Then enter the code that the app shows.
+        </p>
+        <div class="d-flex flex-wrap gap-3 align-items-start mb-2">
+            <div class="border rounded bg-white p-1" style="width: 11rem;" id="two-factor-qr">@((MarkupString)setup.QrCodeSvg)</div>
+            <div class="small">
+                <div class="text-body-secondary">Key</div>
+                <div class="font-monospace text-break mb-2" id="two-factor-secret">@GroupedSecret</div>
+                <div class="text-body-secondary">Time-based, SHA-1, 6 digits, 30 seconds</div>
+            </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <label class="visually-hidden" for="two-factor-confirm-code">Code from the app</label>
+            <input type="text" id="two-factor-confirm-code" class="form-control form-control-sm font-monospace w-auto" placeholder="123456"
+                   autocomplete="one-time-code" inputmode="numeric" maxlength="12" @bind="code" />
+            <button type="button" class="btn btn-sm btn-primary" @onclick="ConfirmAsync" disabled="@busy" id="two-factor-confirm">Turn on</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelSetupAsync" disabled="@busy" id="two-factor-cancel">Cancel</button>
+        </div>
+    }
+    else if (status.State == TwoFactorState.On)
+    {
+        <p class="small mb-2" id="two-factor-on">
+            <span class="badge text-bg-success me-1">on</span>
+            Every login needs a code of the app. @status.RecoveryCodesLeft recovery code(s) left.
+        </p>
+        @if (isSelf)
+        {
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <label class="visually-hidden" for="two-factor-current-code">Current code</label>
+                <input type="text" id="two-factor-current-code" class="form-control form-control-sm font-monospace w-auto" placeholder="Current code"
+                       autocomplete="one-time-code" maxlength="12" @bind="code" />
+                @if (canSetUp)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="RegenerateAsync" disabled="@busy" id="two-factor-regenerate">New recovery codes</button>
+                }
+                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ResetAsync" disabled="@busy" id="two-factor-reset">Turn off</button>
+            </div>
+            <div class="form-text">Both need a current code of the app or a recovery code.</div>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap gap-2">
+                @if (canSetUp)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="RegenerateAsync" disabled="@busy" id="two-factor-regenerate">New recovery codes</button>
+                }
+                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => resetDialog.Open()" disabled="@busy" id="two-factor-reset">Reset 2FA</button>
+            </div>
+            <div class="form-text">A reset turns the second factor off, for example when the phone is lost. The next login needs no code.</div>
+        }
+    }
+    else
+    {
+        <p class="small text-body-secondary mb-2" id="two-factor-off">
+            Off. With a second factor, every login needs a code of an authenticator app after the password or the key
+            (over SSH: keyboard-interactive).
+        </p>
+        @if (canSetUp)
+        {
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="BeginSetupAsync" disabled="@busy" id="two-factor-setup">
+                <i class="bi bi-shield-lock"></i> Set up an authenticator app
+            </button>
+        }
+    }
+</div>
+
+<ConfirmDialog @ref="resetDialog" Title="Reset two-factor authentication" ConfirmText="Reset" OnConfirm="ResetAsync">
+    Turn off the second factor of <strong>@Target?.Name</strong>? The next login needs no code, until a new app is set up.
+</ConfirmDialog>
+
+@code {
+    private TwoFactorStatus status;
+    private TwoFactorSetup setup;
+    private IReadOnlyList<string> recoveryCodes;
+    private string code;
+    private string error;
+    private bool busy;
+    private bool isSelf;
+    private bool canSetUp;
+    private ConfirmDialog resetDialog;
+    private TwoFactorTarget loaded;
+
+    /// <summary>Whose second factor this is.</summary>
+    [Parameter, EditorRequired] public TwoFactorTarget Target { get; set; }
+
+    /// <summary>Called after the second factor was turned on or off.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string GroupedSecret => string.Join(" ", Enumerable.Range(0, (setup.SecretBase32.Length + 3) / 4)
+        .Select(i => setup.SecretBase32.Substring(i * 4, Math.Min(4, setup.SecretBase32.Length - i * 4))));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Target == loaded)
+            return;
+        loaded = Target;
+        setup = null;
+        recoveryCodes = null;
+        code = null;
+        error = null;
+        isSelf = TwoFactor.IsSelf(Target);
+        canSetUp = TwoFactor.CanSetUp(Target);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            status = await TwoFactor.GetStatusAsync(Target, CancellationToken.None);
+        }
+        catch (Exception ex) when (IsExpected(ex))
+        {
+            error = ex.Message;
+            status = new TwoFactorStatus(TwoFactorState.Off, 0, null);
+        }
+    }
+
+    private Task BeginSetupAsync() => RunAsync(async () =>
+    {
+        setup = await TwoFactor.BeginSetupAsync(Target, CancellationToken.None);
+        code = null;
+    });
+
+    private Task ConfirmAsync() => RunAsync(async () =>
+    {
+        var given = code;
+        var codes = await Task.Run(() => TwoFactor.ConfirmSetupAsync(Target, given, CancellationToken.None));
+        if (codes is null)
+        {
+            error = "The code is not valid. Check the time of the device and try the next code.";
+            return;
+        }
+        setup = null;
+        code = null;
+        recoveryCodes = codes;
+        await LoadAsync();
+        Toasts.ShowSuccess($"Two-factor authentication is on for {Target.Name}.");
+        await OnChanged.InvokeAsync();
+    });
+
+    private Task CancelSetupAsync() => RunAsync(async () =>
+    {
+        await TwoFactor.ResetAsync(Target, null, CancellationToken.None);
+        setup = null;
+        code = null;
+        await LoadAsync();
+    });
+
+    private Task RegenerateAsync() => RunAsync(async () =>
+    {
+        var given = code;
+        recoveryCodes = await Task.Run(() => TwoFactor.RegenerateRecoveryCodesAsync(Target, given, CancellationToken.None));
+        code = null;
+        await LoadAsync();
+    });
+
+    private Task ResetAsync() => RunAsync(async () =>
+    {
+        var given = code;
+        await Task.Run(() => TwoFactor.ResetAsync(Target, given, CancellationToken.None));
+        code = null;
+        await LoadAsync();
+        Toasts.ShowSuccess($"Two-factor authentication is off for {Target.Name}.");
+        await OnChanged.InvokeAsync();
+    });
+
+    private void HideCodes() => recoveryCodes = null;
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            // The calls with PBKDF2 (recovery codes) run with Task.Run, off the synchronization context of the circuit.
+            await action();
+        }
+        catch (Exception ex) when (IsExpected(ex))
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static bool IsExpected(Exception ex) =>
+        ex is TwoFactorException or AdminAccessDeniedException or AdminAdministrationException or NotSupportedException;
+}

@@ -97,7 +97,7 @@ public sealed class DumpService
                 u.Storage is { } storage ? ExportStorage(storage, (option, text) => Secret($"users/{u.Username}", option, text)) : null,
                 (u.VirtualFolders ?? []).Select(m => new DumpMount(folderNames.GetValueOrDefault(m.VirtualFolderId) ?? "", m.MountPath)).ToList(),
                 u.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null)).ToList(),
-            Webhooks = (await _webhooks.ListAsync(ct)).Select(w => new DumpWebhook(w.Name, w.Url, w.Method,
+            Webhooks = (await _webhooks.ListAsync(actor, ct)).Select(w => new DumpWebhook(w.Name, w.Url, w.Method,
                 w.ProtectedSecret is { } secret && _webhookSecrets.TryUnprotect(secret) is { } plain ? Secret($"webhooks/{w.Name}", "secret", plain) : null,
                 new Dictionary<string, string>(w.Headers), [.. w.EventTypes], [.. w.Users], w.PathGlob, w.Sync, w.FailOpen, w.TimeoutSeconds,
                 w.Enabled)).ToList(),
@@ -130,7 +130,7 @@ public sealed class DumpService
         foreach (var admin in dump.Admins ?? [])
             await report.RunAsync($"administrator {admin.Username}", () => LoadAdminAsync(actor, admin, roleIds, mode, ct));
         foreach (var webhook in dump.Webhooks ?? [])
-            await report.RunAsync($"webhook {webhook.Name}", () => LoadWebhookAsync(webhook, mode, cipher, ct));
+            await report.RunAsync($"webhook {webhook.Name}", () => LoadWebhookAsync(actor, webhook, mode, cipher, ct));
         if (dump.Settings != null)
         {
             await report.RunAsync("settings", () =>
@@ -266,15 +266,15 @@ public sealed class DumpService
         return replaced ? Outcome.Updated : Outcome.Added;
     }
 
-    private async Task<Outcome> LoadWebhookAsync(DumpWebhook dumped, LoadMode mode, DumpSecretCipher? cipher, CancellationToken ct)
+    private async Task<Outcome> LoadWebhookAsync(AdminActor actor, DumpWebhook dumped, LoadMode mode, DumpSecretCipher? cipher, CancellationToken ct)
     {
-        var stored = (await _webhooks.ListAsync(ct)).FirstOrDefault(w => string.Equals(w.Name, dumped.Name, StringComparison.OrdinalIgnoreCase));
+        var stored = (await _webhooks.ListAsync(actor, ct)).FirstOrDefault(w => string.Equals(w.Name, dumped.Name, StringComparison.OrdinalIgnoreCase));
         if (stored != null && mode != LoadMode.Update)
             return mode == LoadMode.Skip ? Outcome.Skipped : throw new ApiConflictException("It exists already.");
         string? secret = null;
         if (dumped.Secret != null)
             secret = cipher?.Unprotect(dumped.Secret) ?? throw new ArgumentException("The dump has a secret but no passphrase header.");
-        var result = await _webhooks.SaveAsync(new WebhookInput
+        var result = await _webhooks.SaveAsync(actor, new WebhookInput
         {
             Id = stored?.Id,
             Name = dumped.Name ?? "",

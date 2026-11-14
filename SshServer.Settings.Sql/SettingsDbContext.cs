@@ -7,10 +7,12 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Api;
 using SshServer.Settings.Sql.Api;
 using SshServer.Interfaces.Audit;
+using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Settings.Sql.TwoFactor;
 
 namespace SshServer.Settings.Sql;
 
@@ -23,9 +25,10 @@ namespace SshServer.Settings.Sql;
 /// the public keys and the required login steps (issue #58). The allowed login methods are a text column with the flag
 /// names (<c>All</c>, <c>Password, PublicKey</c>). The audit
 /// log (<see cref="AuditEntry"/>), the webhooks with their outbox (<see cref="Webhook"/>, <see cref="WebhookDelivery"/>),
-/// the administrators (<see cref="Admin"/>) and the scope roles (<see cref="Role"/>, referenced by
-/// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>) are in the same database, and so are the REST API keys
-/// (<see cref="ApiKey"/>, removed with their administrator) and the signing key of the API tokens (#67).
+/// the administrators (<see cref="Admin"/>), the scope roles (<see cref="Role"/>, referenced by
+/// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>), the event rules with their runs
+/// (<see cref="EventRule"/>, <see cref="EventRuleRun"/>; conditions and actions as JSON text columns), the REST API keys
+/// (<see cref="ApiKey"/>, removed with their administrator) and the signing key of the API tokens (#67) are in the same database.
 /// <para>
 /// A <see cref="StorageConfig"/> (the storage of a user or of a <see cref="VirtualFolder"/>) is a JSON text column
 /// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
@@ -56,6 +59,9 @@ public class SettingsDbContext : DbContext
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<ApiSigningKey> ApiSigningKeys => Set<ApiSigningKey>();
+    public DbSet<TwoFactorRecord> TwoFactorEnrolments => Set<TwoFactorRecord>();
+    public DbSet<EventRule> EventRules => Set<EventRule>();
+    public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -174,6 +180,21 @@ public class SettingsDbContext : DbContext
             b.Property(k => k.ProtectedKey).IsRequired();
         });
 
+        modelBuilder.Entity<TwoFactorRecord>(b =>
+        {
+            // Exactly one owner: a user or an administrator.
+            b.ToTable("TwoFactorEnrolments", t => t.HasCheckConstraint("CK_TwoFactorEnrolments_Owner",
+                "(UserId IS NULL AND AdminId IS NOT NULL) OR (UserId IS NOT NULL AND AdminId IS NULL)"));
+            b.HasKey(r => r.Id);
+            b.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<Admin>().WithMany().HasForeignKey(r => r.AdminId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(r => r.UserId).IsUnique();
+            b.HasIndex(r => r.AdminId).IsUnique();
+            b.Property(r => r.ProtectedSecret).IsRequired().HasMaxLength(1024);
+            b.PrimitiveCollection(r => r.RecoveryCodeHashes).IsRequired();
+            b.Property(r => r.Version).IsConcurrencyToken();
+        });
+
         modelBuilder.Entity<AuditEntry>(b =>
         {
             b.ToTable("AuditEntries");
@@ -206,6 +227,37 @@ public class SettingsDbContext : DbContext
                 v => ToJson(v), v => FromJson<Dictionary<string, string>>(v), JsonComparer<Dictionary<string, string>>());
             b.PrimitiveCollection(w => w.EventTypes).IsRequired();
             b.PrimitiveCollection(w => w.Users).IsRequired();
+        });
+
+        modelBuilder.Entity<EventRule>(b =>
+        {
+            b.ToTable("EventRules");
+            b.HasKey(r => r.Id);
+            var name = b.Property(r => r.Name).IsRequired().HasMaxLength(EventRule.MaxNameLength);
+            if (Database.IsSqlite())
+                name.UseCollation("NOCASE");
+            b.HasIndex(r => r.Name).IsUnique();
+            b.Property(r => r.Description).HasMaxLength(1000);
+            b.Property(r => r.Trigger).IsRequired().HasConversion<string>().HasMaxLength(16);
+            b.PrimitiveCollection(r => r.EventTypes).IsRequired();
+            b.Property(r => r.CronExpression).HasMaxLength(256);
+            b.Property(r => r.TimeZone).HasMaxLength(128);
+            b.Property(r => r.Conditions).IsRequired().HasConversion(
+                v => ToJson(v), v => FromJson<EventRuleConditions>(v), JsonComparer<EventRuleConditions>());
+            b.Property(r => r.Actions).IsRequired().HasConversion(
+                v => ToJson(v), v => FromJson<List<EventRuleAction>>(v), JsonComparer<List<EventRuleAction>>());
+        });
+
+        modelBuilder.Entity<EventRuleRun>(b =>
+        {
+            b.ToTable("EventRuleRuns");
+            b.HasKey(r => r.Id);
+            b.HasOne<EventRule>().WithMany().HasForeignKey(r => r.RuleId).OnDelete(DeleteBehavior.Cascade);
+            b.Property(r => r.Status).IsRequired().HasConversion<string>().HasMaxLength(16);
+            b.Property(r => r.Trigger).IsRequired().HasMaxLength(64);
+            b.Property(r => r.Username).HasMaxLength(256);
+            b.Property(r => r.Message).IsRequired().HasMaxLength(EventRuleRun.MaxMessageLength);
+            b.HasIndex(r => new { r.RuleId, r.StartedUtc });
         });
 
         modelBuilder.Entity<WebhookDelivery>(b =>

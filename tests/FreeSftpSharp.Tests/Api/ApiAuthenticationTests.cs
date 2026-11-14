@@ -6,6 +6,9 @@ using SshServer.Api.ApiKeys;
 using SshServer.Api.Authentication;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Api;
+using SshServer.Interfaces.TwoFactor;
+using SshServer.TwoFactor;
+using FreeSftpSharp.Tests.Infrastructure;
 
 namespace FreeSftpSharp.Tests.Api;
 
@@ -54,6 +57,28 @@ public sealed class ApiAuthenticationTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
         await WaitForAuditAsync(e => e.Type == "LoginFailed" && e.Protocol == "API" && e.Username == AdminUiFactory.AdminUserName);
+    }
+
+    [Fact]
+    public async Task An_administrator_with_a_second_factor_needs_its_code_for_a_token()
+    {
+        var admin = await _factory.AddAdminAsync("totp-admin", AdminPermissions.ManageUsers);
+        var (secret, recoveryCodes) = await TwoFactorTestKit.EnrolAsync(_factory.Services.GetRequiredService<TwoFactorService>(),
+            TwoFactorSubject.ForAdmin(admin), TimeProvider.System, "totp-admin");
+        using var client = _factory.CreateClient();
+
+        var withoutCode = await client.PostAsJsonAsync("/api/v1/token", new { username = "totp-admin", password = ApiFactory.Password }, Ct);
+        Assert.Equal(HttpStatusCode.Unauthorized, withoutCode.StatusCode);
+        var wrongCode = await client.PostAsJsonAsync("/api/v1/token",
+            new { username = "totp-admin", password = ApiFactory.Password, totpCode = "000000" }, Ct);
+        Assert.Equal(HttpStatusCode.Unauthorized, wrongCode.StatusCode);
+
+        var withCode = await client.PostAsJsonAsync("/api/v1/token",
+            new { username = "totp-admin", password = ApiFactory.Password, totpCode = TwoFactorTestKit.Code(secret, DateTimeOffset.UtcNow) }, Ct);
+        Assert.Equal(HttpStatusCode.OK, withCode.StatusCode);
+        var withRecovery = await client.PostAsJsonAsync("/api/v1/token",
+            new { username = "totp-admin", password = ApiFactory.Password, totpCode = recoveryCodes[0] }, Ct);
+        Assert.Equal(HttpStatusCode.OK, withRecovery.StatusCode);
     }
 
     [Fact]

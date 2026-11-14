@@ -1,0 +1,20 @@
+@page "/account/two-factor"
+@attribute [Authorize]
+@inject TwoFactorAdministration TwoFactor
+
+<PageTitle>Two-factor authentication - FreeSftpSharp admin</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-0">Two-factor authentication</h1>
+    <p class="text-body-secondary mb-0">
+        A second factor for your admin login: after the password, the login asks for the code of an authenticator app.
+        The QR code is made on this server; the key never leaves it except to your browser.
+    </p>
+</div>
+
+<div class="card" style="max-width: 48rem;">
+    <div class="card-header fw-semibold">Your account: @TwoFactor.Self.Name</div>
+    <div class="card-body">
+        <TwoFactorPanel Target="TwoFactor.Self" />
+    </div>
+</div>

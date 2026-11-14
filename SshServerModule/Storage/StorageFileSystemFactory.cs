@@ -22,7 +22,8 @@ namespace SshServerModule.Storage
     /// <item><see cref="MountedFileSystem"/>: routes the paths of the virtual folders to their storage (#56); left out
     /// for a user without virtual folders. Every rule below sees the virtual paths of the user.</item>
     /// <item><see cref="PermissionFileSystem"/>: per-path permissions and path filters (#59); left out for a user who
-    /// may do everything.</item>
+    /// may do everything, and for an operation of the server itself (<see cref="ClientContext.SkipPermissions"/>, the
+    /// actions of the event rules).</item>
     /// <item><see cref="EventingFileSystem"/>: the events of every operation of the client (#65). Outside the
     /// permissions, so an operation that the permissions refuse still gives an event (status Error) in the audit log;
     /// a hook can refuse an upload, download or delete before the permissions are checked.</item>
@@ -75,7 +76,8 @@ namespace SshServerModule.Storage
                 }
                 fileSystem = new MountedFileSystem(fileSystem, mounts);
             }
-            fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
+            if (!client.SkipPermissions)
+                fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
             if (_events != null)
                 fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Root.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)

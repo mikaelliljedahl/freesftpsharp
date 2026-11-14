@@ -31,6 +31,7 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Storage rule | `IFileSystem` decorator | permissions, path filters, quotas, bandwidth, events | #59, #62, #65 |
 | Authentication | `IAuthenticationProvider` | database, external HTTP, LDAP | #64 |
 | Event sink | `IEventSink` / `IEventHook` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
+| Event rule action | `IEventRuleAction` | email, command, move, copy, delete, retention, webhook | #68 |
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
 | Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
@@ -69,6 +70,16 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
   `Pre*` event inline, with their timeout and fail-open setting. A `HookDecision.Deny` can carry a `ClientMessage`; the
   `EventingFileSystem` puts it in the `FileSystemException`, and the protocol adds it to its "permission denied". The
   enabled webhooks are cached in memory (`WebhookCatalog`), so with no webhook an event costs no database read.
+- **Event rules** (#68) are the plug-in `SshServer.EventRules` (`AddEventRules()`), with the store `IEventRuleStore` of
+  the settings database. The `EventRuleSink` (rules on events) and the `EventRuleHook` (rules on `Pre*` events; the
+  operation waits for them) put runs in the `EventRuleQueue`, and the `EventRuleWorker` runs them; so the event bus does
+  not depend on the storage and the users that the actions need. The `EventRuleScheduler` runs the cron rules on the
+  `TimeProvider`; a node claims each occurrence with a conditional update of the rule row, so it runs once on several
+  nodes. The `EventRuleRunner` runs the actions in order through `IEventRuleAction` plug-ins (one class per action type,
+  found by its type name; the Webhook action comes with `AddWebhooks`), never a switch on the type. The file actions use
+  `IFileSystemFactory` with `ClientContext.SkipPermissions` (a server operation: no per-path permissions) and the
+  protocol `EventRules`, whose events never start a rule. The enabled rules are cached in memory (`EventRuleCatalog`).
+  The Command action is off unless the operator allows it; it never uses a shell. See [EVENT-RULES.md](EVENT-RULES.md).
 
 ## Observability
 
@@ -144,7 +155,8 @@ The chain today, from the backend outwards:
    between two storages throws `OpNotSupported`. It is innermost, so every rule below sees the virtual paths.
 1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
    `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
-   factory leaves it out for a user who may do everything. It compares paths like the backend does
+   factory leaves it out for a user who may do everything, and for a server operation (`ClientContext.SkipPermissions`,
+   the actions of the event rules; a protocol never sets it). It compares paths like the backend does
    (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
 2. `EventingFileSystem` (#65): the file events of the client (see "Events"). It is outside the permissions, so an
    operation that the permissions refuse still gives an event (status `Error`) in the audit log, and the `Pre*`
@@ -194,6 +206,23 @@ compared by a test), and two authentication schemes behind one policy scheme: a 
 - **Secrets are write-only.** The views have whether a secret is set, never its value. The dump has them only
   encrypted with a passphrase of the caller (`StorageConfigService.Export`/`Import`).
 - **One error form.** The exceptions of the services become RFC 9457 problem details in one endpoint filter.
+
+## Two-factor authentication
+
+The TOTP second factor (#63) is the plug-in `SshServer.TwoFactor` (`AddTwoFactor(configuration)`, settings `Auth:Totp`).
+The protocols and the admin login know only `ITwoFactorVerifier` (`SshServer.Interfaces.TwoFactor`); the algorithm
+(`Totp`, RFC 6238) is a pure function there too. `TwoFactorService` is the one place for the rules: setup confirmed with
+a code, replay protection, recovery codes, the per-account limit for wrong codes and the reset. The enrolments are in
+the settings database (`ITwoFactorStore`, table TwoFactorEnrolments, removed with the user or administrator); the
+store compares a version, so one code cannot log in twice, also on two nodes. The secrets are encrypted with the data
+protection key ring of the host, like the webhook secrets.
+
+- **SSH.** Keyboard-interactive (RFC 4256, a local FxSsh patch) is a login method. `AuthenticationProgress` adds the code
+  step after the configured steps of a user with TOTP, so the server answers them with partial success and asks for the
+  code. A keyboard-interactive step asks for the code with TOTP and for the password without.
+- **Admin UI.** After the right password, `Login` sets a short encrypted cookie (`PendingTwoFactorLogin`) and `LoginCode`
+  issues the login cookie only after a valid code. `TwoFactorAdministration` (scoped) checks the permissions and the
+  scope of the signed-in administrator for every setup and reset; the pages use only it.
 
 ## General rules
 

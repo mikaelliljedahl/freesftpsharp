@@ -4,17 +4,22 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SshServer.Administration;
 using SshServer.Api.Authentication;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.TwoFactor;
 using SshServer.Webhooks;
 
 namespace SshServer.Api.Endpoints;
 
-/// <summary>The login of <c>POST /api/v1/token</c>. <see cref="TotpCode"/> is for the admin two-factor login (#63).</summary>
+/// <summary>
+/// The login of <c>POST /api/v1/token</c>. <see cref="TotpCode"/> is the TOTP code (or a recovery code) of an administrator
+/// with a second factor (#63).
+/// </summary>
 public sealed record TokenRequest(string? Username, string? Password, string? TotpCode);
 
 /// <summary>The answer of <c>/api/v1/health</c>: the API answers. Readiness (database, listeners) is <c>/readyz</c> (Observability).</summary>
@@ -68,7 +73,7 @@ internal static class SystemEndpoints
     }
 
     private static async Task<Results<Ok<ApiToken>, ProblemHttpResult>> TokenAsync(TokenRequest request, HttpContext http,
-        AdminCredentialValidator validator, LoginThrottle throttle, ITokenSecondFactor secondFactor, AdminAdministrationService administration,
+        AdminCredentialValidator validator, LoginThrottle throttle, AdminAdministrationService administration,
         ApiTokenService tokens, IEventBus events, TimeProvider time, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("SshServer.Api.Token");
@@ -81,33 +86,46 @@ internal static class SystemEndpoints
         }
 
         var admin = await validator.ValidateAsync(request.Username, request.Password, http.Connection.RemoteIpAddress, ct);
-        if (admin == null || !await secondFactor.IsSatisfiedAsync(admin, request.TotpCode, ct))
+        var method = "password";
+        string? failure = admin == null ? InvalidCredentials : null;
+        // The same second factor as the login page: without the code (or a recovery code) there is no token.
+        var twoFactor = http.RequestServices.GetService<ITwoFactorVerifier>();
+        if (admin != null && twoFactor != null && await twoFactor.IsEnabledAsync(TwoFactorSubject.ForAdmin(admin), ct))
+        {
+            method = "password,totp";
+            var check = await twoFactor.VerifyAsync(TwoFactorSubject.ForAdmin(admin), request.TotpCode, ct);
+            if (check is not (TwoFactorCheck.Valid or TwoFactorCheck.RecoveryCode))
+                failure = check == TwoFactorCheck.LockedOut
+                    ? "Too many wrong codes. Try again later."
+                    : "The administrator has a second factor: give a valid totpCode (or a recovery code).";
+        }
+        if (failure != null)
         {
             throttle.RecordFailure(client);
             logger.LogWarning("Failed API login for user {UserName} from {Client}.", request.Username, client);
-            await PublishAsync(events, time, AuthEventType.LoginFailed, request.Username, client, ct);
-            return TypedResults.Problem(admin == null ? InvalidCredentials : "The second factor code is missing or not valid.",
-                statusCode: StatusCodes.Status401Unauthorized, title: "Unauthorized");
+            await PublishAsync(events, time, AuthEventType.LoginFailed, request.Username, client, method, ct);
+            return TypedResults.Problem(failure, statusCode: StatusCodes.Status401Unauthorized, title: "Unauthorized");
         }
 
         throttle.RecordSuccess(client);
-        if (admin.MustChangePassword)
+        if (admin!.MustChangePassword)
             return ApiResults.Forbidden("The administrator must set a new password first: log in to the admin UI.");
 
         await administration.RecordLoginAsync(admin, ct);
-        await PublishAsync(events, time, AuthEventType.LoginOk, admin.Username, client, ct);
+        await PublishAsync(events, time, AuthEventType.LoginOk, admin!.Username, client, method, ct);
         logger.LogInformation("Admin {UserName} got an API token from {Client}.", admin.Username, client);
         return TypedResults.Ok(tokens.Issue(admin));
     }
 
-    private static ValueTask PublishAsync(IEventBus events, TimeProvider time, AuthEventType type, string? username, string? client, CancellationToken ct) =>
+    private static ValueTask PublishAsync(IEventBus events, TimeProvider time, AuthEventType type, string? username, string? client, string method,
+        CancellationToken ct) =>
         events.PublishAsync(new AuthEvent(type)
         {
             Timestamp = time.GetUtcNow(),
             Username = username?.Trim(),
             RemoteIp = client,
             Protocol = AuditProtocol,
-            Method = "password",
+            Method = method,
             Reason = type == AuthEventType.LoginFailed ? "wrong user name or password, second factor, disabled account or address not allowed" : null,
         }, ct);
 

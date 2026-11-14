@@ -200,6 +200,7 @@ public sealed class SqlWebhookStore : IWebhookStore
         to.FailOpen = from.FailOpen;
         to.TimeoutSeconds = from.TimeoutSeconds;
         to.Enabled = from.Enabled;
+        to.OnlyForEventRules = from.OnlyForEventRules;
         return to;
     }
 }

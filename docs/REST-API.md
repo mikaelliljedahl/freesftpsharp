@@ -52,8 +52,9 @@ a new password, other permissions, another scope or a disabled account ends ever
 and stored in the settings database, encrypted with the data protection keys (`DataProtection:KeysPath`), so several
 nodes that share the database and the key ring accept each other's tokens.
 
-The request has a field `totpCode` for the two-factor login of administrators (#63). Until #63 is merged no
-administrator needs it; #63 replaces the `ITokenSecondFactor` service of `SshServer.Api`.
+An administrator with a second factor (#63) gives its TOTP code, or one of its recovery codes, in `totpCode`; without a
+valid code there is no token. The check is the same as on the login page (`ITwoFactorVerifier`): a code works once, and
+wrong codes count for the lockout of the second factor.
 
 ### API keys (automation)
 
@@ -96,7 +97,8 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/status` | any administrator | version, start time, uptime, node, and the permissions of the caller |
 | `/dump`, `/load` | SuperAdmin | export and import of every stored object (below) |
 
-Groups (#61), quotas (#62), event rules and actions (#68) and shares (#70) get their routes with their features.
+Groups (#61), quotas (#62) and shares (#70) get their routes with their features. Event rules and actions (#68) and
+the second-factor administration (#63, set up or reset a TOTP app) have no routes yet; they come in a follow-up.
 
 ### Conventions
 

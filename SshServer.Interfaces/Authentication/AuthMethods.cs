@@ -8,7 +8,10 @@ public enum AuthMethods
     Password = 1,
     PublicKey = 2,
 
-    /// <summary>Keyboard-interactive (#63). Allowed by default, so that a user keeps it when the server supports it.</summary>
+    /// <summary>
+    /// Keyboard-interactive (RFC 4256, #63). The server asks for the TOTP verification code when the user has one and the
+    /// step needs it, otherwise for the password. Allowed by default.
+    /// </summary>
     KeyboardInteractive = 4,
 
     All = Password | PublicKey | KeyboardInteractive,
@@ -21,8 +24,8 @@ public static class AuthMethodRules
     public const string PublicKeyName = "publickey";
     public const string KeyboardInteractiveName = "keyboard-interactive";
 
-    /// <summary>The methods that can be steps of <see cref="User.RequireAllOf"/> today. Keyboard-interactive comes with #63.</summary>
-    public static readonly IReadOnlyList<AuthMethods> StepMethods = [AuthMethods.PublicKey, AuthMethods.Password];
+    /// <summary>The methods that can be steps of <see cref="User.RequireAllOf"/>.</summary>
+    public static readonly IReadOnlyList<AuthMethods> StepMethods = [AuthMethods.PublicKey, AuthMethods.Password, AuthMethods.KeyboardInteractive];
 
     /// <summary>The method of an SSH method name, or <see cref="AuthMethods.None"/> for "none", "hostbased" and unknown names.</summary>
     public static AuthMethods FromSshName(string? name) => name switch
@@ -69,6 +72,9 @@ public static class AuthMethodRules
             else if ((allowed & step) != step)
                 problems.Add($"The multi-step login needs {step}, but {step} is not an allowed method.");
         }
+        // The server offers keyboard-interactive only after a partial success, so clients do not try it first.
+        if (requireAllOf[0] == AuthMethods.KeyboardInteractive)
+            problems.Add("Keyboard-interactive cannot be the first step of a multi-step login.");
         if (requireAllOf.Distinct().Count() != requireAllOf.Count)
             problems.Add("A method can be only once in a multi-step login.");
         return problems;

@@ -22,6 +22,7 @@ namespace FxSsh.Tests.Messages
             (NewKeysMessage.MessageNumber, typeof(NewKeysMessage)),
             (KeyExchangeXInitMessage.MessageNumber, typeof(KeyExchangeXInitMessage)),
             (RequestMessage.MessageNumber, typeof(RequestMessage)),
+            (InfoResponseMessage.MessageNumber, typeof(InfoResponseMessage)),
             (GlobalRequestMessage.MessageNumber, typeof(GlobalRequestMessage)),
             (RequestSuccessMessage.MessageNumber, typeof(RequestSuccessMessage)),
             (RequestFailureMessage.MessageNumber, typeof(RequestFailureMessage)),

@@ -60,4 +60,10 @@ public sealed class Webhook
     public int TimeoutSeconds { get; set; } = DefaultTimeoutSeconds;
 
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// True: the webhook gets no events of its own; only the "Webhook" action of an event rule (#68) sends to it, and its
+    /// event, user and path filters are not used. Never together with <see cref="Sync"/>.
+    /// </summary>
+    public bool OnlyForEventRules { get; set; }
 }

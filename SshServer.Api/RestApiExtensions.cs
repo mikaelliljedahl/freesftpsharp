@@ -40,7 +40,6 @@ public static class RestApiExtensions
         services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
         services.TryAddSingleton<ApiTokenService>();
-        services.TryAddSingleton<ITokenSecondFactor, NoTokenSecondFactor>();
         services.TryAddSingleton<ApiKeyService>();
         services.TryAddSingleton<ApiRateLimits>();
         services.TryAddSingleton<StorageMapper>();

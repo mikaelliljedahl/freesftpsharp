@@ -5,6 +5,7 @@ using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using SshServer.Administration;
+using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Webhooks;
 using SshServer.Webhooks;
 
@@ -98,76 +99,76 @@ internal static class WebhookEndpoints
     {
         var webhooks = api.MapGroup("/webhooks").WithTags("Webhooks").RequireAuthorization(AdminPolicies.ManageEvents);
 
-        webhooks.MapGet("/", async (WebhookAdministrationService service, int? offset, int? limit, CancellationToken ct) =>
-                TypedResults.Ok(Paging.Of(await service.ListAsync(ct), offset, limit, WebhookView.From)))
+        webhooks.MapGet("/", async (WebhookAdministrationService service, CurrentAdmin current, int? offset, int? limit, CancellationToken ct) =>
+                TypedResults.Ok(Paging.Of(await service.ListAsync(current.Actor, ct), offset, limit, WebhookView.From)))
             .WithName("ListWebhooks").WithValidationErrors();
 
-        webhooks.MapGet("/event-types", () => TypedResults.Ok(WebhookEventNames.Groups.SelectMany(g => g.Names).ToList()))
+        webhooks.MapGet("/event-types", () => TypedResults.Ok(EventNames.Groups.SelectMany(g => g.Names).ToList()))
             .WithName("ListWebhookEventTypes").WithSummary("The event names for the eventTypes filter.").WithErrors();
 
-        webhooks.MapGet("/{id:int}", async Task<Results<Ok<WebhookView>, ProblemHttpResult>> (WebhookAdministrationService service, int id, CancellationToken ct) =>
-                await service.GetAsync(id, ct) is { } webhook ? TypedResults.Ok(WebhookView.From(webhook)) : NotFound(id))
+        webhooks.MapGet("/{id:int}", async Task<Results<Ok<WebhookView>, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current, int id, CancellationToken ct) =>
+                await service.GetAsync(current.Actor, id, ct) is { } webhook ? TypedResults.Ok(WebhookView.From(webhook)) : NotFound(id))
             .WithName("GetWebhook").WithErrors().WithNotFound();
 
-        webhooks.MapPost("/", async (WebhookAdministrationService service, WebhookWrite request, CancellationToken ct) =>
+        webhooks.MapPost("/", async (WebhookAdministrationService service, CurrentAdmin current, WebhookWrite request, CancellationToken ct) =>
             {
-                var id = await SaveAsync(service, request.ToInput(null), ct);
-                return TypedResults.Created($"/api/v1/webhooks/{id}", WebhookView.From((await service.GetAsync(id, ct))!));
+                var id = await SaveAsync(service, current, request.ToInput(null), ct);
+                return TypedResults.Created($"/api/v1/webhooks/{id}", WebhookView.From((await service.GetAsync(current.Actor, id, ct))!));
             })
             .WithName("CreateWebhook").WithValidationErrors();
 
-        webhooks.MapPut("/{id:int}", async Task<Results<Ok<WebhookView>, ProblemHttpResult>> (WebhookAdministrationService service, int id,
-                WebhookWrite request, CancellationToken ct) => await ReplaceAsync(service, id, request, ct))
+        webhooks.MapPut("/{id:int}", async Task<Results<Ok<WebhookView>, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current, int id,
+                WebhookWrite request, CancellationToken ct) => await ReplaceAsync(service, current, id, request, ct))
             .WithName("ReplaceWebhook").WithValidationErrors().WithNotFound();
 
-        webhooks.MapPatch("/{id:int}", async Task<Results<Ok<WebhookView>, ProblemHttpResult>> (WebhookAdministrationService service,
+        webhooks.MapPatch("/{id:int}", async Task<Results<Ok<WebhookView>, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current,
                 IOptions<JsonOptions> json, int id, HttpRequest request, CancellationToken ct) =>
             {
-                if (await service.GetAsync(id, ct) is not { } stored)
+                if (await service.GetAsync(current.Actor, id, ct) is not { } stored)
                     return NotFound(id);
-                return await ReplaceAsync(service, id, MergePatch.Apply(WebhookWrite.From(stored), await MergePatch.ReadAsync(request), json.Value.SerializerOptions), ct);
+                return await ReplaceAsync(service, current, id, MergePatch.Apply(WebhookWrite.From(stored), await MergePatch.ReadAsync(request), json.Value.SerializerOptions), ct);
             })
             .WithName("PatchWebhook").AcceptsMergePatch<WebhookWrite>().WithValidationErrors().WithNotFound();
 
-        webhooks.MapDelete("/{id:int}", async Task<Results<NoContent, ProblemHttpResult>> (WebhookAdministrationService service, int id, CancellationToken ct) =>
-                await service.RemoveAsync(id, ct) ? TypedResults.NoContent() : NotFound(id))
+        webhooks.MapDelete("/{id:int}", async Task<Results<NoContent, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current, int id, CancellationToken ct) =>
+                await service.RemoveAsync(current.Actor, id, ct) ? TypedResults.NoContent() : NotFound(id))
             .WithName("DeleteWebhook").WithErrors().WithNotFound();
 
-        webhooks.MapPost("/{id:int}/test", async Task<Results<Accepted, ProblemHttpResult>> (WebhookAdministrationService service, int id, CancellationToken ct) =>
-                await service.SendTestAsync(id, ct) ? TypedResults.Accepted((string?)null) : NotFound(id))
+        webhooks.MapPost("/{id:int}/test", async Task<Results<Accepted, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current, int id, CancellationToken ct) =>
+                await service.SendTestAsync(current.Actor, id, ct) ? TypedResults.Accepted((string?)null) : NotFound(id))
             .WithName("TestWebhook").WithSummary("Puts a test event for the webhook in the outbox.").WithErrors().WithNotFound();
 
-        webhooks.MapGet("/{id:int}/deliveries", async Task<Results<Ok<List<WebhookDeliveryView>>, ProblemHttpResult>> (WebhookAdministrationService service,
+        webhooks.MapGet("/{id:int}/deliveries", async Task<Results<Ok<List<WebhookDeliveryView>>, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current,
                 int id, CancellationToken ct) =>
             {
-                if (await service.GetAsync(id, ct) == null)
+                if (await service.GetAsync(current.Actor, id, ct) == null)
                     return NotFound(id);
-                return TypedResults.Ok((await service.ListDeliveriesAsync(id, ct)).Select(WebhookDeliveryView.From).ToList());
+                return TypedResults.Ok((await service.ListDeliveriesAsync(current.Actor, id, ct)).Select(WebhookDeliveryView.From).ToList());
             })
             .WithName("ListWebhookDeliveries").WithSummary("The last deliveries of the webhook.").WithErrors().WithNotFound();
 
-        webhooks.MapPost("/deliveries/{deliveryId:long}/redeliver", async Task<Results<Accepted, ProblemHttpResult>> (WebhookAdministrationService service,
+        webhooks.MapPost("/deliveries/{deliveryId:long}/redeliver", async Task<Results<Accepted, ProblemHttpResult>> (WebhookAdministrationService service, CurrentAdmin current,
                 long deliveryId, CancellationToken ct) =>
-                await service.RedeliverAsync(deliveryId, ct)
+                await service.RedeliverAsync(current.Actor, deliveryId, ct)
                     ? TypedResults.Accepted((string?)null)
                     : ApiResults.NotFound($"The delivery {deliveryId} does not exist or cannot be sent again."))
             .WithName("RedeliverWebhook").WithSummary("Sends an asynchronous delivery again, now.").WithErrors().WithNotFound();
     }
 
-    private static async Task<Results<Ok<WebhookView>, ProblemHttpResult>> ReplaceAsync(WebhookAdministrationService service, int id,
+    private static async Task<Results<Ok<WebhookView>, ProblemHttpResult>> ReplaceAsync(WebhookAdministrationService service, CurrentAdmin current, int id,
         WebhookWrite request, CancellationToken ct)
     {
-        if (await service.GetAsync(id, ct) == null)
+        if (await service.GetAsync(current.Actor, id, ct) == null)
             return NotFound(id);
-        await SaveAsync(service, request.ToInput(id), ct);
-        return TypedResults.Ok(WebhookView.From((await service.GetAsync(id, ct))!));
+        await SaveAsync(service, current, request.ToInput(id), ct);
+        return TypedResults.Ok(WebhookView.From((await service.GetAsync(current.Actor, id, ct))!));
     }
 
     private static ProblemHttpResult NotFound(int id) => ApiResults.NotFound($"The webhook {id} does not exist.");
 
-    private static async Task<int> SaveAsync(WebhookAdministrationService service, WebhookInput input, CancellationToken ct)
+    private static async Task<int> SaveAsync(WebhookAdministrationService service, CurrentAdmin current, WebhookInput input, CancellationToken ct)
     {
-        var result = await service.SaveAsync(input, ct);
+        var result = await service.SaveAsync(current.Actor, input, ct);
         if (!result.Succeeded)
             throw new ApiValidationException(new Dictionary<string, string[]> { [""] = result.Errors.ToArray() });
         return result.Id!.Value;
