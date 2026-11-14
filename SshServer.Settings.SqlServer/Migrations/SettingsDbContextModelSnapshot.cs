@@ -16,7 +16,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114143928_InitialCreate";
+    public override string LastMigrationId => "20261114151855_AddAdminAuthenticationProvider";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -37,6 +37,10 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
 
                 b.PrimitiveCollection<string>("AllowedIps")
                     .HasColumnType("nvarchar(max)");
+
+                b.Property<string>("AuthenticationProvider")
+                    .HasMaxLength(64)
+                    .HasColumnType("nvarchar(64)");
 
                 b.Property<string>("Email")
                     .HasMaxLength(256)

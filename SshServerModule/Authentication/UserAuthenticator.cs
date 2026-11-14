@@ -19,7 +19,9 @@ namespace SshServerModule.Authentication;
 /// The chain of the authentication providers (issue #64), see <see cref="IUserAuthenticator"/>. The providers run in
 /// the order of <see cref="AuthenticationOptions.Providers"/>; the first success or failure wins. A stored user is only
 /// checked by the provider that owns it (<see cref="User.AuthenticationProvider"/>, null: the database), so a directory
-/// cannot take over a local user with the same name, and a local password never opens an account of a directory.
+/// cannot take over a local user with the same name, and a local password never opens an account of a directory. An
+/// owner registered as a <see cref="CredentialOwner"/> (#145) owns only some credentials: the others (for example the
+/// SSH public keys of a user of the OpenID Connect sign-in) are checked by the database like those of a local user.
 /// </summary>
 public sealed class UserAuthenticator : IUserAuthenticator
 {
@@ -30,12 +32,17 @@ public sealed class UserAuthenticator : IUserAuthenticator
     /// <summary>The mean time of a refused password per external provider, for <see cref="SpendFailureTimeAsync"/>.</summary>
     private readonly ConcurrentDictionary<string, FailureTime> _failureTimes = new(StringComparer.Ordinal);
 
+    private readonly IReadOnlyList<CredentialOwner> _owners;
+
     /// <param name="provisioner">The just-in-time users (shared with the OpenID Connect sign-in of the web client, #73). Null: one over <paramref name="repository"/>.</param>
+    /// <param name="owners">The owners that check only some credentials of their users (#145). Null: none.</param>
     /// <exception cref="InvalidOperationException"><c>Auth:Providers</c> names a provider that is not registered.</exception>
     public UserAuthenticator(IEnumerable<IAuthenticationProvider> providers, ISettingsRepository repository,
-        IOptions<AuthenticationOptions>? options = null, ILogger<UserAuthenticator>? logger = null, ExternalUserProvisioner? provisioner = null)
+        IOptions<AuthenticationOptions>? options = null, ILogger<UserAuthenticator>? logger = null, ExternalUserProvisioner? provisioner = null,
+        IEnumerable<CredentialOwner>? owners = null)
     {
         ArgumentNullException.ThrowIfNull(providers);
+        _owners = owners?.ToList() ?? [];
         _logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var settings = options?.Value ?? new AuthenticationOptions();
         _providers = Order(providers.ToList(), settings.Providers, _logger);
@@ -54,6 +61,19 @@ public sealed class UserAuthenticator : IUserAuthenticator
         ArgumentNullException.ThrowIfNull(request);
         var stored = request.StoredUser;
         var owner = stored == null ? null : stored.AuthenticationProvider ?? DatabaseAuthenticationProvider.ProviderName;
+        if (stored?.AuthenticationProvider is { } external)
+        {
+            var credential = request.PublicKey != null ? OwnedCredentials.PublicKeys : OwnedCredentials.Password;
+            if (CredentialOwner.IsLocal(external, credential, _owners))
+                owner = DatabaseAuthenticationProvider.ProviderName; // a local credential of the account (#145)
+            else if (_owners.Any(o => string.Equals(o.Name, external, StringComparison.Ordinal)) && !_providers.Any(p => p.Name == external))
+            {
+                // The owner checks this credential, but not in the login chain (the identity provider of a web sign-in).
+                if (request.IsPassword)
+                    UserLogics.SimulatePasswordCheck();
+                return CredentialCheck.Failed($"the {(credential == OwnedCredentials.Password ? "password" : "public key")} of the user is managed by {external}");
+            }
+        }
 
         foreach (var provider in _providers)
         {

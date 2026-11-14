@@ -53,8 +53,9 @@ public sealed record DumpSecrets(string Kdf, int Iterations, string Salt, string
 
 public sealed record DumpRole(string Name, string? Description);
 
+/// <summary>An administrator; <c>AuthenticationProvider</c> (#145) is the identity provider that owns its password (null: local; missing in older dumps).</summary>
 public sealed record DumpAdmin(string Username, string PasswordHash, string? Email, AdminStatus Status, List<string> Permissions,
-    List<string> AllowedIps, string? ScopeRole, bool MustChangePassword);
+    List<string> AllowedIps, string? ScopeRole, bool MustChangePassword, string? AuthenticationProvider = null);
 
 /// <summary>A storage: the provider and all its options (secrets encrypted with the passphrase, or left out).</summary>
 public sealed record DumpStorage(string Provider, JsonObject Options);

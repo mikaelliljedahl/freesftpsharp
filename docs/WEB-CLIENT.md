@@ -1,8 +1,8 @@
 # Web client
 
 The web host (`FxSshSftpServer`) can offer the SFTP users a web client in the browser (issue #69): browse, upload,
-download (also as a zip), rename, delete and create folders, change the password, manage the SSH public keys and the
-second factor, and see the open sessions. It is for partners who have no SFTP client. It is **off by default**: without
+download (also as a zip), rename, delete and create folders, change the password, manage the SSH public keys, the app
+passwords (for WebDAV, FTP and SFTP clients, #145) and the second factor, and see the open sessions. It is for partners who have no SFTP client. It is **off by default**: without
 configuration every `/client` path answers 404. `ServerConsoleApp` has no web server and no web client.
 
 ## Turn it on
@@ -64,7 +64,8 @@ memory and per node: with several nodes, use sticky sessions for `/client`.
 
 The users can also sign in with the identity provider of the organisation (OpenID Connect, #73, `Auth:Oidc:Client`):
 the login page shows "Sign in with ..." next to the form (or instead of it, with `DisableLocalLogin`), and a new user
-can be created at its first sign-in in a template group. See [OIDC.md](OIDC.md).
+can be created at its first sign-in in a template group. See [OIDC.md](OIDC.md). Such a user has no password of its
+own; on the account page it adds the SSH public keys for SFTP and creates the app passwords for WebDAV and FTP (#145).
 
 ## Upload and download
 

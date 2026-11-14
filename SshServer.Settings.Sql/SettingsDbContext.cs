@@ -320,6 +320,7 @@ public class SettingsDbContext : DbContext
             b.Property(a => a.Permissions).HasConversion<string>().HasMaxLength(512);
             b.PrimitiveCollection(a => a.AllowedIps).IsRequired(false);
             b.HasOne<Role>().WithMany().HasForeignKey(a => a.ScopeRoleId).OnDelete(DeleteBehavior.Restrict);
+            b.Property(a => a.AuthenticationProvider).IsRequired(false).HasMaxLength(64);
         });
 
         modelBuilder.Entity<ApiKey>(b =>

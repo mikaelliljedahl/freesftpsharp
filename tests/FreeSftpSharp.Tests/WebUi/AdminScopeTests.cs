@@ -291,6 +291,24 @@ public sealed class AdminScopeTests : AdminUiComponentContext
     }
 
     [Fact]
+    public async Task The_password_of_an_oidc_administrator_cannot_be_set_on_the_admins_page()
+    {
+        Assert.True(await AdminStore.AddAdminAsync(new Admin
+        {
+            Username = "sso-admin", PasswordHash = "x", Permissions = AdminPermissions.ViewAudit, AuthenticationProvider = "oidc",
+        }, CancellationToken.None));
+        var page = Render<Admins>();
+
+        page.WaitForAssertion(() => Assert.Contains("sso-admin", page.Find("#admin-table").TextContent));
+        page.FindAll(".edit-admin")[page.FindAll(".admin-row").ToList().FindIndex(r => r.TextContent.Contains("sso-admin", StringComparison.Ordinal))].Click();
+
+        Assert.Contains("managed by oidc", page.Find("#admin-provider-note").TextContent);
+        Assert.True(page.Find("#admin-password").HasAttribute("disabled"));
+        Assert.True(page.Find("#admin-confirm-password").HasAttribute("disabled"));
+        Assert.True(page.Find("#admin-must-change").HasAttribute("disabled"));
+    }
+
+    [Fact]
     public void A_non_super_administrator_cannot_tick_permissions_it_does_not_have()
     {
         SignInAs(AdminPermissions.ManageAdmins | AdminPermissions.ManageUsers, name: "manager");

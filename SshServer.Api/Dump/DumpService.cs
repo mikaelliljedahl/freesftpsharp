@@ -97,7 +97,7 @@ public sealed class DumpService
             Roles = roles.Select(r => new DumpRole(r.Name, r.Description)).ToList(),
             Admins = (await _admins.ListAdminsAsync(actor, ct)).Select(a => new DumpAdmin(a.Username, a.PasswordHash, a.Email, a.Status,
                 PermissionNames.Of(a.Permissions).ToList(), a.AllowedIps?.ToList() ?? [],
-                a.ScopeRoleId is { } r ? roleNames.GetValueOrDefault(r) : null, a.MustChangePassword)).ToList(),
+                a.ScopeRoleId is { } r ? roleNames.GetValueOrDefault(r) : null, a.MustChangePassword, a.AuthenticationProvider)).ToList(),
             VirtualFolders = folders.Select(f => new DumpVirtualFolder(f.Name, f.Description,
                 ExportStorage(f.Storage, (option, text) => Secret($"virtualFolders/{f.Name}", option, text)))).ToList(),
             Users = _repository.GetAllUsers().OrderBy(u => u.Username, StringComparer.OrdinalIgnoreCase).Select(u => new DumpUser(
@@ -348,7 +348,8 @@ public sealed class DumpService
             ScopeRoleId = scope,
             MustChangePassword = dumped.MustChangePassword,
         };
-        var replaced = await _admins.LoadAdminAsync(actor, write.ToInput(dumped.Username ?? ""), dumped.PasswordHash ?? "", ct);
+        var input = write.ToInput(dumped.Username ?? "") with { AuthenticationProvider = dumped.AuthenticationProvider };
+        var replaced = await _admins.LoadAdminAsync(actor, input, dumped.PasswordHash ?? "", ct);
         return replaced ? Outcome.Updated : Outcome.Added;
     }
 

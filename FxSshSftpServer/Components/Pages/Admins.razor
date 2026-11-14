@@ -40,6 +40,10 @@
                             <tr class="admin-row">
                                 <td>
                                     <span class="fw-semibold">@admin.Username</span>
+                                    @if (admin.AuthenticationProvider is { } provider)
+                                    {
+                                        <span class="badge text-bg-primary ms-1" title="Signs in through this identity provider">@provider</span>
+                                    }
                                     @if (admin.Status != AdminStatus.Enabled)
                                     {
                                         <span class="badge text-bg-secondary ms-1">disabled</span>
@@ -96,24 +100,31 @@
 
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
-                            @if (!form.IsNew)
+                            @if (form.AuthenticationProvider is { } owner)
+                            {
+                                <div class="alert alert-info small py-2" id="admin-provider-note">
+                                    @SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(owner)
+                                    The administrator signs in through the provider; it has no local password.
+                                </div>
+                            }
+                            else if (!form.IsNew)
                             {
                                 <div class="small text-body-secondary mb-2">Leave empty to keep the password.</div>
                             }
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label" for="admin-password">@(form.IsNew ? "Password" : "New password")</label>
-                                    <InputText id="admin-password" type="password" class="form-control" @bind-Value="form.NewPassword" autocomplete="new-password" />
+                                    <InputText id="admin-password" type="password" class="form-control" disabled="@(form.AuthenticationProvider != null)" @bind-Value="form.NewPassword" autocomplete="new-password" />
                                     <ValidationMessage For="() => form.NewPassword" />
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label" for="admin-confirm-password">Repeat the password</label>
-                                    <InputText id="admin-confirm-password" type="password" class="form-control" @bind-Value="form.ConfirmPassword" autocomplete="new-password" />
+                                    <InputText id="admin-confirm-password" type="password" class="form-control" disabled="@(form.AuthenticationProvider != null)" @bind-Value="form.ConfirmPassword" autocomplete="new-password" />
                                     <ValidationMessage For="() => form.ConfirmPassword" />
                                 </div>
                             </div>
                             <div class="form-check mt-2">
-                                <InputCheckbox id="admin-must-change" class="form-check-input" @bind-Value="form.MustChangePassword" />
+                                <InputCheckbox id="admin-must-change" class="form-check-input" disabled="@(form.AuthenticationProvider != null)" @bind-Value="form.MustChangePassword" />
                                 <label class="form-check-label" for="admin-must-change">Must change the password at the next login</label>
                             </div>
                         </fieldset>

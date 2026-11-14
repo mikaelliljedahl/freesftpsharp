@@ -40,6 +40,14 @@ public class Admin
     /// <summary>The administrator must set a new password after the next login before it can do anything.</summary>
     public bool MustChangePassword { get; set; }
 
+    /// <summary>
+    /// The owner of the password (#145): null for a local administrator (the stored hash), or the name of the identity
+    /// provider that created it, for example <c>oidc</c> for an administrator of the OpenID Connect sign-in. Such an
+    /// administrator has no usable local password; the admin UI and the REST API refuse to set one
+    /// (<see cref="Authentication.ExternalCredentials"/>).
+    /// </summary>
+    public string? AuthenticationProvider { get; set; }
+
     public Admin Clone() => new()
     {
         Id = Id,
@@ -52,6 +60,7 @@ public class Admin
         ScopeRoleId = ScopeRoleId,
         LastLoginAt = LastLoginAt,
         MustChangePassword = MustChangePassword,
+        AuthenticationProvider = AuthenticationProvider,
     };
 }
 

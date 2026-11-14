@@ -155,6 +155,50 @@ public sealed class UserAuthenticatorTests
     }
 
     [Fact]
+    public async Task An_owner_of_the_password_only_leaves_the_stored_keys_to_the_database()
+    {
+        var key = TestUserKeys.Ed25519();
+        var other = TestUserKeys.Ed25519();
+        _repository.AddUser(new User { Username = "sso-user", AuthenticationProvider = "oidc", PublicKeys = [key.Entry] });
+        var authenticator = new UserAuthenticator([new DatabaseAuthenticationProvider(_repository)], _repository,
+            owners: [new CredentialOwner("oidc", OwnedCredentials.Password)]);
+        AuthRequest Key(TestUserKey k) => new()
+        {
+            Username = "sso-user", Method = AuthMethods.PublicKey, PublicKey = k.Blob, Protocol = "SSH", RemoteIp = "127.0.0.1",
+            StoredUser = _repository.GetUser("sso-user"),
+        };
+
+        var ok = await authenticator.VerifyAsync(Key(key), TestContext.Current.CancellationToken);
+        Assert.True(ok.Succeeded);
+        Assert.Equal("database", ok.Provider);
+        Assert.False(ok.NeedsSave);
+        Assert.Equal("oidc", ok.User!.AuthenticationProvider);
+        Assert.False((await authenticator.VerifyAsync(Key(other), TestContext.Current.CancellationToken)).Succeeded);
+
+        var password = await authenticator.VerifyAsync(Password("sso-user", "anything"), TestContext.Current.CancellationToken);
+        Assert.False(password.Succeeded);
+        Assert.Equal("the password of the user is managed by oidc", password.Reason);
+    }
+
+    [Fact]
+    public async Task Without_an_ownership_rule_the_keys_of_a_provider_user_are_not_used()
+    {
+        var key = TestUserKeys.Ed25519();
+        _repository.AddUser(new User { Username = "dir-keys", AuthenticationProvider = "ldap", PublicKeys = [key.Entry] });
+        var authenticator = Create([]);
+
+        var check = await authenticator.VerifyAsync(new AuthRequest
+        {
+            Username = "dir-keys", Method = AuthMethods.PublicKey, PublicKey = key.Blob, Protocol = "SSH", RemoteIp = "127.0.0.1",
+            StoredUser = _repository.GetUser("dir-keys"),
+        }, TestContext.Current.CancellationToken);
+
+        Assert.False(check.Succeeded);
+        Assert.False(CredentialOwner.IsLocal("ldap", OwnedCredentials.PublicKeys, []));
+        Assert.True(CredentialOwner.IsLocal(null, OwnedCredentials.Password, []));
+    }
+
+    [Fact]
     public async Task A_provider_that_throws_refuses_the_login()
     {
         var broken = new FakeAuthenticationProvider("broken", _ => throw new InvalidOperationException("boom"));

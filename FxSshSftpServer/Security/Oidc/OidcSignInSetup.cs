@@ -39,6 +39,10 @@ namespace FxSshSftpServer.Security.Oidc
         public const string AdminRemoteSignOutPath = "/signout-oidc-admin";
         public const string ClientRemoteSignOutPath = "/signout-oidc-client";
 
+        /// <summary>The OpenID Connect Back-Channel Logout 1.0 endpoints (#145): the provider posts a logout_token.</summary>
+        public const string AdminBackChannelLogoutPath = "/signout-oidc-admin-backchannel";
+        public const string ClientBackChannelLogoutPath = "/signout-oidc-client-backchannel";
+
         /// <summary>
         /// The pages after a sign-in: they continue with a same-site navigation, so the browser sends the SameSite=Strict
         /// login cookie (it does not on the redirect of the cross-site <c>form_post</c>).
@@ -56,6 +60,11 @@ namespace FxSshSftpServer.Security.Oidc
             services.AddSingleton<AdminOidcAccounts>();
             services.AddSingleton<IAdminPasswordLoginPolicy, AdminOidcPasswordLoginPolicy>();
             services.AddSingleton<ClientOidcAccounts>();
+            services.AddSingleton<OidcLogoutTokenValidator>();
+            services.AddSingleton<AdminOidcLogouts>();
+            // The ownership rule of its users (#145): the identity provider owns the password only; their SSH keys are local.
+            services.AddSingleton(new SshServer.Interfaces.Authentication.CredentialOwner(OidcClaims.ProviderName,
+                SshServer.Interfaces.Authentication.OwnedCredentials.Password));
 
             var admin = configuration.GetSection(AdminOidcOptions.SectionName).Get<AdminOidcOptions>() ?? new AdminOidcOptions();
             var client = configuration.GetSection(ClientOidcOptions.SectionName).Get<ClientOidcOptions>() ?? new ClientOidcOptions();
@@ -123,7 +132,8 @@ namespace FxSshSftpServer.Security.Oidc
 
         /// <summary>True for the paths of the client sign-in outside <c>/client</c>: they stay open when the admin UI is closed.</summary>
         public static bool IsClientPath(PathString path) =>
-            path.StartsWithSegments(ClientCallbackPath) || path.StartsWithSegments(ClientSignedOutCallbackPath) || path.StartsWithSegments(ClientRemoteSignOutPath);
+            path.StartsWithSegments(ClientCallbackPath) || path.StartsWithSegments(ClientSignedOutCallbackPath) || path.StartsWithSegments(ClientRemoteSignOutPath)
+            || path.StartsWithSegments(ClientBackChannelLogoutPath);
 
         /// <summary>True when the scheme is registered (its section is configured).</summary>
         public static async Task<bool> IsEnabledAsync(HttpContext context, string scheme) =>
@@ -206,7 +216,10 @@ namespace FxSshSftpServer.Security.Oidc
                 Deny(context, "/Login", result.Refusal);
                 return;
             }
+            var session = OidcSession.FromIdToken(context.Principal);
             context.Principal = await flow.RecordSuccessAsync(http, admin, OidcClaims.Method, AdminScheme);
+            // The session at the provider, for its back-channel logout (#145).
+            session?.AddTo((ClaimsIdentity)context.Principal.Identity!, services.GetRequiredService<TimeProvider>().GetUtcNow());
         }
 
         private static async Task ClientTicketReceivedAsync(TicketReceivedContext context)
@@ -223,7 +236,7 @@ namespace FxSshSftpServer.Security.Oidc
                 Deny(context, ClientAuth.LoginPath, result.Refusal);
                 return;
             }
-            var principal = await flow.StartAsync(http, user, OidcClaims.Method, passwordExpired: false, ClientScheme);
+            var principal = await flow.StartAsync(http, user, OidcClaims.Method, passwordExpired: false, ClientScheme, OidcSession.FromIdToken(context.Principal));
             if (principal == null)
             {
                 Deny(context, ClientAuth.LoginPath, OidcRefusal.TooManySessions);

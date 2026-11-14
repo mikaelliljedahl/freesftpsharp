@@ -13,12 +13,16 @@ using SshServer.TwoFactor;
 
 namespace SshServer.Api.Endpoints;
 
-/// <summary>An administrator in the API, without its password hash.</summary>
+/// <summary>
+/// An administrator in the API, without its password hash. <c>AuthenticationProvider</c> (#145) is the identity provider
+/// that owns the password (for example <c>oidc</c>), or null for a local administrator; a password for such an
+/// administrator is refused.
+/// </summary>
 public sealed record AdminView(string Username, string? Email, AdminStatus Status, IReadOnlyList<string> Permissions,
-    IReadOnlyList<string> AllowedIps, int? ScopeRoleId, DateTime? LastLoginAt, bool MustChangePassword)
+    IReadOnlyList<string> AllowedIps, int? ScopeRoleId, DateTime? LastLoginAt, bool MustChangePassword, string? AuthenticationProvider)
 {
     public static AdminView From(Admin admin) => new(admin.Username, admin.Email, admin.Status, PermissionNames.Of(admin.Permissions),
-        admin.AllowedIps?.ToList() ?? [], admin.ScopeRoleId, admin.LastLoginAt, admin.MustChangePassword);
+        admin.AllowedIps?.ToList() ?? [], admin.ScopeRoleId, admin.LastLoginAt, admin.MustChangePassword, admin.AuthenticationProvider);
 }
 
 /// <summary>An administrator to create or save. The password is write-only: on a save without it the stored one stays.</summary>
