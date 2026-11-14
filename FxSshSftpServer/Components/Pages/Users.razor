@@ -9,6 +9,7 @@
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject SshServerModule.Storage.StorageConfigService StorageService
 @inject SshServerModule.Storage.VirtualFolderService FolderService
+@inject SshServerModule.Quotas.QuotaAdministrationService QuotaService
 @inject IJSRuntime JS
 @inject ToastService Toasts
 
@@ -73,6 +74,10 @@
                                 @if (context.VirtualFolders is { Count: > 0 } mounts)
                                 {
                                     <span class="badge text-bg-secondary ms-1" title="Virtual folders">+@mounts.Count @(mounts.Count == 1 ? "folder" : "folders")</span>
+                                }
+                                @if (context.DiskQuota is { IsUnlimited: false } || context.TransferQuota is { IsUnlimited: false } || context.Bandwidth is { IsUnlimited: false })
+                                {
+                                    <span class="badge text-bg-light border ms-1" title="Quotas or bandwidth limits">limits</span>
                                 }
                             </TemplateColumn>
                             <TemplateColumn Title="Last login (UTC)" SortBy="@(GridSort<User>.ByAscending(u => u.LastSuccessfulLogin))" Class="d-none d-md-table-cell">
@@ -149,6 +154,8 @@
                                             <tr>
                                                 <th scope="col">Virtual folder</th>
                                                 <th scope="col">Mount path</th>
+                                                <th scope="col" title="The disk quota of the folder for this user; 0 is unlimited">Quota (MiB)</th>
+                                                <th scope="col" title="The maximum number of files in the folder; 0 is unlimited">Max files</th>
                                                 <th scope="col"><span class="visually-hidden">Remove</span></th>
                                             </tr>
                                         </thead>
@@ -171,6 +178,14 @@
                                                     <td style="min-width: 10rem">
                                                         <input type="text" class="form-control form-control-sm font-monospace" id="mount-path-@index" aria-label="Mount path"
                                                                placeholder="/shared" value="@row.MountPath" @onchange="e => row.MountPath = e.Value?.ToString() ?? string.Empty" />
+                                                    </td>
+                                                    <td style="min-width: 6rem">
+                                                        <input type="number" min="0" step="any" class="form-control form-control-sm" id="mount-quota-@index" aria-label="Quota in MiB"
+                                                               value="@row.QuotaSizeMiB.ToString(CultureInfo.InvariantCulture)" @onchange="e => row.QuotaSizeMiB = ParseDecimal(e.Value)" />
+                                                    </td>
+                                                    <td style="min-width: 5rem">
+                                                        <input type="number" min="0" step="1" class="form-control form-control-sm" id="mount-files-@index" aria-label="Maximum number of files"
+                                                               value="@row.QuotaFiles" @onchange="e => row.QuotaFiles = (long)ParseDecimal(e.Value)" />
                                                     </td>
                                                     <td class="text-end">
                                                         <button type="button" class="btn btn-sm btn-outline-danger remove-mount" title="Remove" aria-label="Remove the mount @row.MountPath"
@@ -199,6 +214,132 @@
                             {
                                 <button type="button" class="btn btn-sm btn-outline-primary" id="add-mount"
                                         @onclick="AddMount"><i class="bi bi-plus"></i> Mount a folder</button>
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3" id="quota-fieldset">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Quotas and bandwidth</legend>
+                            <div class="small text-body-secondary mb-2">
+                                0 is unlimited. The disk quota counts the own storage of the user (<code>/</code> without the virtual folders);
+                                each virtual folder has its own quota above. The transfer quota counts until the counters are reset.
+                                The bandwidth applies to each session.
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="quota-size">Disk quota (MiB)</label>
+                                    <InputNumber id="quota-size" class="form-control" min="0" step="any" @bind-Value="form.QuotaSizeMiB" />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="quota-files">Maximum number of files</label>
+                                    <InputNumber id="quota-files" class="form-control" min="0" @bind-Value="form.QuotaFiles" />
+                                </div>
+                            </div>
+                            <ValidationMessage For="() => form.QuotaSizeMiB" />
+                            <div class="row g-2 mb-2">
+                                <div class="col-sm-4">
+                                    <label class="form-label" for="quota-upload">Upload quota (MiB)</label>
+                                    <InputNumber id="quota-upload" class="form-control" min="0" step="any" @bind-Value="form.UploadQuotaMiB" />
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label" for="quota-download">Download quota (MiB)</label>
+                                    <InputNumber id="quota-download" class="form-control" min="0" step="any" @bind-Value="form.DownloadQuotaMiB" />
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label" for="quota-total">Total transfer quota (MiB)</label>
+                                    <InputNumber id="quota-total" class="form-control" min="0" step="any" @bind-Value="form.TotalQuotaMiB" />
+                                </div>
+                            </div>
+                            <ValidationMessage For="() => form.UploadQuotaMiB" />
+                            <div class="row g-2 mb-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="bandwidth-upload">Upload bandwidth (KiB/s)</label>
+                                    <InputNumber id="bandwidth-upload" class="form-control" min="0" @bind-Value="form.UploadKiBPerSecond" />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="bandwidth-download">Download bandwidth (KiB/s)</label>
+                                    <InputNumber id="bandwidth-download" class="form-control" min="0" @bind-Value="form.DownloadKiBPerSecond" />
+                                </div>
+                            </div>
+                            <ValidationMessage For="() => form.UploadKiBPerSecond" />
+                            @if (form.BandwidthOverrides.Count > 0)
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-2" id="bandwidth-override-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Client networks</th>
+                                                <th scope="col">Upload (KiB/s)</th>
+                                                <th scope="col">Download (KiB/s)</th>
+                                                <th scope="col"><span class="visually-hidden">Remove</span></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @for (var i = 0; i < form.BandwidthOverrides.Count; i++)
+                                            {
+                                                var row = form.BandwidthOverrides[i];
+                                                var index = i;
+                                                <tr class="bandwidth-override-row">
+                                                    <td style="min-width: 10rem">
+                                                        <input type="text" class="form-control form-control-sm font-monospace" id="override-sources-@index" aria-label="Client networks"
+                                                               placeholder="10.0.0.0/8, 192.168.0.0/16" value="@row.Sources" @onchange="e => row.Sources = e.Value?.ToString() ?? string.Empty" />
+                                                    </td>
+                                                    <td style="min-width: 6rem">
+                                                        <input type="number" min="0" class="form-control form-control-sm" id="override-upload-@index" aria-label="Upload in KiB/s"
+                                                               value="@row.UploadKiBPerSecond" @onchange="e => row.UploadKiBPerSecond = (int)ParseDecimal(e.Value)" />
+                                                    </td>
+                                                    <td style="min-width: 6rem">
+                                                        <input type="number" min="0" class="form-control form-control-sm" id="override-download-@index" aria-label="Download in KiB/s"
+                                                               value="@row.DownloadKiBPerSecond" @onchange="e => row.DownloadKiBPerSecond = (int)ParseDecimal(e.Value)" />
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-danger remove-override" title="Remove" aria-label="Remove the override"
+                                                                @onclick="() => form.BandwidthOverrides.RemoveAt(index)"><i class="bi bi-x"></i></button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            <ValidationMessage For="() => form.BandwidthOverrides" />
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="add-bandwidth-override"
+                                    @onclick="() => form.BandwidthOverrides.Add(new BandwidthOverrideRow())"><i class="bi bi-plus"></i> Other bandwidth for some networks</button>
+
+                            @if (quotaView is { IsEmpty: false } view)
+                            {
+                                <div class="border-top mt-3 pt-3" id="quota-usage">
+                                    <div class="fw-semibold small mb-1">Usage</div>
+                                    <ul class="list-unstyled small mb-2">
+                                        @foreach (var scope in view.Disk)
+                                        {
+                                            <li class="quota-usage-row">
+                                                <span class="font-monospace-sm">@scope.Label</span>:
+                                                @Size(scope.Usage.UsedBytes)@(scope.Limit.MaxSizeBytes > 0 ? $" of {Size(scope.Limit.MaxSizeBytes)}" : ""),
+                                                @Math.Max(0, scope.Usage.UsedFiles) @(scope.Limit.MaxFiles > 0 ? $"of {scope.Limit.MaxFiles} files" : "files")
+                                                <span class="text-body-secondary">
+                                                    (@(scope.Usage.ScannedAt is { } scanned ? "scanned " + scanned.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC" : "never scanned")@(scope.ScanQueued ? ", scan queued" : ""))
+                                                </span>
+                                            </li>
+                                        }
+                                        @if (view.Transfer is { } transfer)
+                                        {
+                                            <li id="transfer-usage">
+                                                Transferred: uploaded @Size(view.TransferUsage.UploadedBytes)@(transfer.MaxUploadBytes > 0 ? $" of {Size(transfer.MaxUploadBytes)}" : ""),
+                                                downloaded @Size(view.TransferUsage.DownloadedBytes)@(transfer.MaxDownloadBytes > 0 ? $" of {Size(transfer.MaxDownloadBytes)}" : "")@(transfer.MaxTotalBytes > 0 ? $", total limit {Size(transfer.MaxTotalBytes)}" : "")
+                                            </li>
+                                        }
+                                    </ul>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @if (view.Disk.Count > 0)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="rescan-quota" @onclick="RescanQuota"><i class="bi bi-arrow-repeat"></i> Rescan quota</button>
+                                        }
+                                        @if (view.Transfer is not null)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reset-transfer" @onclick="ResetTransferAsync"><i class="bi bi-arrow-counterclockwise"></i> Reset transfer counters</button>
+                                        }
+                                    </div>
+                                </div>
                             }
                         </fieldset>
 
@@ -506,6 +647,7 @@
     private PublicKeyEntry pendingKeyRemoval;
     private ConfirmDialog deleteDialog;
     private ConfirmDialog removeKeyDialog;
+    private SshServerModule.Quotas.UserQuotaView quotaView;
 
     private IQueryable<User> FilteredUsers =>
         users.Where(u => string.IsNullOrWhiteSpace(search)
@@ -525,15 +667,61 @@
     {
         ResetKeyInput();
         form = UserForm.New();
+        quotaView = null;
         ClearProblems();
     }
 
-    private void Edit(User user)
+    private async Task Edit(User user)
     {
         ResetKeyInput();
         var stored = SettingsRepository.GetUser(user.Username);
         form = stored is null ? null : UserForm.From(stored, StorageService);
         ClearProblems();
+        await LoadQuotaAsync();
+    }
+
+    /// <summary>The quota usage of the open user (issue #62).</summary>
+    private async Task LoadQuotaAsync() =>
+        quotaView = form is null || form.IsNew ? null : await QuotaService.GetAsync(form.Username, System.Threading.CancellationToken.None);
+
+    private async Task RescanQuota()
+    {
+        if (form is null)
+            return;
+        if (QuotaService.RequestScan(form.Username))
+            Toasts.ShowSuccess($"A scan of the quota usage of {form.Username} was started. Its result is shown when you open the user again.");
+        else
+            Toasts.ShowError($"The user {form.Username} does not exist any more.");
+        await LoadQuotaAsync();
+    }
+
+    private async Task ResetTransferAsync()
+    {
+        if (form is null)
+            return;
+        if (await QuotaService.ResetTransferAsync(form.Username, System.Threading.CancellationToken.None))
+            Toasts.ShowSuccess($"The transfer counters of {form.Username} were reset.");
+        else
+            Toasts.ShowError($"The user {form.Username} does not exist any more.");
+        await LoadQuotaAsync();
+    }
+
+    private static decimal ParseDecimal(object value) =>
+        decimal.TryParse(value?.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var number) ? number : 0;
+
+    /// <summary>A byte count for people: "512 bytes", "1.5 MiB".</summary>
+    private static string Size(long bytes)
+    {
+        bytes = Math.Max(0, bytes);
+        string[] units = ["bytes", "KiB", "MiB", "GiB", "TiB"];
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{bytes} bytes" : value.ToString("0.##", CultureInfo.InvariantCulture) + " " + units[unit];
     }
 
     private void CloseForm() => form = null;
@@ -625,6 +813,7 @@
 
         LoadUsers();
         form = UserForm.From(SettingsRepository.GetUser(username), StorageService);
+        await LoadQuotaAsync();
     }
 
     private void AskDelete(string username)

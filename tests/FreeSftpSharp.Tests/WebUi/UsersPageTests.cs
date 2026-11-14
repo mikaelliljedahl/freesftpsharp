@@ -446,6 +446,102 @@ public sealed class UsersPageTests : AdminUiComponentContext
         Assert.Null(Repository.GetUser("judy"));
     }
 
+    [Fact]
+    public void The_quotas_and_the_bandwidth_of_a_new_user_are_saved()
+    {
+        var page = Render<Users>();
+
+        page.Find("#add-user").Click();
+        page.Find("#username").Change("quota-user");
+        page.Find("#root-directory").Change(_root.Path);
+        page.Find("#quota-size").Change("1.5");
+        page.Find("#quota-files").Change("100");
+        page.Find("#quota-download").Change("10");
+        page.Find("#bandwidth-download").Change("256");
+        page.Find("#add-bandwidth-override").Click();
+        page.Find("#override-sources-0").Change("10.0.0.0/8, 192.168.0.0/16");
+        page.Find("#user-form").Submit();
+
+        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("quota-user")), SaveTimeout);
+        var user = Repository.GetUser("quota-user");
+        Assert.Equal((1_572_864L, 100L), (user.DiskQuota!.MaxSizeBytes, user.DiskQuota.MaxFiles));
+        Assert.Equal((0L, 10_485_760L, 0L), (user.TransferQuota!.MaxUploadBytes, user.TransferQuota.MaxDownloadBytes, user.TransferQuota.MaxTotalBytes));
+        Assert.Equal((0, 256), (user.Bandwidth!.UploadKiBPerSecond, user.Bandwidth.DownloadKiBPerSecond));
+        var lan = Assert.Single(user.Bandwidth.Overrides!);
+        Assert.Equal(["10.0.0.0/8", "192.168.0.0/16"], lan.Sources);
+        Assert.Equal((0, 0), (lan.UploadKiBPerSecond, lan.DownloadKiBPerSecond));
+    }
+
+    [Fact]
+    public void A_user_without_limits_stores_no_quota_and_a_bad_override_network_is_rejected()
+    {
+        var page = Render<Users>();
+
+        page.Find("#add-user").Click();
+        page.Find("#username").Change("no-limits");
+        page.Find("#root-directory").Change(_root.Path);
+        page.Find("#add-bandwidth-override").Click();
+        page.Find("#override-sources-0").Change("10.0.0.0/40");
+        page.Find("#user-form").Submit();
+
+        Assert.Contains("Not a valid network: 10.0.0.0/40", page.Markup);
+        Assert.Null(Repository.GetUser("no-limits"));
+
+        page.Find(".remove-override").Click();
+        page.Find("#user-form").Submit();
+        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("no-limits")), SaveTimeout);
+        var user = Repository.GetUser("no-limits");
+        Assert.Null(user.DiskQuota);
+        Assert.Null(user.TransferQuota);
+        Assert.Null(user.Bandwidth);
+    }
+
+    [Fact]
+    public async Task The_usage_of_a_user_with_a_quota_is_shown_and_can_be_rescanned_and_reset()
+    {
+        Repository.AddUser(new User
+        {
+            Username = "counted",
+            UserRootDirectory = _root.Path,
+            DiskQuota = new SshServer.Interfaces.Quotas.DiskQuota { MaxSizeBytes = 2 * 1024 * 1024, MaxFiles = 10 },
+            TransferQuota = new SshServer.Interfaces.Quotas.TransferQuota { MaxUploadBytes = 1024 },
+            WhitelistedIps = new List<string>(),
+        });
+        var scope = SshServer.Interfaces.Quotas.QuotaScope.ForUser("counted");
+        await Quotas.LoadAsync(scope, Xunit.TestContext.Current.CancellationToken);
+        Quotas.AddDisk(scope, 1024 * 1024, 3);
+        Quotas.AddTransfer(scope, 512, 0);
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+
+        var usage = page.Find("#quota-usage").TextContent;
+        Assert.Contains("1 MiB of 2 MiB", usage);
+        Assert.Contains("3 of 10 files", usage);
+        Assert.Contains("never scanned", usage);
+        Assert.Contains("uploaded 512 bytes of 1 KiB", page.Find("#transfer-usage").TextContent);
+
+        page.Find("#rescan-quota").Click();
+        Assert.True(QuotaScans.IsUserPending("counted"));
+        Assert.Contains("scan queued", page.Find("#quota-usage").TextContent);
+
+        page.Find("#reset-transfer").Click();
+        page.WaitForAssertion(() => Assert.Equal(0, Quotas.Current(scope).UploadedBytes));
+        page.WaitForAssertion(() => Assert.Contains("uploaded 0 bytes", page.Find("#transfer-usage").TextContent));
+    }
+
+    [Fact]
+    public void A_user_without_a_quota_shows_no_usage()
+    {
+        AddUser("plain");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+
+        Assert.Empty(page.FindAll("#quota-usage"));
+        Assert.NotEmpty(page.FindAll("#quota-fieldset"));
+    }
+
     private static IEnumerable<FilePermissions> PermissionRowColumns() =>
         FxSshSftpServer.Models.PermissionRow.Columns.Select(c => c.Flag);
 }

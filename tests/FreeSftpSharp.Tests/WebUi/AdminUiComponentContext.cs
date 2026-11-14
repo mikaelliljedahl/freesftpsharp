@@ -16,6 +16,8 @@ using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Users;
 using SshServerModule.Connections;
 using SshServerModule.Storage;
+using SshServerModule.Quotas;
+using SshServer.Interfaces.Quotas;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.S3;
 using SshServer.Interfaces.Storage;
@@ -42,6 +44,8 @@ public class AdminUiComponentContext : BunitContext
     public StorageOptionsCodec Codec { get; }
     public InMemoryAdminStore AdminStore { get; } = new();
     public AdminAdministrationService Administration { get; }
+    public QuotaUsageTracker Quotas { get; }
+    public QuotaScanQueue QuotaScans { get; } = new();
 
     private readonly BunitAuthorizationContext _authorization;
 
@@ -81,6 +85,8 @@ public class AdminUiComponentContext : BunitContext
         Services.AddScoped<ScopedConnections>();
         Services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
         Services.AddScoped(sp => new VirtualFolderService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
+        Quotas = new QuotaUsageTracker(new InMemoryQuotaUsageStore(), Clock);
+        Services.AddScoped(sp => new QuotaAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>(), new EffectiveQuotaService(), Quotas, QuotaScans));
         JSInterop.Mode = JSRuntimeMode.Loose;
 
         _authorization = AddAuthorization();
