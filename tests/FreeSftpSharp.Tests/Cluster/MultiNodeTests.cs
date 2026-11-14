@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
 using FreeSftpSharp.Tests.Settings.Providers;
@@ -170,5 +171,87 @@ public sealed class MultiNodeTests : IAsyncLifetime
 
             await changed.Task.WaitAsync(Within, TestContext.Current.CancellationToken);
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_session_limit_of_a_user_counts_the_sessions_on_every_node(string provider)
+    {
+        var (database, a, b) = await StartAsync(provider);
+        await using (database)
+        await using (a)
+        await using (b)
+        {
+            var user = NewUser("erin");
+            user.MaxSessions = 1;
+            Assert.True(a.Repository.AddUser(user));
+            using var first = Client(b, "erin");
+            await first.ConnectAsync(TestContext.Current.CancellationToken);
+            var id = Assert.Single(b.LocalConnections.GetAll()).Id;
+            await EventuallyAsync(() => Task.FromResult(a.Connections.Get(id) is { Username: "erin" }), "the session of node B on node A");
+            Assert.Equal(1, a.LocalConnections.CountSessions("ERIN", Guid.Empty));
+
+            using (var second = Client(a, "erin"))
+                await Assert.ThrowsAsync<SshAuthenticationException>(() => second.ConnectAsync(TestContext.Current.CancellationToken));
+
+            first.Disconnect();
+            await EventuallyAsync(async () =>
+            {
+                using var again = Client(a, "erin");
+                try
+                {
+                    await again.ConnectAsync(TestContext.Current.CancellationToken);
+                    return again.IsConnected;
+                }
+                catch (SshAuthenticationException)
+                {
+                    return false;
+                }
+            }, "a login on node A after the session on node B ended");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Two_nodes_that_start_at_the_same_time_on_an_empty_database_present_the_same_host_keys(string provider)
+    {
+        // No PrepareDatabase: both nodes create the settings and the host keys themselves, at the same time (#149).
+        await using var database = await TestDatabase.CreateAsync(provider);
+        var starts = await Task.WhenAll(
+            Task.Run(() => TestNode.StartAsync(database, "node-a", _directory.Path)),
+            Task.Run(() => TestNode.StartAsync(database, "node-b", _directory.Path)));
+        await using var a = starts[0];
+        await using var b = starts[1];
+
+        await using (var db = new SshServer.Settings.Sql.SettingsDbContext(database.Options))
+            Assert.Equal(1, await db.ServerSettings.CountAsync(TestContext.Current.CancellationToken));
+        foreach (var algorithm in new[] { "ecdsa-sha2-nistp256", "rsa-sha2-512", "rsa-sha2-256" })
+        {
+            var keyA = await HostKeyAsync(a, algorithm);
+            var keyB = await HostKeyAsync(b, algorithm);
+            Assert.Equal(keyA, keyB);
+        }
+    }
+
+    /// <summary>The host key that <paramref name="node"/> presents for <paramref name="algorithm"/> (the client offers only that one).</summary>
+    private static async Task<string> HostKeyAsync(TestNode node, string algorithm)
+    {
+        var info = new ConnectionInfo("127.0.0.1", node.Port, "nobody", new PasswordAuthenticationMethod("nobody", "wrong"));
+        foreach (var name in info.HostKeyAlgorithms.Keys.Where(k => k != algorithm).ToList())
+            info.HostKeyAlgorithms.Remove(name);
+        string? key = null;
+        using var client = new SshClient(info);
+        client.HostKeyReceived += (_, e) => key = e.HostKeyName + " " + Convert.ToBase64String(e.HostKey);
+        try
+        {
+            await client.ConnectAsync(TestContext.Current.CancellationToken);
+        }
+        catch (SshAuthenticationException)
+        {
+            // the key exchange is done: the host key was received
+        }
+        Assert.NotNull(key);
+        Assert.StartsWith(algorithm == "ecdsa-sha2-nistp256" ? algorithm : "rsa-sha2", key);
+        return key;
     }
 }

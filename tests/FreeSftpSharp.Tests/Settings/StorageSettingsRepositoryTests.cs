@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using Microsoft.Extensions.DependencyInjection;
 using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
@@ -20,20 +21,19 @@ namespace FreeSftpSharp.Tests.Settings;
 /// </summary>
 public sealed class StorageSettingsRepositoryTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly SqlSettingsRepository _repository;
 
     public StorageSettingsRepositoryTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        _repository = new SqlSettingsRepository(Options(_connection), createHostKey: () => TestCredentials.HostKey);
+        _database = TestDatabase.CreateDefault();
+        _repository = new SqlSettingsRepository(_database.Options, createHostKey: () => TestCredentials.HostKey);
     }
 
     public void Dispose()
     {
         _repository.Dispose();
-        _connection.Dispose();
+        _database.Dispose();
     }
 
     private static DbContextOptions<SettingsDbContext> Options(SqliteConnection connection)
@@ -161,8 +161,8 @@ public sealed class StorageSettingsRepositoryTests : IDisposable
 
         Assert.True(_repository.RemoveUser("alice"));
         Assert.True(_repository.RemoveVirtualFolder(keep.Id));
-        using var db = new SettingsDbContext(Options(_connection));
-        Assert.Equal(0, db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM UserVirtualFolders").Single());
+        using var db = new SettingsDbContext(_database.Options);
+        Assert.Equal(0, db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM \"UserVirtualFolders\"").Single());
     }
 
     [Fact]
@@ -177,9 +177,9 @@ public sealed class StorageSettingsRepositoryTests : IDisposable
         user.Storage = codec.Encode("s3", options);
         _repository.AddUser(user);
 
-        using (var db = new SettingsDbContext(Options(_connection)))
+        using (var db = new SettingsDbContext(_database.Options))
         {
-            var dump = string.Join("\n", db.Database.SqlQueryRaw<string>("SELECT Storage AS Value FROM VirtualFolders UNION ALL SELECT Storage AS Value FROM Users").ToList());
+            var dump = string.Join("\n", db.Database.SqlQueryRaw<string>("SELECT \"Storage\" AS \"Value\" FROM \"VirtualFolders\" UNION ALL SELECT \"Storage\" AS \"Value\" FROM \"Users\"").ToList());
             Assert.DoesNotContain("very-secret-key-123", dump);
             Assert.Contains("AKIAEXAMPLE", dump); // the access key id is not a secret
         }

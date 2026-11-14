@@ -8,8 +8,9 @@
 # both nodes. The user files are on a volume that both nodes mount (/data/files); for a real deployment use shared
 # storage (NFS) or an object store (S3, Azure Blob, GCS) for the users.
 x-node: &node
-  image: ghcr.io/mikaelliljedahl/freesftpsharp:latest
-  # Needs a release with #75. To build from a checkout instead:  build: { context: ../.. , dockerfile: Dockerfile }
+  # FREESFTPSHARP_IMAGE: another image, for example one built from a checkout (docker build -t freesftpsharp:local .);
+  # deploy/cluster/e2e-test.sh starts this example with such an image. Needs a release with #75.
+  image: ${FREESFTPSHARP_IMAGE:-ghcr.io/mikaelliljedahl/freesftpsharp:latest}
   restart: unless-stopped
   depends_on:
     postgres:

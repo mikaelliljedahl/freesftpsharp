@@ -192,8 +192,16 @@ public sealed partial class FtpSecurityTests
 
         await first.CommandAsync("QUIT");
         await WaitUntilAsync(() => host.Connections.GetAll().Count == 1);
-        await using var fourth = await host.RawAsync();
-        Assert.Equal(220, (await fourth.ReadAsync()).Code);
+        // The listener frees the slot of the address just after the session left the registry: try again for a moment.
+        var code = 0;
+        for (var attempt = 0; attempt < 40 && code != 220; attempt++)
+        {
+            if (attempt > 0)
+                await Task.Delay(25, TestContext.Current.CancellationToken);
+            await using var fourth = await host.RawAsync();
+            code = (await fourth.ReadAsync()).Code;
+        }
+        Assert.Equal(220, code);
     }
 
     [Fact]

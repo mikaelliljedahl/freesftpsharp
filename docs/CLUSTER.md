@@ -5,6 +5,9 @@ throughput. Everything here is opt-in: with no configuration the server is one n
 
 A ready example with PostgreSQL, two nodes and HAProxy is [`deploy/cluster/docker-compose.yml`](../deploy/cluster/docker-compose.yml)
 with [`haproxy.cfg`](../deploy/cluster/haproxy.cfg).
+`FREESFTPSHARP_IMAGE` starts it with another image, for example one built from a checkout. CI starts it end to end with
+the image of the branch ([`e2e-test.sh`](../deploy/cluster/e2e-test.sh)): a user created through node A logs in over SFTP
+through HAProxy, both nodes serve logins, and the REST API lists an open session with the client address.
 
 ## Settings database
 
@@ -15,7 +18,10 @@ with [`haproxy.cfg`](../deploy/cluster/haproxy.cfg).
 
 The server creates and migrates the schema at the start, also when several nodes start at the same time (EF Core takes
 a migration lock). The user needs the right to create tables; on PostgreSQL the first migration creates the `citext`
-extension (a trusted extension: the owner of the database may create it). On SQL Server keep a case-insensitive
+extension (a trusted extension: the owner of the database may create it). Nodes that start at the same time on an empty database
+make one row of server settings and one set of host keys: the table keeps one row (a unique column), the ECDSA key is
+stored only when there is none yet, and every node reads back the stored keys, so a client behind the balancer sees the
+same host key on every node. On SQL Server keep a case-insensitive
 (`_CI_`) collation for the database: user, group and folder names compare without case on every provider.
 
 Each provider is its own project with its own migrations: `SshServer.Settings.Sql` (SQLite, `Migrations/Sqlite`),
@@ -49,8 +55,9 @@ With `Cluster:Enabled` every node, each poll interval (`ClusterNodeService`):
 The users, groups and server settings are read from the database for each login, so a user created on one node can log
 in on the others at once. The quota counters (#62) are increments in the database, the webhook outbox (#66) and the
 schedule of the event rules (#68) are claimed with conditional updates, and the token signing key of the REST API (#67)
-is in the database: they work on several nodes without more settings. The session limit of a user (`MaxSessions`) is
-counted per node. A user closed on one node (disabled or removed) is disconnected on every node.
+is in the database: they work on several nodes without more settings. The session limit of a user (`MaxSessions`) counts
+the sessions on every node: the ones of the other nodes as they stored them at their last heartbeat, so two logins on two
+nodes within one poll interval can both take the last session. A user closed on one node (disabled or removed) is disconnected on every node.
 
 The files of the users must be on storage that every node reaches: a shared file system for the local disk backend, or
 an object store (S3, Azure Blob, GCS).
@@ -66,10 +73,11 @@ load balancers) gives it the address of the client.
 | `Proxy:AllowedSources` | empty (off) | The addresses or CIDR networks of the load balancers, a list or a comma separated text |
 | `Proxy:HeaderTimeoutSeconds` | `5` | The time for the PROXY header after the connection (1-60) |
 
-With `Proxy:AllowedSources` every SSH connection must come from an allowed source and start with a PROXY header
+With `Proxy:AllowedSources` every SSH and FTP connection must come from an allowed source and start with a PROXY header
 (version 1 or 2). The client address of the header is then used for the IP rules, the bans, the connections and the
 audit log. A connection from another source, without a header, or with a header that is not valid is closed before the
-SSH handshake. A `LOCAL` (v2) or `UNKNOWN` (v1) header keeps the address of the balancer (health checks).
+SSH handshake. A `LOCAL` (v2) or `UNKNOWN` (v1) header keeps the address of the balancer (health checks). For the FTP data
+connections behind a balancer see [FTP.md](FTP.md#behind-a-load-balancer-proxy-protocol).
 
 The admin UI and the REST API are HTTP. With `DataProtection:Store=Database` the login cookie works on every node; the
 interactive Blazor UI keeps its circuit on one node, so give the browser a sticky cookie (the example does). The REST API

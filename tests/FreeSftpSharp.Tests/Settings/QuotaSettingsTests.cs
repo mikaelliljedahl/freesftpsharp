@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using FreeSftpSharp.Tests.Events;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Data.Sqlite;
@@ -19,23 +20,22 @@ public sealed class QuotaSettingsTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
     private static readonly DateTimeOffset Now = new(2026, 11, 14, 10, 0, 0, TimeSpan.Zero);
 
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly DbContextOptions<SettingsDbContext> _options;
     private readonly RecordingEventBus _events = new();
     private readonly SqlSettingsRepository _repository;
 
     public QuotaSettingsTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        _options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_connection).Options;
+        _database = TestDatabase.CreateDefault();
+        _options = _database.Options;
         _repository = new SqlSettingsRepository(_options, createHostKey: () => TestCredentials.HostKey, events: _events);
     }
 
     public void Dispose()
     {
         _repository.Dispose();
-        _connection.Dispose();
+        _database.Dispose();
     }
 
     private VirtualFolder AddFolder(string name)

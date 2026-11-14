@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using System.Collections.Concurrent;
 using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
@@ -23,24 +24,22 @@ namespace FreeSftpSharp.Tests.EventRules;
 /// <summary>
 /// The event rules plug-in as a host builds it (AddSshServerEvents + AddEventRules) on a SQLite settings database, with
 /// in-memory storage per user (<see cref="InMemoryFileSystemFactory"/>), a fake mail server and a fake process runner.
-/// Give the connection string of another host for a second node on the same database.
+/// The database is a new one of the provider of the run (<see cref="TestDatabase.CreateDefault"/>); give the database of
+/// another host for a second node on the same database.
 /// </summary>
 public sealed class EventRuleTestHost : IAsyncDisposable
 {
-    private readonly TempDirectory? _directory;
+    private readonly TestDatabase? _ownDatabase;
     private readonly ServiceProvider _provider;
     private readonly List<IHostedService> _started = new();
 
     public EventRuleTestHost(TimeProvider? time = null, IReadOnlyDictionary<string, string?>? settings = null,
-        Action<IServiceCollection>? configure = null, string? connectionString = null, IFileSystemFactory? files = null)
+        Action<IServiceCollection>? configure = null, TestDatabase? database = null, IFileSystemFactory? files = null)
     {
-        if (connectionString == null)
-        {
-            _directory = new TempDirectory();
-            connectionString = _directory.SqliteConnectionString();
-        }
-        ConnectionString = connectionString;
-        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connectionString).Options;
+        if (database == null)
+            database = _ownDatabase = TestDatabase.CreateDefault();
+        Database = database;
+        var options = database.Options;
         Repository = new SqlSettingsRepository(options, createHostKey: () => TestCredentials.HostKey);
         Files = files as InMemoryFileSystemFactory ?? new InMemoryFileSystemFactory(time);
 
@@ -59,7 +58,7 @@ public sealed class EventRuleTestHost : IAsyncDisposable
         _provider = services.BuildServiceProvider();
     }
 
-    public string ConnectionString { get; }
+    public TestDatabase Database { get; }
 
     public SqlSettingsRepository Repository { get; }
 
@@ -139,7 +138,8 @@ public sealed class EventRuleTestHost : IAsyncDisposable
             await service.StopAsync(CancellationToken.None);
         await _provider.DisposeAsync();
         Repository.Dispose();
-        _directory?.Dispose();
+        if (_ownDatabase != null)
+            await _ownDatabase.DisposeAsync();
     }
 
     /// <summary>One upload event of a user.</summary>

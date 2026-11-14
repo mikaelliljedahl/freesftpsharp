@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using SshServer.Interfaces.Admins;
 using System.Diagnostics;
 using FreeSftpSharp.Tests.Settings;
@@ -30,10 +31,10 @@ public sealed class WebhookDeliveryTests : IAsyncDisposable
             await _receiver.DisposeAsync();
     }
 
-    private async Task<WebhookTestHost> StartHostAsync(string? connectionString = null, IDataProtectionProvider? keys = null, bool start = true)
+    private async Task<WebhookTestHost> StartHostAsync(TestDatabase? database = null, IDataProtectionProvider? keys = null, bool start = true)
     {
         _receiver ??= await WebhookReceiver.StartAsync(() => _time.GetUtcNow());
-        var host = new WebhookTestHost(connectionString, _time, keys);
+        var host = new WebhookTestHost(database, _time, keys);
         _hosts.Add(host);
         if (start)
             await host.StartAsync();
@@ -149,8 +150,7 @@ public sealed class WebhookDeliveryTests : IAsyncDisposable
     [Fact]
     public async Task Pending_deliveries_survive_a_stop_and_are_delivered_after_the_next_start()
     {
-        using var directory = new TempDirectory();
-        var database = directory.SqliteConnectionString();
+        await using var database = TestDatabase.CreateDefault();
         var keys = new EphemeralDataProtectionProvider(); // the same data protection keys for both starts
         var first = await StartHostAsync(database, keys);
         _receiver.Respond = (_, _) => new ReceiverAnswer(500);

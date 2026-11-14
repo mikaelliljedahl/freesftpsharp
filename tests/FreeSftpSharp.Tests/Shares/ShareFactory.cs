@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
@@ -27,12 +28,12 @@ public sealed partial class ShareFactory : WebClientFactory
 
     private static readonly string SharePasswordHash = PasswordHasher.Hash(SharePassword, PasswordHasher.MinimumIterations);
 
-    private readonly TempDirectory _directory = new();
+    private readonly TestDatabase _database = TestDatabase.CreateDefault();
     private readonly DbContextOptions<SettingsDbContext> _db;
 
     public ShareFactory()
     {
-        _db = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_directory.SqliteConnectionString()).Options;
+        _db = _database.Options;
         _ = new SqlSettingsRepository(_db, createHostKey: () => TestCredentials.HostKey); // creates and migrates the database
     }
 
@@ -85,7 +86,7 @@ public sealed partial class ShareFactory : WebClientFactory
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        _directory.Dispose();
+        _database.Dispose();
     }
 }
 

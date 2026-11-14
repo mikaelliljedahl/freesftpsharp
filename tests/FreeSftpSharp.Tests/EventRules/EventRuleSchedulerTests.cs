@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using FreeSftpSharp.Tests.Settings;
 using Microsoft.Extensions.Time.Testing;
 using SshServer.EventRules;
@@ -59,10 +60,10 @@ public sealed class EventRuleSchedulerTests
     [Fact]
     public async Task Two_nodes_on_one_database_run_a_schedule_once_per_occurrence()
     {
-        using var directory = new TempDirectory();
+        await using var database = TestDatabase.CreateDefault();
         var clock = new FakeTimeProvider(Start);
-        await using var first = new EventRuleTestHost(time: clock, connectionString: directory.SqliteConnectionString());
-        await using var second = new EventRuleTestHost(time: clock, connectionString: directory.SqliteConnectionString());
+        await using var first = new EventRuleTestHost(time: clock, database: database);
+        await using var second = new EventRuleTestHost(time: clock, database: database);
         var id = await first.AddRuleAsync(new EventRuleInput
         {
             Name = "hourly", Trigger = EventRuleTrigger.Schedule, CronExpression = "0 * * * *", Actions = [Mail("tick {{Date}}")],

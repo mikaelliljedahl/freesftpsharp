@@ -18,14 +18,15 @@ namespace SshServerModule.Cluster
     public sealed class ClusterConnections : IClusterConnections
     {
         private readonly IConnectionRegistry _registry;
+        private readonly RemoteConnections _remote;
         private readonly IClusterStore _store;
         private readonly ClusterOptions _options;
         private readonly TimeProvider _time;
-        private volatile IReadOnlyList<ConnectionInfo> _remote = [];
 
-        public ClusterConnections(IConnectionRegistry registry, IClusterStore store, ClusterOptions options, TimeProvider time)
+        public ClusterConnections(IConnectionRegistry registry, RemoteConnections remote, IClusterStore store, ClusterOptions options, TimeProvider time)
         {
             _registry = registry;
+            _remote = remote;
             _store = store;
             _options = options;
             _time = time;
@@ -34,26 +35,50 @@ namespace SshServerModule.Cluster
         /// <summary>The connections of this node, each with the id of this node.</summary>
         public IReadOnlyList<ConnectionInfo> Local() => _registry.GetAll().Select(c => c with { Node = _options.NodeId }).ToList();
 
-        /// <summary>Called by the node service with the stored connections of the live nodes.</summary>
-        internal void SetRemote(IEnumerable<ConnectionInfo> stored)
-            => _remote = stored.Where(c => c.Node != _options.NodeId).ToList();
-
-        public IReadOnlyList<ConnectionInfo> GetAll() => Local().Concat(_remote).OrderBy(c => c.ConnectedAt).ToList();
+        public IReadOnlyList<ConnectionInfo> GetAll() => Local().Concat(_remote.All).OrderBy(c => c.ConnectedAt).ToList();
 
         public ConnectionInfo? Get(Guid id)
-            => _registry.Get(id) is { } local ? local with { Node = _options.NodeId } : _remote.FirstOrDefault(c => c.Id == id);
+            => _registry.Get(id) is { } local ? local with { Node = _options.NodeId } : _remote.All.FirstOrDefault(c => c.Id == id);
 
         public async Task<bool> DisconnectAsync(Guid id, string reason)
         {
             if (_registry.Get(id) != null)
                 return await _registry.DisconnectAsync(id, reason);
-            var remote = _remote.FirstOrDefault(c => c.Id == id);
+            var remote = _remote.All.FirstOrDefault(c => c.Id == id);
             if (remote?.Node == null)
                 return false;
             await _store.RequestDisconnectAsync(remote.Node, id, reason, _time.GetUtcNow(), CancellationToken.None);
-            _remote = _remote.Where(c => c.Id != id).ToList();
+            _remote.Remove(id);
             return true;
         }
+    }
+
+    /// <summary>
+    /// The connections of the other nodes as the <see cref="ClusterNodeService"/> read them from the settings database at
+    /// its last poll (no database read for a page, an API call or a login). It counts the sessions of a user on the other
+    /// nodes for the session limit (#149), so the limit is over all nodes as of the last heartbeat of each node.
+    /// </summary>
+    public sealed class RemoteConnections : IRemoteSessionCounter
+    {
+        private readonly string _nodeId;
+        private volatile IReadOnlyList<ConnectionInfo> _connections = [];
+
+        public RemoteConnections(ClusterOptions options)
+        {
+            _nodeId = options.NodeId;
+        }
+
+        /// <summary>The connections of the other nodes now.</summary>
+        public IReadOnlyList<ConnectionInfo> All => _connections;
+
+        /// <summary>Called by the node service with the stored connections of the live nodes; the ones of this node are left out.</summary>
+        internal void Set(IEnumerable<ConnectionInfo> stored) => _connections = stored.Where(c => c.Node != _nodeId).ToList();
+
+        internal void Remove(Guid id) => _connections = _connections.Where(c => c.Id != id).ToList();
+
+        public int CountSessions(string username)
+            => _connections.Count(c => c.Protocol != ConnectionProtocols.HttpShare
+                                       && string.Equals(c.Username, username, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

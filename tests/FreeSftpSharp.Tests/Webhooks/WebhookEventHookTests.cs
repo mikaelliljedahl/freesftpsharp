@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using SshServer.Interfaces.Admins;
 using System.Diagnostics;
 using SshServer.Interfaces.Events;
@@ -126,7 +127,7 @@ public sealed class WebhookEventHookTests : IAsyncLifetime
     public async Task An_http_webhook_is_not_called_when_AllowInsecureWebhooks_is_turned_off_later()
     {
         var id = await _host.AddWebhookAsync(SyncHook("insecure"));
-        await using var strict = new WebhookTestHost(_host.ConnectionString, allowInsecure: false, dataProtection: _host.DataProtection);
+        await using var strict = new WebhookTestHost(_host.Database, allowInsecure: false, dataProtection: _host.DataProtection);
 
         var decision = await strict.Hook.DecideAsync(PreUpload(), Ct);
 

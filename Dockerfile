@@ -39,10 +39,11 @@ COPY deploy/docker/entrypoint.sh deploy/docker/healthcheck.sh deploy/docker/free
 
 # /data: the settings database (users, settings, SSH host keys), the admin data protection keys, the logs and the
 # default user root directories. /config: an optional appsettings.Production.json.
-# The base image user "app" (UID 1654) owns both; a named volume copies this ownership on first use.
+# The base image user "app" (UID 1654) owns both; a named volume copies this ownership on first use (also a volume on
+# /data/files, the user files that several nodes share, deploy/cluster).
 USER root
 RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh /usr/local/bin/freesftpsharp-user \
- && mkdir -p /data /config \
+ && mkdir -p /data/files /config \
  && ln -s /config/appsettings.Production.json /app/web/appsettings.Production.json \
  && chown -R app:app /data /config
 USER app

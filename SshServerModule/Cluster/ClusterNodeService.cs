@@ -26,6 +26,7 @@ namespace SshServerModule.Cluster
         private readonly ISettingsVersionStore _versions;
         private readonly IConnectionRegistry _registry;
         private readonly ClusterConnections _connections;
+        private readonly RemoteConnections _remote;
         private readonly ClusterSettingsChangeNotifier _notifier;
         private readonly LoginBanTracker _bans;
         private readonly ISettingsRepository _settings;
@@ -35,7 +36,7 @@ namespace SshServerModule.Cluster
         private readonly string _version;
 
         public ClusterNodeService(ClusterOptions options, IClusterStore store, ISettingsVersionStore versions, IConnectionRegistry registry,
-            ClusterConnections connections, ClusterSettingsChangeNotifier notifier, LoginBanTracker bans, ISettingsRepository settings,
+            ClusterConnections connections, RemoteConnections remote, ClusterSettingsChangeNotifier notifier, LoginBanTracker bans, ISettingsRepository settings,
             TimeProvider time, ILogger<ClusterNodeService> logger)
         {
             _options = options;
@@ -43,6 +44,7 @@ namespace SshServerModule.Cluster
             _versions = versions;
             _registry = registry;
             _connections = connections;
+            _remote = remote;
             _notifier = notifier;
             _bans = bans;
             _settings = settings; // resolved first: the repository creates and migrates the database
@@ -83,7 +85,7 @@ namespace SshServerModule.Cluster
                 var now = _time.GetUtcNow();
                 await _store.HeartbeatAsync(new NodeInfo(_options.NodeId, Environment.MachineName, _version, _startedAt, now), _connections.Local(), ct);
                 await _store.RemoveStaleNodesAsync(now - _options.NodeTimeout, ct);
-                _connections.SetRemote(await _store.ListConnectionsAsync(now - _options.NodeTimeout, ct));
+                _remote.Set(await _store.ListConnectionsAsync(now - _options.NodeTimeout, ct));
 
                 foreach (var request in await _store.TakeDisconnectRequestsAsync(_options.NodeId, ct))
                 {

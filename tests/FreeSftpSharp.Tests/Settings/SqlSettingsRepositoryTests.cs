@@ -1,5 +1,6 @@
 using SshServer.Interfaces.Users;
 using FreeSftpSharp.Tests.Infrastructure;
+using FreeSftpSharp.Tests.Settings.Providers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -11,31 +12,25 @@ using SshServer.Settings.Sql;
 namespace FreeSftpSharp.Tests.Settings;
 
 /// <summary>
-/// CRUD of the EF Core / SQLite settings repository on an in-memory SQLite database (the open connection keeps
-/// the database alive), plus persistence in a file.
+/// CRUD of the EF Core settings repository on a new database of the provider of the run (<see cref="TestDatabase.CreateDefault"/>:
+/// SQLite, or PostgreSQL / SQL Server with <c>FREESFTPSHARP_TEST_DB</c>), plus persistence over a restart. The upgrades of
+/// old SQLite schemas stay on SQLite (they test its migrations).
 /// </summary>
 public sealed class SqlSettingsRepositoryTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly SqlSettingsRepository _repository;
 
     public SqlSettingsRepositoryTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        _repository = CreateRepository(_connection);
-    }
-
-    private static SqlSettingsRepository CreateRepository(SqliteConnection connection, string? hostKey = null)
-    {
-        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connection).Options;
-        return new SqlSettingsRepository(options, createHostKey: () => hostKey ?? TestCredentials.HostKey);
+        _database = TestDatabase.CreateDefault();
+        _repository = _database.Repository();
     }
 
     public void Dispose()
     {
         _repository.Dispose();
-        _connection.Dispose();
+        _database.Dispose();
     }
 
     private static User NewUser(string username) => new()
@@ -470,8 +465,8 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
     [Fact]
     public void Settings_and_users_survive_a_restart_with_a_database_file()
     {
-        using var temp = new TempDirectory();
-        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(temp.SqliteConnectionString()).Options;
+        using var database = TestDatabase.CreateDefault();
+        var options = database.Options;
 
         using (var first = new SqlSettingsRepository(options, createHostKey: () => "first-key"))
         {

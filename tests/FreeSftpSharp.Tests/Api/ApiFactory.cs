@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -41,11 +42,12 @@ public class ApiFactory : AdminUiFactory
     private static readonly string PasswordHash = PasswordHasher.Hash(Password, PasswordHasher.MinimumIterations);
 
     private readonly TempDirectory _directory = new();
+    private readonly TestDatabase _database = TestDatabase.CreateDefault();
     private readonly DbContextOptions<SettingsDbContext> _db;
 
     public ApiFactory()
     {
-        _db = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_directory.SqliteConnectionString()).Options;
+        _db = _database.Options;
         // The repository creates and migrates the database, as at the start of the server.
         _ = new SqlSettingsRepository(_db, createHostKey: () => TestCredentials.HostKey);
     }
@@ -152,7 +154,10 @@ public class ApiFactory : AdminUiFactory
     {
         base.Dispose(disposing);
         if (disposing)
+        {
             _directory.Dispose();
+            _database.Dispose();
+        }
     }
 }
 

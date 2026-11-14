@@ -24,8 +24,8 @@ namespace FxSsh.SshServerModule
             var settings = repository.ServerSettings;
             if (string.IsNullOrWhiteSpace(settings.ServerEcdsaKey))
             {
-                settings.ServerEcdsaKey = KeyGenerator.GenerateECDsaKeyPem("nistp256");
-                repository.UpdateServerSettings(settings);
+                // Store it only when there is still none, and use the stored one: another node may have made one at the same time.
+                settings.ServerEcdsaKey = repository.EnsureServerEcdsaKey(KeyGenerator.GenerateECDsaKeyPem("nistp256"));
             }
 
             var rsaPem = RsaKeyToPem(settings.ServerRsaKey);

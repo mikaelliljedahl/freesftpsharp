@@ -51,17 +51,17 @@ internal sealed partial class FtpSession
     private string? _renameFrom;
     private IFtpDataSource? _data;
 
-    public FtpSession(FtpServices services, Socket socket, CancellationToken serverStopping)
+    /// <param name="client">The address of the client: of the connection, or of the PROXY header behind a load balancer.</param>
+    public FtpSession(FtpServices services, Socket socket, IPEndPoint client, CancellationToken serverStopping)
     {
         _services = services;
         _options = services.Options;
         _socket = socket;
         _channel = new FtpControlChannel(new NetworkStream(socket, ownsSocket: true));
         _logger = services.Loggers.CreateLogger<FtpSession>();
-        var remote = (IPEndPoint)socket.RemoteEndPoint!;
-        _remote = CidrNotation.Normalize(remote.Address);
+        _remote = CidrNotation.Normalize(client.Address);
         _local = CidrNotation.Normalize(((IPEndPoint)socket.LocalEndPoint!).Address);
-        _remoteEndPoint = new IPEndPoint(_remote, remote.Port).ToString();
+        _remoteEndPoint = new IPEndPoint(_remote, client.Port).ToString();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(serverStopping);
     }
 

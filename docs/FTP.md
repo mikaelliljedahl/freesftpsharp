@@ -82,6 +82,19 @@ FTP needs the control port **and** the passive port range:
 A data connection is accepted only from the address of the control connection (no stolen passive port), and active
 mode connects only to the client itself and to a port of 1024 or higher (no FTP bounce, RFC 2577).
 
+## Behind a load balancer (PROXY protocol)
+
+With `Proxy:AllowedSources` (the same setting as for SSH, see [CLUSTER.md](CLUSTER.md)) every FTP control connection must
+come from an allowed balancer and start with a PROXY header (version 1 or 2, HAProxy `send-proxy` or `send-proxy-v2`). The
+client address of the header is then used for the IP rules, the auto-ban, `Ftp:MaxConnectionsPerIp`, the connections and
+the audit log. A connection from another source, without a header, or with a header that is not valid is closed before
+the `220` greeting.
+
+The balancer must also forward the passive port range, with `send-proxy` too: a data connection from an allowed balancer
+must start with a PROXY header whose client address is the address of the control connection, otherwise it is closed. A
+client may also reach the passive ports of the node directly. Set `Ftp:PassiveExternalAddress` to the address of the
+balancer for `PASV`, and give every node its own part of the range if the balancer routes the data ports by port.
+
 ## Clients
 
 The examples use `ftp.example.com`, the user `alice` and the default (TLS required). For a self-signed certificate,
