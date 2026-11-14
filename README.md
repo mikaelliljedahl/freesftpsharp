@@ -231,6 +231,12 @@ logs the effective port and addresses and whether they come from the configurati
 variables (the `--port` and `--bind` shortcuts exist only in `ServerConsoleApp`); its settings page shows when the
 port is overridden.
 
+## Encrypted storage
+
+The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
+Set `Storage:Encryption:Enabled` to `true` and configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md)
+for the configuration, the limits and the file format.
+
 ## Settings storage
 
 The server settings (port, banner, host key, ...) and the users are stored with EF Core in a SQLite database.
