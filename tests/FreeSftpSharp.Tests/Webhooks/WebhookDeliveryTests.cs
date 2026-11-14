@@ -129,6 +129,23 @@ public sealed class WebhookDeliveryTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_delivery_whose_request_outlasts_its_lease_is_not_sent_again_while_it_is_in_flight()
+    {
+        // Each answer takes 300 ms while the clock runs 1 min per 20 ms: every attempt outlasts the 2 min lease on the
+        // clock of the dispatcher. The dispatcher must not take the row again while its own attempt is in flight.
+        var host = await StartHostAsync();
+        _receiver.Respond = (_, _) => new ReceiverAnswer(503, Delay: TimeSpan.FromMilliseconds(300));
+        var id = await host.AddWebhookAsync(Hook());
+
+        await host.Sink.HandleAsync(Upload(), Ct);
+        var dead = Assert.Single(await host.WaitForDeliveriesAsync(id, d => d.Count == 1 && d[0].Status == WebhookDeliveryStatus.DeadLetter,
+            TimeSpan.FromSeconds(90), Advance(TimeSpan.FromMinutes(1))));
+
+        Assert.Equal(WebhookRetrySchedule.MaxAttempts, dead.Attempts);
+        Assert.Equal(Enumerable.Range(1, WebhookRetrySchedule.MaxAttempts), _receiver.Requests.Select(r => r.Json.GetProperty("attempt").GetInt32()));
+    }
+
+    [Fact]
     public async Task Pending_deliveries_survive_a_stop_and_are_delivered_after_the_next_start()
     {
         using var directory = new TempDirectory();
