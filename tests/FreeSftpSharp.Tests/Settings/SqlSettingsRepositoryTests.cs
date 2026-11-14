@@ -275,7 +275,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
     }
 
     [Fact]
-    public void Users_of_a_database_before_per_path_permissions_keep_their_data_and_get_full_access()
+    public async Task Users_of_a_database_before_per_path_permissions_keep_their_data_and_get_full_access()
     {
         using var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
@@ -308,6 +308,14 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         user.Permissions = SamplePermissions();
         Assert.True(repository.UpdateUser(user));
         Assert.Equal(SamplePermissions(), repository.GetUser("old").Permissions);
+
+        // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions.
+        using (var db = new SettingsDbContext(options))
+            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog"], db.Database.GetAppliedMigrations().TakeLast(2));
+        var audit = new SshServer.Settings.Sql.Audit.SqlAuditLog(options);
+        await audit.AppendAsync(new SshServer.Interfaces.Audit.AuditEntry { Category = "File", Type = "Upload", Status = "Ok", Username = "old" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(1, (await audit.QueryAsync(new SshServer.Interfaces.Audit.AuditQuery { Username = "old" }, TestContext.Current.CancellationToken)).TotalCount);
     }
 
     [Fact]

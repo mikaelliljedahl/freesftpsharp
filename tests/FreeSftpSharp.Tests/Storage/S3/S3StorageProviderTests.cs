@@ -13,6 +13,8 @@ public sealed class S3StorageProviderTests
 {
     private static readonly S3StorageOptions Valid = new() { Bucket = "my-bucket" };
 
+    private static readonly ClientContext Client = new("sftp", "127.0.0.1");
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -126,12 +128,12 @@ public sealed class S3StorageProviderTests
             new FixedResolver(new StorageSelection(S3StorageProvider.ProviderName, Valid with { KeyPrefix = "users/r" })),
             new EffectivePermissionsService());
 
-        var unrestricted = await factory.CreateAsync(new User { Username = "u" }, Ct);
+        var unrestricted = await factory.CreateAsync(new User { Username = "u" }, Client, Ct);
         var readOnly = await factory.CreateAsync(new User
         {
             Username = "r",
             Permissions = new() { ["/"] = FilePermissions.List | FilePermissions.Download },
-        }, Ct);
+        }, Client, Ct);
 
         Assert.IsType<S3FileSystem>(unrestricted);
         Assert.IsType<PermissionFileSystem>(readOnly);

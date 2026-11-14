@@ -42,6 +42,9 @@ public class AdminUiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<ISettingsRepository>();
             services.AddSingleton<ISettingsRepository>(new InMemorySettingsRepository(new ServerSettings()));
+            // The SQL audit log would use the default database next to the app; the repository above does not create it.
+            services.RemoveAll<SshServer.Interfaces.Audit.IAuditLog>();
+            services.AddSingleton<SshServer.Interfaces.Audit.IAuditLog>(new InMemoryAuditLog());
 
             var sshServer = services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(HostedServer)).ToList();
             foreach (var descriptor in sshServer)

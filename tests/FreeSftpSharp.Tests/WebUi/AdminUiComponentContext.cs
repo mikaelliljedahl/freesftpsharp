@@ -21,6 +21,7 @@ public class AdminUiComponentContext : BunitContext
     public InMemorySettingsRepository Repository { get; }
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero));
     public LoginBanTracker Bans { get; }
+    public InMemoryAuditLog AuditLog { get; } = new();
     public SshServerOptions ListenOptions { get; } = new();
     public ConnectionRegistry Registry { get; }
 
@@ -44,6 +45,7 @@ public class AdminUiComponentContext : BunitContext
         Services.AddSingleton<TimeProvider>(Clock);
         Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(ListenOptions));
         Services.AddScoped<ToastService>();
+        Services.AddSingleton<SshServer.Interfaces.Audit.IAuditLog>(AuditLog);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 

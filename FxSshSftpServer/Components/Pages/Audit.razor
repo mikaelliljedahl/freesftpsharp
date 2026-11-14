@@ -1,0 +1,218 @@
+@page "/audit"
+@using System.Globalization
+@using System.Text
+@using System.Threading
+@using SshServer.Interfaces.Audit
+@using SshServer.Interfaces.Events
+@inject IAuditLog AuditLog
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>Audit - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Audit</h1>
+        <p class="text-body-secondary mb-0">
+            What happened on the server: file transfers and changes, logins, bans and changes of users and settings. Times are UTC.
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary" @onclick="ApplyAsync" id="refresh-audit"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+        <button type="button" class="btn btn-outline-primary" @onclick="ExportAsync" id="export-audit" disabled="@(!AuditLog.IsEnabled)"><i class="bi bi-filetype-csv"></i> Export CSV</button>
+    </div>
+</div>
+
+@if (!AuditLog.IsEnabled)
+{
+    <div class="alert alert-info" id="audit-disabled">
+        The audit log needs the SQLite settings database. It is off with <code>Settings:Provider=LiteDb</code>.
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form class="row g-3 align-items-end" @onsubmit="ApplyAsync" id="audit-filter">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="filter-user">User</label>
+                <input id="filter-user" class="form-control" @bind="username" placeholder="any user" />
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label" for="filter-type">Type</label>
+                <select id="filter-type" class="form-select" @bind="type">
+                    <option value="">any type</option>
+                    @foreach (var group in TypeGroups)
+                    {
+                        <optgroup label="@group.Label">
+                            @foreach (var name in group.Types)
+                            {
+                                <option value="@name">@name</option>
+                            }
+                        </optgroup>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label" for="filter-status">Status</label>
+                <select id="filter-status" class="form-select" @bind="status">
+                    <option value="">any status</option>
+                    @foreach (var name in Statuses)
+                    {
+                        <option value="@name">@name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label" for="filter-from">From (UTC)</label>
+                <input id="filter-from" type="date" class="form-control" @bind="from" />
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label" for="filter-to">To (UTC)</label>
+                <input id="filter-to" type="date" class="form-control" @bind="to" />
+            </div>
+            <div class="col-sm-6 col-lg-1 d-flex gap-2">
+                <button type="submit" class="btn btn-primary" title="Apply the filter"><i class="bi bi-funnel"></i></button>
+                <button type="button" class="btn btn-outline-secondary" title="Clear the filter" @onclick="ClearAsync"><i class="bi bi-x-lg"></i></button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header fw-semibold">
+        <i class="bi bi-journal-text"></i> Entries <span class="badge text-bg-secondary" id="audit-count">@total</span>
+    </div>
+    <div class="table-responsive">
+        <QuickGrid @ref="grid" TGridItem="AuditEntry" ItemsProvider="provider" Pagination="pagination" Class="table table-hover align-middle quickgrid-table mb-0" id="audit-table">
+            <PropertyColumn Title="Time (UTC)" Property="@(e => e.TimestampUtc)" Format="yyyy-MM-dd HH:mm:ss" />
+            <TemplateColumn Title="Event">
+                <span class="badge text-bg-light border me-1">@context.Category</span>@context.Type
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <span class="badge @StatusClass(context.Status)">@context.Status</span>
+            </TemplateColumn>
+            <PropertyColumn Title="User" Property="@(e => e.Username)" />
+            <PropertyColumn Title="Address" Property="@(e => e.RemoteIp)" Class="d-none d-md-table-cell" />
+            <TemplateColumn Title="Path" Class="d-none d-lg-table-cell">
+                <span class="font-monospace-sm">@context.Path</span>
+                @if (context.TargetPath is not null)
+                {
+                    <span class="font-monospace-sm"> &rarr; @context.TargetPath</span>
+                }
+            </TemplateColumn>
+            <TemplateColumn Title="Size" Align="Align.End" Class="d-none d-md-table-cell">@FormatSize(context.Size)</TemplateColumn>
+            <TemplateColumn Title="Details" Class="d-none d-xl-table-cell">
+                <span class="small text-body-secondary">@Describe(context)</span>
+            </TemplateColumn>
+        </QuickGrid>
+    </div>
+    @if (total == 0)
+    {
+        <div class="card-body text-body-secondary" id="no-audit-entries">No entries match the filter.</div>
+    }
+    <div class="card-footer">
+        <Paginator State="pagination" />
+    </div>
+</div>
+
+@code {
+    private readonly PaginationState pagination = new() { ItemsPerPage = 50 };
+    private QuickGrid<AuditEntry> grid;
+    private string username;
+    private string type;
+    private string status;
+    private DateOnly? from;
+    private DateOnly? to;
+    private AuditQuery filter = new();
+    private int total;
+    private GridItemsProvider<AuditEntry> provider;
+
+    // One delegate for the page: a new one at each render would make the grid load the data again.
+    protected override void OnInitialized() => provider = ProvideAsync;
+
+    private static readonly (string Label, string[] Types)[] TypeGroups =
+    [
+        ("File", Enum.GetNames<FileEventType>()),
+        ("Login", Enum.GetNames<AuthEventType>()),
+        ("Users and settings", Enum.GetNames<ProviderAction>()),
+        ("System", Enum.GetNames<SystemEventType>()),
+    ];
+
+    private static readonly string[] Statuses =
+        [.. Enum.GetNames<FileEventStatus>(), AuditEntryMapper.StatusFailed];
+
+    private async ValueTask<GridItemsProviderResult<AuditEntry>> ProvideAsync(GridItemsProviderRequest<AuditEntry> request)
+    {
+        var result = await AuditLog.QueryAsync(filter with { Skip = request.StartIndex, Take = request.Count ?? pagination.ItemsPerPage }, request.CancellationToken);
+        if (total != result.TotalCount)
+        {
+            total = result.TotalCount;
+            StateHasChanged();
+        }
+        return GridItemsProviderResult.From(result.Entries.ToList(), result.TotalCount);
+    }
+
+    private AuditQuery BuildFilter() => new()
+    {
+        Username = string.IsNullOrWhiteSpace(username) ? null : username.Trim(),
+        Type = string.IsNullOrEmpty(type) ? null : type,
+        Status = string.IsNullOrEmpty(status) ? null : status,
+        FromUtc = from?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+        ToUtc = to?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), // the whole "to" day
+    };
+
+    private async Task ApplyAsync()
+    {
+        filter = BuildFilter();
+        await pagination.SetCurrentPageIndexAsync(0);
+        if (grid is not null)
+            await grid.RefreshDataAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        (username, type, status, from, to) = (null, null, null, null, null);
+        await ApplyAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        var current = BuildFilter();
+        var result = await AuditLog.QueryAsync(current with { Skip = 0, Take = AuditQuery.MaxTake }, CancellationToken.None);
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(AuditCsv.Write(result.Entries))).ToArray();
+        var name = $"audit-{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}.csv";
+        if (!await JS.SaveFile(bytes, name, "text/csv"))
+            Toasts.ShowError("The browser could not save the CSV file.");
+        else if (result.TotalCount > result.Entries.Count)
+            Toasts.ShowWarning($"The export has the newest {result.Entries.Count} of {result.TotalCount} entries. Narrow the filter for the rest.");
+    }
+
+    private static string StatusClass(string status) => status switch
+    {
+        "Ok" => "text-bg-success",
+        "Denied" or "Failed" => "text-bg-warning",
+        _ => "text-bg-danger",
+    };
+
+    private static string FormatSize(long? size) => size switch
+    {
+        null => "",
+        < 1024 => $"{size} B",
+        < 1024 * 1024 => (size.Value / 1024d).ToString("0.0", CultureInfo.InvariantCulture) + " KiB",
+        _ => (size.Value / (1024d * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " MiB",
+    };
+
+    private static string Describe(AuditEntry entry)
+    {
+        var parts = new List<string>();
+        if (entry.ElapsedMilliseconds is { } ms)
+            parts.Add(ms.ToString(CultureInfo.InvariantCulture) + " ms");
+        if (entry.Protocol is not null)
+            parts.Add(entry.Protocol);
+        if (entry.Actor is not null)
+            parts.Add("by " + entry.Actor);
+        if (entry.Message is not null)
+            parts.Add(entry.Message);
+        return string.Join(" · ", parts);
+    }
+}

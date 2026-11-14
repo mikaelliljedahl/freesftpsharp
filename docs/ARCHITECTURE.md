@@ -30,7 +30,7 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Storage backend | `IFileSystem` + `IStorageProvider` | local disk, encrypted local disk, S3, Azure Blob, GCS | #51, #56 |
 | Storage rule | `IFileSystem` decorator | permissions, path filters, quotas, bandwidth, events | #59, #62, #65 |
 | Authentication | `IAuthenticationProvider` | database, external HTTP, LDAP | #64 |
-| Event sink | `IEventHandler` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
+| Event sink | `IEventSink` / `IEventHook` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
 | Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
@@ -43,8 +43,25 @@ a stable `ConnectionInfo.Id` (a GUID) for the whole connection; later features (
 The registry is in memory and per node.
 
 The `ConnectionTrackingFileSystem` decorator keeps the registry entry up to date (last activity, open files with their
-byte counts). The protocol adds it on top of the chain from `IFileSystemFactory`, because the factory does not know the
-connection yet.
+byte counts). The protocol passes the connection id in the `ClientContext` of `IFileSystemFactory.CreateAsync`, and the
+factory adds the decorator to its chain.
+
+## Events
+
+Everything that happens in the server is an `IEvent` (`SshServer.Interfaces.Events`): `FileEvent`, `AuthEvent`,
+`ProviderEvent` and `SystemEvent`. Every producer publishes on the one `IEventBus` (`AddSshServerEvents()`), and
+every consumer reads from it, so a new protocol gives the same events as SFTP without code in the consumers.
+
+- **Producers.** File events come from the `EventingFileSystem` storage decorator, auth and system events from the
+  protocol host (`HostedServer`), provider events from the settings repository. Events never contain secrets.
+- **Sinks** (`IEventSink`) consume every event. Each sink has its own bounded queue and task: a slow or failing sink
+  never delays a transfer or another sink. When a queue is full, the publisher waits (nothing is dropped) and the
+  metric `freesftpsharp.events.publisher_waits` counts it.
+- **Hooks** (`IEventHook`) decide synchronously whether the operation of a `Pre*` event may run
+  (`IEventBus.AskAsync`). The first deny wins; the protocol answers "permission denied" and the storage is not touched.
+- **Audit log.** The `AuditSink` writes every event to the `AuditEntries` table of the settings database; the
+  `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
+  admin UI page "Audit" and later the REST API read it through `IAuditLog`.
 
 ## Storage backends
 
@@ -86,7 +103,14 @@ The chain today, from the backend outwards:
    `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
    factory leaves it out for a user who may do everything. It compares paths like the backend does
    (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
-2. `ConnectionTrackingFileSystem` (#57), added by the protocol on top of the factory chain (see "Connections").
+2. `EventingFileSystem` (#65): the file events of the client (see "Events"). It is outside the permissions, so an
+   operation that the permissions refuse still gives an event (status `Error`) in the audit log, and the `Pre*`
+   hooks are asked before the permissions. A hook deny never reaches the permissions or the backend.
+3. `ConnectionTrackingFileSystem` (#57): the activity and open files of the connection (see "Connections"), for a
+   client with a connection id in its `ClientContext`. Outermost, so every request is activity, also a refused one.
+
+All three are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
+to `IFileSystemFactory.CreateAsync`.
 
 The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
 groups, #61). No protocol and no backend reads `User.Permissions` itself.

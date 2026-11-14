@@ -5,6 +5,8 @@ using FreeSftpSharp.Tests.Storage.S3;
 using Renci.SshNet;
 using SshServer.Filesystem.S3;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Connections;
+using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Storage;
@@ -21,11 +23,11 @@ public sealed class S3SftpServerFixture : SftpServerFixture
 {
     public string KeyPrefix { get; } = "e2e/" + Guid.NewGuid().ToString("N");
 
-    protected override IFileSystemFactory CreateFileSystemFactory()
+    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
     {
         if (S3TestServer.Endpoint != null)
             S3TestServer.EnsureBucket(); // this fixture has its own client; on a new S3 server the bucket is missing
-        return new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)), new EffectivePermissionsService());
+        return new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)), new EffectivePermissionsService(), connections, events);
     }
 
     /// <summary>The object key of a virtual path such as "/dir/a.txt".</summary>
