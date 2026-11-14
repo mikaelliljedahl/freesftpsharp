@@ -132,6 +132,68 @@
         "resolved": "2.7.0",
         "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
       },
+      "Google.Api.Gax": {
+        "type": "Transitive",
+        "resolved": "4.13.1",
+        "contentHash": "ujDpZk7O2VqAEIqcSlhH0FKzVpGZWly/qcNjHxpNUrL445Tei9PHnu4V1pwW2WDiMDvo3TpL1Bi4DeU525Afrg==",
+        "dependencies": {
+          "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
+          "Newtonsoft.Json": "13.0.4"
+        }
+      },
+      "Google.Api.Gax.Rest": {
+        "type": "Transitive",
+        "resolved": "4.13.1",
+        "contentHash": "wDfFZXKoHC6sy+Yfub/4cLQOb5ozBVPqDOrxCUAeTfku4d96ILqgzulJSdkPHbiT3oWB3hlYTdJgUwNSJjyo+A==",
+        "dependencies": {
+          "Google.Api.Gax": "4.13.1",
+          "Google.Apis.Auth": "1.73.0"
+        }
+      },
+      "Google.Apis": {
+        "type": "Transitive",
+        "resolved": "1.76.0",
+        "contentHash": "sIhJW2vT1cXE/yUFp1q1Mv7EUgbGu2uMIcqqv+BgElRdGQApxiYpZ/jG6hFkQB8/AG9kGurJOzLOM9PZ++GEtA==",
+        "dependencies": {
+          "Google.Apis.Core": "1.76.0"
+        }
+      },
+      "Google.Apis.Auth": {
+        "type": "Transitive",
+        "resolved": "1.76.0",
+        "contentHash": "WzRCykQ0OApOEFdUYYBJ6riIxs+xk635s0KsGb83zJcABa66DCgaAXiWZuZjSqnwA3hjm7u8mmzR4EUHpJ1UfQ==",
+        "dependencies": {
+          "Google.Apis": "1.76.0",
+          "Google.Apis.Core": "1.76.0",
+          "System.Management": "7.0.2"
+        }
+      },
+      "Google.Apis.Core": {
+        "type": "Transitive",
+        "resolved": "1.76.0",
+        "contentHash": "P2nFbC0SsnUe8sGjhpCLs6CHIWFzURgUS2M9l9aUV1vJjVXpesRbegEYZS/dLKehcgx8twDP7xA5OMGygMD55g==",
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.4"
+        }
+      },
+      "Google.Apis.Storage.v1": {
+        "type": "Transitive",
+        "resolved": "1.76.0.4250",
+        "contentHash": "Bfl61KU1OdkgOZC+5ps1TlUdy/gmUvYk4eUfsu3/tFb9rKHxkSK37NxIgAFh8+Ae3ueU+FNQzLD/khS+4++zvw==",
+        "dependencies": {
+          "Google.Apis": "1.76.0",
+          "Google.Apis.Auth": "1.76.0"
+        }
+      },
+      "Google.Cloud.Storage.V1": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "zA7njaxwj5N+FLtdPD4XIOuMqdt3yNpaaHCSZoZxdOtMV6a9/oucNsPdTdrwJ65LY9ggNoZ1GD2WyvPS5d4DTA==",
+        "dependencies": {
+          "Google.Api.Gax.Rest": "[4.13.1, 5.0.0)",
+          "Google.Apis.Storage.v1": "[1.76.0.4250, 2.0.0)"
+        }
+      },
       "IPNetwork2": {
         "type": "Transitive",
         "resolved": "3.0.667",
@@ -532,6 +594,11 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
       "OpenTelemetry": {
         "type": "Transitive",
         "resolved": "1.21.0",
@@ -706,10 +773,23 @@
           "SQLitePCLRaw.core": "3.0.5"
         }
       },
+      "System.CodeDom": {
+        "type": "Transitive",
+        "resolved": "7.0.0",
+        "contentHash": "GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A=="
+      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "11.0.0",
         "contentHash": "lKore9DXE1q8o6ss6/M7++xBpn2FMS0axaAypBspYLqY5OT1ZRPLzFGwF18l61aXfXTPpwkx5tYh4zMUHoAv/g=="
+      },
+      "System.Management": {
+        "type": "Transitive",
+        "resolved": "7.0.2",
+        "contentHash": "/qEUN91mP/MUQmJnM5y5BdT7ZoPuVrtxnFlbJ8a3kBJGhe2wCzBfnPFtK2wTtEEcf3DMGR9J00GZZfg6HRI6yA==",
+        "dependencies": {
+          "System.CodeDom": "7.0.0"
+        }
       },
       "System.Security.AccessControl": {
         "type": "Transitive",
@@ -782,6 +862,7 @@
           "Serilog.Sinks.File": "[7.0.0, )",
           "Serilog.Sinks.HtmlFile": "[1.0.1, )",
           "SshServer.Filesystem.Encrypted": "[1.0.0, )",
+          "SshServer.Filesystem.Gcs": "[1.0.0, )",
           "SshServer.Filesystem.LocalDisk": "[1.0.0, )",
           "SshServer.Filesystem.S3": "[1.0.0, )",
           "SshServer.Observability": "[1.0.0, )",
@@ -793,6 +874,13 @@
         "type": "Project",
         "dependencies": {
           "SshServer.Filesystem.LocalDisk": "[1.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
+      "sshserver.filesystem.gcs": {
+        "type": "Project",
+        "dependencies": {
+          "Google.Cloud.Storage.V1": "[5.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )"
         }
       },

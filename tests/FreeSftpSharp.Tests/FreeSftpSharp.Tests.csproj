@@ -30,6 +30,7 @@
     <ProjectReference Include="..\..\SshServerModule\SshServerModule.csproj" />
     <ProjectReference Include="..\..\SshServer.Filesystem.LocalDisk\SshServer.Filesystem.LocalDisk.csproj" />
     <ProjectReference Include="..\..\SshServer.Filesystem.S3\SshServer.Filesystem.S3.csproj" />
+    <ProjectReference Include="..\..\SshServer.Filesystem.Gcs\SshServer.Filesystem.Gcs.csproj" />
     <ProjectReference Include="..\..\SshServer.Filesystem.Encrypted\SshServer.Filesystem.Encrypted.csproj" />
     <ProjectReference Include="..\..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
     <ProjectReference Include="..\..\SshServer.Observability\SshServer.Observability.csproj" />

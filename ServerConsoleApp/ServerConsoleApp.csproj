@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SshServer.Filesystem.LocalDisk\SshServer.Filesystem.LocalDisk.csproj" />
     <ProjectReference Include="..\SshServer.Filesystem.S3\SshServer.Filesystem.S3.csproj" />
+    <ProjectReference Include="..\SshServer.Filesystem.Gcs\SshServer.Filesystem.Gcs.csproj" />
     <ProjectReference Include="..\SshServer.Filesystem.Encrypted\SshServer.Filesystem.Encrypted.csproj" />
     <ProjectReference Include="..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
