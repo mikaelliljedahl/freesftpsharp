@@ -23,6 +23,7 @@ using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
 using SshServer.Observability;
+using SshServer.Api;
 using FreeSftpSharp.WebDav;
 
 using FxSshSftpServer.Security;
@@ -84,6 +85,7 @@ builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing 
 builder.Services.AddTwoFactor(builder.Configuration); // TOTP second factor (#63): off until a user or administrator sets up an app
 builder.Services.AddEventRules(builder.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
+builder.Services.AddRestApi(builder.Configuration); // the REST API under /api/v1 (#67), only with Api:Enabled
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
@@ -129,6 +131,7 @@ app.MapRazorPages(); // Login, Logout, Error, and the pages of the web client (P
 app.MapWebClient(); // the endpoints of the web client (/client/api)
 app.MapRazorComponents<FxSshSftpServer.Components.App>()
     .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
+app.MapRestApi(); // bearer token or API key, never the login cookie
 
 
 try

@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using FxSsh.SshServerModule.Security;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -117,7 +118,7 @@ namespace SshServerModule.Connections
 
             var info = entry.Snapshot();
             _logger.LogInformation("Disconnecting {Protocol} connection {ConnectionId} of {Username} from {RemoteEndPoint}: {Reason}",
-                info.Protocol, id, info.Username, info.RemoteEndPoint, reason);
+                info.Protocol, id, LogText.Clean(info.Username), info.RemoteEndPoint, LogText.Clean(reason));
             await entry.DisconnectAsync(reason);
             // The protocol normally unregisters from its own close event; this covers a protocol that does not.
             Unregister(id);

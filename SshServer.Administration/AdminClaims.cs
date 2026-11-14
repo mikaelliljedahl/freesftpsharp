@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Net;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// The claims of a signed-in administrator in the login cookie: the name, the effective permissions, the scope role
@@ -24,20 +24,35 @@ namespace FxSshSftpServer.Security
         public const string StampClaim = "freesftpsharp:admin_stamp";
         public const string MustChangePasswordClaim = "freesftpsharp:admin_must_change_password";
 
-        public static ClaimsPrincipal CreatePrincipal(Admin admin)
+        /// <summary>The claim of a login with a REST API key (#67): the name of the key, for the audit log.</summary>
+        public const string ApiKeyClaim = "freesftpsharp:api_key";
+
+        public static ClaimsPrincipal CreatePrincipal(Admin admin) =>
+            new(new ClaimsIdentity(CreateClaims(admin), CookieAuthenticationDefaults.AuthenticationScheme));
+
+        /// <summary>
+        /// The claims of an administrator. <paramref name="narrowTo"/> limits the permissions further (the scopes of an API
+        /// key); it never adds one. <paramref name="apiKeyName"/> marks a login with an API key.
+        /// </summary>
+        public static List<Claim> CreateClaims(Admin admin, AdminPermissions? narrowTo = null, string apiKeyName = null)
         {
+            var permissions = AdminPermissionRules.Effective(admin);
+            if (narrowTo is { } mask)
+                permissions &= mask;
             var claims = new List<Claim>
             {
                 new(ClaimTypes.Name, admin.Username),
                 new(ClaimTypes.Role, "Admin"),
-                new(PermissionsClaim, ((int)AdminPermissionRules.Effective(admin)).ToString(CultureInfo.InvariantCulture)),
+                new(PermissionsClaim, ((int)permissions).ToString(CultureInfo.InvariantCulture)),
                 new(StampClaim, Stamp(admin)),
             };
             if (admin.ScopeRoleId is { } role)
                 claims.Add(new Claim(ScopeRoleClaim, role.ToString(CultureInfo.InvariantCulture)));
             if (admin.MustChangePassword)
                 claims.Add(new Claim(MustChangePasswordClaim, "true"));
-            return new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
+            if (!string.IsNullOrEmpty(apiKeyName))
+                claims.Add(new Claim(ApiKeyClaim, apiKeyName));
+            return claims;
         }
 
         /// <summary>The actor of a principal; <see cref="AdminActor.Anonymous"/> without a valid login.</summary>
@@ -58,7 +73,10 @@ namespace FxSshSftpServer.Security
                 scope = role;
             }
             // The same masking as for the stored administrator, so a claim never gives a scoped administrator more.
-            return new AdminActor(user.Identity.Name, AdminPermissionRules.Effective((AdminPermissions)permissions, scope), scope);
+            return new AdminActor(user.Identity.Name, AdminPermissionRules.Effective((AdminPermissions)permissions, scope), scope)
+            {
+                ApiKeyName = user.FindFirstValue(ApiKeyClaim),
+            };
         }
 
         public static bool MustChangePassword(ClaimsPrincipal user) => user?.HasClaim(MustChangePasswordClaim, "true") == true;

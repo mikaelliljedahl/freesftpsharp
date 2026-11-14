@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// The audit log as the signed-in administrator may read it (scoped per circuit): it needs

@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Connections;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// The open connections as the signed-in administrator may see them (scoped per circuit): listing needs
