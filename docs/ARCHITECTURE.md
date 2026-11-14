@@ -30,9 +30,38 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Storage backend | `IFileSystem` + `IStorageProvider` | local disk, encrypted local disk, S3, Azure Blob, GCS | #51, #56 |
 | Storage rule | `IFileSystem` decorator | permissions, path filters, quotas, bandwidth, events | #59, #62, #65 |
 | Authentication | `IAuthenticationProvider` | database, external HTTP, LDAP | #64 |
-| Event sink | `IEventHandler` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
+| Event sink | `IEventSink` / `IEventHook` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
 | Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
+
+## Connections
+
+Every protocol registers its open connections in the `IConnectionRegistry` singleton (`SshServer.Interfaces.Connections`,
+`AddSshServerConnections()`): it registers at accept, sets the user after the login, unregisters on close, and gives a
+callback that closes the connection, so `DisconnectAsync` works for every protocol. The registry gives each connection
+a stable `ConnectionInfo.Id` (a GUID) for the whole connection; later features (session limits, events, metrics) use it.
+The registry is in memory and per node.
+
+The `ConnectionTrackingFileSystem` decorator keeps the registry entry up to date (last activity, open files with their
+byte counts). The protocol passes the connection id in the `ClientContext` of `IFileSystemFactory.CreateAsync`, and the
+factory adds the decorator to its chain.
+
+## Events
+
+Everything that happens in the server is an `IEvent` (`SshServer.Interfaces.Events`): `FileEvent`, `AuthEvent`,
+`ProviderEvent` and `SystemEvent`. Every producer publishes on the one `IEventBus` (`AddSshServerEvents()`), and
+every consumer reads from it, so a new protocol gives the same events as SFTP without code in the consumers.
+
+- **Producers.** File events come from the `EventingFileSystem` storage decorator, auth and system events from the
+  protocol host (`HostedServer`), provider events from the settings repository. Events never contain secrets.
+- **Sinks** (`IEventSink`) consume every event. Each sink has its own bounded queue and task: a slow or failing sink
+  never delays a transfer or another sink. When a queue is full, the publisher waits (nothing is dropped) and the
+  metric `freesftpsharp.events.publisher_waits` counts it.
+- **Hooks** (`IEventHook`) decide synchronously whether the operation of a `Pre*` event may run
+  (`IEventBus.AskAsync`). The first deny wins; the protocol answers "permission denied" and the storage is not touched.
+- **Audit log.** The `AuditSink` writes every event to the `AuditEntries` table of the settings database; the
+  `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
+  admin UI page "Audit" and later the REST API read it through `IAuditLog`.
 
 ## Storage backends
 

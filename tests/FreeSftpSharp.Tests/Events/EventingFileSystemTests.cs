@@ -13,6 +13,7 @@ public sealed class EventingFileSystemTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private static readonly Guid ConnectionId = Guid.Parse("6f1c2d3e-0000-4000-8000-000000000001");
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 14, 10, 0, 0, TimeSpan.Zero));
     private readonly InMemoryFileSystem _storage;
     private readonly RecordingEventBus _bus = new();
@@ -21,7 +22,7 @@ public sealed class EventingFileSystemTests
     public EventingFileSystemTests()
     {
         _storage = new InMemoryFileSystem(time: _time);
-        _fileSystem = new EventingFileSystem(_storage, _bus, new User { Username = "alice" }, new ClientContext("SFTP", "192.0.2.7", "s-1"), "memory", _time);
+        _fileSystem = new EventingFileSystem(_storage, _bus, new User { Username = "alice" }, new ClientContext("SFTP", "192.0.2.7", ConnectionId), "memory", _time);
     }
 
     private static readonly FileOpenFlags CreateForWriting = FileOpenFlags.Write | FileOpenFlags.Create | FileOpenFlags.Truncate;
@@ -46,7 +47,7 @@ public sealed class EventingFileSystemTests
         Assert.Equal(5, upload.FileSize);
         Assert.Equal(TimeSpan.FromMilliseconds(1500), upload.Elapsed);
         Assert.Equal(FileEventStatus.Ok, upload.Status);
-        Assert.Equal(("SFTP", "192.0.2.7", "s-1", "memory"), (upload.Protocol, upload.RemoteIp, upload.SessionId, upload.Provider));
+        Assert.Equal(("SFTP", "192.0.2.7", ConnectionId.ToString(), "memory"), (upload.Protocol, upload.RemoteIp, upload.SessionId, upload.Provider));
         Assert.Equal(CreateForWriting, upload.OpenFlags);
         Assert.Equal(_time.GetUtcNow(), upload.Timestamp);
         Assert.Single(_bus.Asked);

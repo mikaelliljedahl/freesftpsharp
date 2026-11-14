@@ -1,3 +1,4 @@
+using SshServerModule.Connections;
 using SshServerModule.Events;
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Filesystem.LocalDisk;
@@ -50,6 +51,22 @@ public sealed class StorageProviderTests : IDisposable
 
         Assert.IsType<EventingFileSystem>(fileSystem);
         Assert.Equal(1, (await fileSystem.StatAsync("/a.txt", true, Ct))!.Size);
+    }
+
+    [Fact]
+    public async Task With_connections_and_events_the_connection_tracking_is_outside_the_events()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        await using var services = new ServiceCollection().AddLogging().AddSshServerConnections().AddSshServerEvents()
+            .AddSshServerStorage().AddLocalDiskStorage().BuildServiceProvider();
+        var factory = services.GetRequiredService<IFileSystemFactory>();
+        var user = new User { Username = "u", UserRootDirectory = _tempDirectory };
+
+        var tracked = await factory.CreateAsync(user, Client with { ConnectionId = Guid.NewGuid() }, Ct);
+        var untracked = await factory.CreateAsync(user, Client, Ct);
+
+        Assert.IsType<ConnectionTrackingFileSystem>(tracked);
+        Assert.IsType<EventingFileSystem>(untracked);
     }
 
     private static readonly ClientContext Client = new("SFTP", "127.0.0.1");

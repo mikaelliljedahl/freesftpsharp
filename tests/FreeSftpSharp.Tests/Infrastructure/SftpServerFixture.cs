@@ -8,7 +8,9 @@ using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
+using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -47,6 +49,8 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual IEventBus? CreateEventBus() => null;
     /// <summary>The auto-ban state of the running server.</summary>
     public LoginBanTracker BanTracker { get; private set; } = null!;
+    /// <summary>The open connections of the running server.</summary>
+    public IConnectionRegistry Connections { get; private set; } = null!;
     public string TempDirectory { get; }
     public string UserRoot { get; }
     public string SecretFilePath { get; }
@@ -192,16 +196,18 @@ public class SftpServerFixture : IAsyncLifetime
             WhitelistedIps = new List<string>(),
         });
 
-        BanTracker = new LoginBanTracker(CreateTimeProvider());
+        var time = CreateTimeProvider();
+        BanTracker = new LoginBanTracker(time);
+        Connections = new ConnectionRegistry(time);
         _eventBus ??= CreateEventBus(); // one bus for all start attempts
-        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(_eventBus), repository, BanTracker,
+        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(Connections, _eventBus), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
-            _eventBus);
+            Connections, _eventBus);
     }
 
     /// <summary>The storage of the hosts: the "local" provider at the user root (AddSshServerStorage + AddLocalDiskStorage).</summary>
-    private static StorageFileSystemFactory LocalDiskFileSystemFactory(IEventBus? events)
-        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), events);
+    private static StorageFileSystemFactory LocalDiskFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), connections, events);
 
     private static int GetFreeTcpPort()
     {

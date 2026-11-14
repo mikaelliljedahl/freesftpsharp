@@ -7,6 +7,8 @@ using FxSshSftpServer.Components.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Connections;
+using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.WebUi;
 
@@ -20,6 +22,7 @@ public class AdminUiComponentContext : BunitContext
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero));
     public LoginBanTracker Bans { get; }
     public SshServerOptions ListenOptions { get; } = new();
+    public ConnectionRegistry Registry { get; }
 
     public AdminUiComponentContext()
     {
@@ -32,10 +35,12 @@ public class AdminUiComponentContext : BunitContext
             WhitelistedIps = new List<string>(),
         });
         Bans = new LoginBanTracker(Clock);
+        Registry = new ConnectionRegistry(Clock);
 
         Services.AddSingleton<ISettingsRepository>(Repository);
         Services.AddSingleton<SshServer.Interfaces.Users.UserAdministrationService>();
         Services.AddSingleton<IIpBanService>(Bans);
+        Services.AddSingleton<IConnectionRegistry>(Registry);
         Services.AddSingleton<TimeProvider>(Clock);
         Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(ListenOptions));
         Services.AddScoped<ToastService>();

@@ -14,6 +14,7 @@ using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServerModule.Events;
+using SshServerModule.Connections;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
@@ -55,6 +56,7 @@ await new HostBuilder()
     services.AddLocalDiskStorage();
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
+    services.AddSshServerConnections();
     services.AddSshServerListenOptions();
 })
 .RunConsoleAsync();

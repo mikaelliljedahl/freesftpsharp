@@ -61,7 +61,10 @@ public sealed class EventEndToEndTests : IClassFixture<EventServerFixture>
         Assert.Equal("local", upload.Provider);
         Assert.Equal(FileEventStatus.Ok, upload.Status);
         Assert.NotNull(upload.Elapsed);
-        Assert.Contains(_server.Sink.Of<AuthEvent>(), e => e is { Type: AuthEventType.LoginOk, Method: "password", RemoteIp: "127.0.0.1" } && e.Username == _server.Username);
+        // The session id is the connection id of the registry (#57), the same as in the login event of the connection.
+        Assert.True(Guid.TryParse(upload.SessionId, out _), $"Not a connection id: {upload.SessionId}");
+        Assert.Contains(_server.Sink.Of<AuthEvent>(), e => e is { Type: AuthEventType.LoginOk, Method: "password", RemoteIp: "127.0.0.1" }
+            && e.Username == _server.Username && e.SessionId == upload.SessionId);
     }
 
     [Fact]

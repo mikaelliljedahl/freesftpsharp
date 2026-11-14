@@ -9,6 +9,8 @@ using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Connections;
+using SshServerModule.Connections;
 using SshServer.Interfaces.Net;
 using SshServerModule.Sftp;
 using System;
@@ -38,20 +40,21 @@ namespace FxSsh.SshServerModule
         private readonly LoginBanTracker _bans;
         private readonly IpFilter _ipFilter;
         private readonly SshServerOptions _options;
+        private readonly IConnectionRegistry _connections;
         private readonly IEventBus _events;
 
         /// <summary>The protocol name of the auth events.</summary>
         internal const string SshProtocol = "SSH";
 
-        /// <summary>The protocol name of the file events of the SFTP subsystem.</summary>
-        internal const string SftpProtocol = "SFTP";
-
         /// <param name="options">Port and bind addresses from the configuration; they override the stored settings. Null: stored settings only.</param>
         /// <param name="banTracker">The auto-ban state, shared with the admin UI (AddSshServerSecurity). Null: a private one.</param>
+        /// <param name="connections">The open connections, shared with the admin UI (AddSshServerConnections). Null: a private registry.</param>
         /// <param name="events">The event bus for the auth and system events (AddSshServerEvents). Null: no events.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
-            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IEventBus events = null)
+            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IConnectionRegistry connections = null,
+            IEventBus events = null)
         {
+            _connections = connections ?? new ConnectionRegistry(TimeProvider.System);
             _options = options?.Value;
             _events = events;
             _logger = logger;
@@ -130,29 +133,47 @@ namespace FxSsh.SshServerModule
                 throw new SshConnectionException($"Connection refused: {filter}.", DisconnectReason.HostNotAllowedToConnect);
             }
 
-            _logger.LogInformation("Accepted a client from {RemoteEndPoint}.", e.RemoteEndPoint);
+            var connection = _connections.Register(new ConnectionRegistration(ConnectionProtocols.Sftp,
+                DisplayEndPoint(e.RemoteEndPoint), reason => e.DisconnectAsync(DisconnectReason.ByApplication, reason)));
+            var connectionId = connection.Id;
+            // Subscribed before the session starts, so a session always leaves the registry (also when the handshake fails).
+            e.Disconnected += (s, args) => _connections.Unregister(connectionId);
+            e.KeysExchanged += (s, args) =>
+            {
+                if (e.ClientVersion != null)
+                    _connections.SetClientVersion(connectionId, e.ClientVersion);
+            };
+
+            _logger.LogInformation("Accepted a client from {RemoteEndPoint} (connection {ConnectionId}).", e.RemoteEndPoint, connectionId);
 
             var timeouts = SessionTimeouts.FromSettings(_settingsRepository.ServerSettings);
             if (timeouts.KeepaliveInterval is { } keepalive)
                 e.ConfigureKeepalive(keepalive);
 
-            e.ServiceRegistered += OnServiceRegistered;
+            e.ServiceRegistered += (s, service) => OnServiceRegistered(e, service, connectionId);
         }
 
-        void OnServiceRegistered(object sender, SshService e)
+        /// <summary>The client address for the registry: an IPv4 client of the dual-stack listener as "127.0.0.1:50000", not "[::ffff:127.0.0.1]:50000".</summary>
+        internal static string DisplayEndPoint(EndPoint endPoint) => endPoint switch
         {
-            var session = (Session)sender;
+            IPEndPoint { Address.IsIPv4MappedToIPv6: true } ip => new IPEndPoint(ip.Address.MapToIPv4(), ip.Port).ToString(),
+            null => "?",
+            _ => endPoint.ToString(),
+        };
+
+        void OnServiceRegistered(Session session, SshService e, Guid connectionId)
+        {
             _logger.LogDebug("Session {RemoteEndPoint} requesting {Service}.", session.RemoteEndPoint, e.GetType().Name);
 
             if (e is UserAuthService authService)
             {
                 var attempt = new AuthAttempt();
-                authService.UserAuth += (s, args) => OnUserAuth(args, attempt);
-                authService.Succeed += (s, serviceName) => OnUserAuthSucceeded(session, attempt);
+                authService.UserAuth += (s, args) => OnUserAuth(args, attempt, connectionId);
+                authService.Succeed += (s, serviceName) => OnUserAuthSucceeded(session, attempt, connectionId);
             }
             else if (e is ConnectionService connectionService)
             {
-                connectionService.SubsystemRequested += (s, args) => OnSubsystemRequested(session, args);
+                connectionService.SubsystemRequested += (s, args) => OnSubsystemRequested(session, args, connectionId);
 
                 if (_settingsRepository.ServerSettings.EnableCommand)
                     connectionService.CommandOpened += OnServiceCommandOpened;
@@ -181,7 +202,7 @@ namespace FxSsh.SshServerModule
             public volatile string AcceptedMethod;
         }
 
-        void OnUserAuth(UserAuthArgs e, AuthAttempt attempt)
+        void OnUserAuth(UserAuthArgs e, AuthAttempt attempt, Guid connectionId)
         {
             e.Result = false;
             attempt.AcceptedUsername = null;
@@ -189,8 +210,8 @@ namespace FxSsh.SshServerModule
 
             if (e.Result)
             {
-                attempt.AcceptedUsername = e.Username;
                 attempt.AcceptedMethod = e.AuthMethod;
+                attempt.AcceptedUsername = e.Username;
                 return;
             }
 
@@ -198,7 +219,7 @@ namespace FxSsh.SshServerModule
                 Publish(new AuthEvent(AuthEventType.LoginFailed)
                 {
                     Timestamp = Now, Username = e.Username, RemoteIp = RemoteIp(e.Session), Protocol = SshProtocol,
-                    Method = e.AuthMethod, Reason = failure,
+                    Method = e.AuthMethod, Reason = failure, SessionId = connectionId.ToString(),
                 });
             if (e.AuthMethod == "password")
                 RecordFailedLogin(e.Session);
@@ -271,20 +292,23 @@ namespace FxSsh.SshServerModule
         }
 
         /// <summary>Called after the whole authentication succeeded (for a public key: after the signature check).</summary>
-        void OnUserAuthSucceeded(Session session, AuthAttempt attempt)
+        void OnUserAuthSucceeded(Session session, AuthAttempt attempt, Guid connectionId)
         {
             var username = attempt.AcceptedUsername;
             if (username == null)
                 return;
 
             var method = attempt.AcceptedMethod;
+            _connections.SetAuthenticated(connectionId, username, method);
             Publish(new AuthEvent(AuthEventType.LoginOk)
             {
                 Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
+                SessionId = connectionId.ToString(),
             });
             session.Disconnected += (s, args) => Publish(new AuthEvent(AuthEventType.Logout)
             {
                 Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
+                SessionId = connectionId.ToString(),
             });
 
             try
@@ -304,7 +328,7 @@ namespace FxSsh.SshServerModule
             }
         }
 
-        void OnSubsystemRequested(Session session, SubsystemRequestedArgs e)
+        void OnSubsystemRequested(Session session, SubsystemRequestedArgs e, Guid connectionId)
         {
             _logger.LogInformation("Channel {ChannelId} requested subsystem \"{Name}\".", e.Channel.ServerChannelId, e.Name);
 
@@ -319,7 +343,7 @@ namespace FxSsh.SshServerModule
             IFileSystem storage;
             try
             {
-                storage = SyncBridge.Wait(_fileSystemFactory.CreateAsync(user, new ClientContext(SftpProtocol, RemoteIp(session)), CancellationToken.None));
+                storage = SyncBridge.Wait(_fileSystemFactory.CreateAsync(user, new ClientContext(ConnectionProtocols.Sftp, RemoteIp(session), connectionId), CancellationToken.None));
             }
             catch (Exception ex) when (ex is ArgumentException or FileSystemException or System.Collections.Generic.KeyNotFoundException)
             {

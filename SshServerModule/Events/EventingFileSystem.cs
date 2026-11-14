@@ -113,7 +113,7 @@ namespace SshServerModule.Events
             Provider = _provider,
             Protocol = _client.Protocol,
             RemoteIp = _client.RemoteIp,
-            SessionId = _client.SessionId,
+            SessionId = _client.ConnectionId?.ToString(),
         };
 
         /// <summary>Asks the hooks; publishes the <c>Pre*</c> event with the answer, and throws PermissionDenied for a deny.</summary>
