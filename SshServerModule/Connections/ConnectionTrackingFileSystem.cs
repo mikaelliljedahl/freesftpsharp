@@ -137,7 +137,11 @@ namespace SshServerModule.Connections
                 return _inner.SetAttributesAsync(update, ct);
             }
 
-            public async ValueTask DisposeAsync()
+            public ValueTask DisposeAsync() => CloseAsync(abort: false);
+
+            public ValueTask AbortAsync() => CloseAsync(abort: true);
+
+            private async ValueTask CloseAsync(bool abort)
             {
                 ITransferProgress? progress;
                 lock (_lock)
@@ -148,7 +152,7 @@ namespace SshServerModule.Connections
                 }
                 try
                 {
-                    await _inner.DisposeAsync();
+                    await (abort ? _inner.AbortAsync() : _inner.DisposeAsync());
                 }
                 finally
                 {
