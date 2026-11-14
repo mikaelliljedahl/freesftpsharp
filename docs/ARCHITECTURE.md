@@ -63,6 +63,32 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
   `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
   admin UI page "Audit" and later the REST API read it through `IAuditLog`.
 
+## Observability
+
+The core produces telemetry with `System.Diagnostics` only (`AddSshServerMetrics()`, namespace `SshServerModule.Observability`); it
+has no exporter dependency and opens no port. `FreeSftpSharpMetrics` is fed from the `IConnectionRegistry` (connection gauge and
+counter, one `sftp.session` activity per connection) and, as an `IEventSink`, from the event bus (logins, transfers, storage
+operations, and one `storage.<operation>` activity under the session). Protocols and backends do not know about it.
+
+Meter and activity source are both named `FreeSftpSharp`. Instruments: `freesftpsharp.connections.active` and `.connections`
+{protocol}, `freesftpsharp.auth.attempts` {method,result}, `freesftpsharp.transfers` {protocol,direction,status},
+`freesftpsharp.transfer.bytes`, `freesftpsharp.transfer.duration`, `freesftpsharp.storage.operation.duration`
+{provider,operation} and `freesftpsharp.storage.errors` {provider,error}. Prometheus shows them as `freesftpsharp_transfers_total` etc.
+
+`SshServer.Observability` is the opt-in exporter project (`AddSshServerObservability(configuration)` and
+`UseSshServerObservability()`, called by the web host). Everything is off until the `Observability` section says otherwise:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `Observability:Prometheus:Enabled` | false | `/metrics` (`Prometheus:Path`) on the web host. Needs `Prometheus:ApiKey` (bearer token) or `Prometheus:AllowedNetworks` (CIDR list); with neither, only loopback may scrape. |
+| `Observability:Otlp:Endpoint` | empty | OTLP metric export to this endpoint. |
+| `Observability:Otlp:Tracing` | false | Also export the traces (needs the endpoint). |
+| `Observability:Health:Enabled` | false | `/healthz` (process alive, always 200) and `/readyz` (settings database readable and SSH listeners bound; 200 or 503, plain text). `?detail=true` gives JSON for the operator (same key or network rules as `/metrics`). |
+
+The endpoints are terminal middleware at the start of the pipeline, so probes and scrapers need no login cookie and no HTTPS.
+`ServerConsoleApp` calls `AddSshServerMetrics()` only: the instruments exist, nothing is exported and nothing listens.
+A sample Grafana dashboard is in [grafana-dashboard.json](grafana-dashboard.json).
+
 ## Storage backends
 
 A storage backend is a plug-in. Use this structure:
