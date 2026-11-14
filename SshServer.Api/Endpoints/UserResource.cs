@@ -170,6 +170,12 @@ public sealed class UserResource
         user.RequireAllOf = steps.Count == 0 ? null : steps;
         errors.AddRange("allowedAuthMethods", AuthMethodRules.Validate(user.AllowedAuthMethods, user.RequireAllOf));
 
+        var unknownProtocols = new List<string>();
+        user.AllowedProtocols = write.AllowedProtocols == null ? UserProtocols.All : ProtocolNames.Parse(write.AllowedProtocols, unknownProtocols);
+        errors.AddRange("allowedProtocols", unknownProtocols.Select(n => $"'{n}' is not a protocol ({ProtocolNames.Allowed})."));
+        if (user.AllowedProtocols == UserProtocols.None && unknownProtocols.Count == 0)
+            errors.Add("allowedProtocols", "Allow at least one protocol.");
+
         user.OnlyWhitelistedIps = write.OnlyWhitelistedIps ?? false;
         user.WhitelistedIps = Entries(write.WhitelistedIps);
         errors.AddRange("whitelistedIps", CidrNotation.FindInvalid(user.WhitelistedIps).Select(e => $"'{e}' is not an IP address or a network in CIDR notation."));

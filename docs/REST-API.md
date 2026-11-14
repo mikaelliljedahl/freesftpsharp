@@ -89,6 +89,9 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/groups/{id}/quotas` | read: ManageUsers or ManageGroups; change: ManageGroups | get, `PUT` (disk, transfer, bandwidth of the members without their own) |
 | `/users/{username}/public-keys` | ManageUsers | list, add (authorized_keys text), remove (`?fingerprint=SHA256:...`), `POST .../generate` (returns the private key once) |
 | `/users/{username}/quotas` | ManageUsers | get (own settings, and the effective limits with their usage), `PUT` (disk, transfer, bandwidth), `POST .../scan`, `POST .../transfer/reset` |
+| `/users/{username}/app-passwords` | ManageUsers | list (metadata only, never the secret), create (`{name, protocols, expiresAt}`; the secret is in this response only), `DELETE /{id}` revokes. Allowed for a user of an external provider (#64) too, as in the Users page |
+| `/users/{username}/two-factor` | ManageUsers | get (`enrolled`, `state` Off/Pending/On, `createdAt`, `enabledAt`, `recoveryCodesLeft`; never the secret), `DELETE` resets the TOTP enrolment |
+| `/admins/{username}/two-factor` | ManageAdmins | the same for an administrator that the caller may manage (no more permissions than the caller). Not for the own account: turn it off in the admin UI with a current code |
 | `/virtual-folders` | read: ManageUsers or ManageFolders; change: ManageFolders | list, get, create, `PUT`, `PATCH`, delete |
 | `/storage-providers` | any administrator | the storage providers and their options; `POST /storage-providers/test` tries a storage |
 | `/admins`, `/roles` | ManageAdmins | list, get, create, `PUT`, `PATCH` (admins), delete |
@@ -102,8 +105,12 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/status` | any administrator | version, start time, uptime, node, and the permissions of the caller |
 | `/dump`, `/load` | SuperAdmin | export and import of every stored object (below) |
 
-Shares (#70) get their routes with their feature. The second-factor administration (#63: set up
-or reset the TOTP app of a user or an administrator) has no routes yet.
+Shares (#70) get their routes with their feature. The API reads and resets the second factor (#63); a user sets up the
+app itself (the web client) or an administrator in the admin UI, because the setup shows the secret and a QR code.
+
+`allowedProtocols` (#71) of a user is a list of `sftp`, `webdav`, `web`, `ftp` (without case; `all` too on input); not given
+on a `PUT`: all of them; at least one is needed. The app passwords are not part of the user: use their routes. The
+secret of an app password is returned once, by the `POST`, and is not stored (only its hash).
 
 A user has its own settings and the settings of its groups (#61): `primaryGroupId`, `secondaryGroupIds`; a value that
 the user does not set (`permissions` and `pathFilters` not given, no `storage`) comes from the groups. The lifecycle

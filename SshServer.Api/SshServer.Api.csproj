@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SshServer.Administration\SshServer.Administration.csproj" />
     <ProjectReference Include="..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
+    <ProjectReference Include="..\SshServer.TwoFactor\SshServer.TwoFactor.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
     <ProjectReference Include="..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
     <ProjectReference Include="..\SshServer.EventRules\SshServer.EventRules.csproj" />
