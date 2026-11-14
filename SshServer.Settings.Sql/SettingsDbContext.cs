@@ -7,6 +7,7 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Authentication;
+using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
@@ -35,8 +36,13 @@ namespace SshServer.Settings.Sql;
 /// folder: removing a user or a folder removes its mounts.
 /// </para>
 /// <para>
-/// The quotas of a user (<see cref="User.DiskQuota"/>, <see cref="User.TransferQuota"/>, <see cref="User.Bandwidth"/>) and
-/// of a mount (<see cref="VirtualFolderMount.Quota"/>) are JSON text columns, null for none (issue #62). The counters are
+/// The groups (issue #61, <see cref="Group"/>) are the table Groups, with the same JSON columns as a user and their
+/// mounts in GroupVirtualFolders. <see cref="User.PrimaryGroupId"/> is a foreign key (a group with members cannot be
+/// removed); <see cref="User.SecondaryGroupIds"/> is a JSON list of ids.
+/// </para>
+/// <para>
+/// The quotas of a user (<see cref="User.DiskQuota"/>, <see cref="User.TransferQuota"/>, <see cref="User.Bandwidth"/>)
+/// and of a group, and of a mount (<see cref="VirtualFolderMount.Quota"/>), are JSON text columns, null for none (issue #62). The counters are
 /// the table QuotaUsages, one row per scope (<see cref="QuotaUsageRow"/>), changed by increments.
 /// </para>
 /// </summary>
@@ -61,6 +67,7 @@ public class SettingsDbContext : DbContext
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
     public DbSet<Admin> Admins => Set<Admin>();
     public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Group> Groups => Set<Group>();
     public DbSet<TwoFactorRecord> TwoFactorEnrolments => Set<TwoFactorRecord>();
     public DbSet<EventRule> EventRules => Set<EventRule>();
     public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
@@ -113,6 +120,12 @@ public class SettingsDbContext : DbContext
                 v => ToJson(v), v => FromJson<BandwidthLimit>(v), JsonComparer<BandwidthLimit>());
             // A role in use cannot be removed (AdminAdministrationService checks it first, with a clear message).
             b.HasOne<Role>().WithMany().HasForeignKey(u => u.RoleId).OnDelete(DeleteBehavior.Restrict);
+            b.Property(u => u.Description).IsRequired(false).HasMaxLength(1000);
+            // The migration gives the existing users "Enabled".
+            b.Property(u => u.Status).HasConversion<string>().HasMaxLength(16);
+            // A group with members cannot be removed (GroupService checks it first, with a clear message).
+            b.HasOne<Group>().WithMany().HasForeignKey(u => u.PrimaryGroupId).OnDelete(DeleteBehavior.Restrict);
+            b.PrimitiveCollection(u => u.SecondaryGroupIds).IsRequired();
             b.OwnsMany(u => u.VirtualFolders, m =>
             {
                 m.ToTable("UserVirtualFolders");
@@ -138,6 +151,44 @@ public class SettingsDbContext : DbContext
             b.Property(f => f.Description).IsRequired(false);
             b.Property(f => f.Storage).IsRequired().HasConversion(
                 v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
+        });
+
+        modelBuilder.Entity<Group>(b =>
+        {
+            b.ToTable("Groups");
+            b.HasKey(g => g.Id);
+            var name = b.Property(g => g.Name).IsRequired().HasMaxLength(GroupService.MaximumNameLength);
+            if (Database.IsSqlite())
+                name.UseCollation("NOCASE");
+            b.HasIndex(g => g.Name).IsUnique();
+            b.Property(g => g.Description).IsRequired(false).HasMaxLength(1000);
+            b.Property(g => g.Permissions).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<Dictionary<string, FilePermissions>>(v), JsonComparer<Dictionary<string, FilePermissions>>());
+            b.Property(g => g.PathFilters).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<Dictionary<string, PathFilter>>(v), JsonComparer<Dictionary<string, PathFilter>>());
+            b.Property(g => g.Storage).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
+            b.Property(g => g.AllowedAuthMethods).IsRequired(false).HasMaxLength(128).HasConversion<string>();
+            b.PrimitiveCollection(g => g.AllowedIps).IsRequired(false);
+            b.HasOne<Role>().WithMany().HasForeignKey(g => g.RoleId).OnDelete(DeleteBehavior.Restrict);
+            b.OwnsMany(g => g.VirtualFolders, m =>
+            {
+                m.ToTable("GroupVirtualFolders");
+                m.WithOwner().HasForeignKey("GroupId");
+                m.Property<int>("Id");
+                m.HasKey("Id");
+                m.Property(x => x.MountPath).IsRequired().HasMaxLength(1024);
+                m.HasOne<VirtualFolder>().WithMany().HasForeignKey(x => x.VirtualFolderId).OnDelete(DeleteBehavior.Cascade);
+                m.HasIndex("GroupId", nameof(VirtualFolderMount.MountPath)).IsUnique();
+                m.Property(x => x.Quota).IsRequired(false).HasConversion(
+                    v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
+            });
+            b.Property(g => g.DiskQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
+            b.Property(g => g.TransferQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<TransferQuota>(v), JsonComparer<TransferQuota>());
+            b.Property(g => g.Bandwidth).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<BandwidthLimit>(v), JsonComparer<BandwidthLimit>());
         });
 
         modelBuilder.Entity<QuotaUsageRow>(b =>

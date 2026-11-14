@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
-using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Quotas;
+using SshServer.Interfaces.Users;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
 using SshServerModule.Events;
@@ -29,9 +29,9 @@ namespace SshServerModule.Storage
     /// bandwidth of the session (#62), over every storage of the user; each left out without its limit, and both for an
     /// operation of the server itself (<see cref="ClientContext.SkipPermissions"/>). Inside the
     /// permissions, so a refused operation is not counted.</item>
-    /// <item><see cref="PermissionFileSystem"/>: per-path permissions and path filters (#59); left out for a user who
-    /// may do everything, and for an operation of the server itself (<see cref="ClientContext.SkipPermissions"/>, the
-    /// actions of the event rules).</item>
+    /// <item><see cref="PermissionFileSystem"/>: the effective per-path permissions and path filters (#59, with the
+    /// groups #61); left out for a user who may do everything, and for an operation of the server itself
+    /// (<see cref="ClientContext.SkipPermissions"/>, the actions of the event rules).</item>
     /// <item><see cref="EventingFileSystem"/>: the events of every operation of the client (#65). Outside the
     /// permissions, so an operation that the permissions refuse still gives an event (status Error) in the audit log;
     /// a hook can refuse an upload, download or delete before the permissions are checked.</item>
@@ -44,7 +44,7 @@ namespace SshServerModule.Storage
         private readonly IStorageProviderRegistry _registry;
         private readonly IUserStorageResolver _resolver;
         private readonly StorageOptionsCodec _codec;
-        private readonly IEffectivePermissionsService _permissions;
+        private readonly IEffectiveUserSettingsService _settings;
         private readonly IConnectionRegistry? _connections;
         private readonly IEventBus? _events;
         private readonly TimeProvider _time;
@@ -55,14 +55,14 @@ namespace SshServerModule.Storage
         /// <param name="time">The clock of the events. Null: the system clock.</param>
         /// <param name="quotas">The quota decorators (AddSshServerStorage). Null: no quotas and no bandwidth limits.</param>
         public StorageFileSystemFactory(IStorageProviderRegistry registry, IUserStorageResolver resolver, StorageOptionsCodec codec,
-            IEffectivePermissionsService permissions, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null,
+            IEffectiveUserSettingsService settings, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null,
             QuotaDecorators? quotas = null)
         {
             _quotas = quotas;
             _registry = registry;
             _resolver = resolver;
             _codec = codec;
-            _permissions = permissions;
+            _settings = settings;
             _connections = connections;
             _events = events;
             _time = time ?? TimeProvider.System;
@@ -71,7 +71,8 @@ namespace SshServerModule.Storage
         public async ValueTask<IFileSystem> CreateAsync(User user, ClientContext client, CancellationToken ct)
         {
             var storage = _resolver.Resolve(user);
-            var quotas = _quotas?.Resolve(user) ?? EffectiveQuotas.Unlimited;
+            var settings = _settings.Resolve(user);
+            var quotas = EffectiveQuotas.From(settings);
             var fileSystem = await CreateStorageAsync(storage.Root, ct);
             if (_quotas != null)
                 fileSystem = await _quotas.WrapStorageAsync(fileSystem, QuotaScope.ForUser(user.Username), quotas.Disk, ct);
@@ -98,7 +99,7 @@ namespace SshServerModule.Storage
             if (_quotas != null && !client.SkipPermissions)
                 fileSystem = await _quotas.WrapSessionAsync(fileSystem, user, quotas, client, ct);
             if (!client.SkipPermissions)
-                fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
+                fileSystem = PermissionFileSystem.Wrap(fileSystem, settings.Permissions);
             if (_events != null)
                 fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Root.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)

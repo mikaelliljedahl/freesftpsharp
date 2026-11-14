@@ -24,12 +24,12 @@ public sealed class QuotaSftpServerFixture : SftpServerFixture
 
     protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
         => TestStorage.Factory(StorageProviders(), _ => new UserStorageResolver(new UserRootDefaultStorage(), repository), connections, events,
-            new QuotaDecorators(new EffectiveQuotaService(), Tracker, Scans));
+            repository, new QuotaDecorators(Tracker, Scans));
 
     /// <summary>The scan of the hosts over the repository of the running server.</summary>
     public QuotaScanService Scanner => new(new UserStorageResolver(new UserRootDefaultStorage(), Repository),
         new StorageProviderRegistry([new LocalDiskStorageProvider()]), TestStorage.Codec(new LocalDiskStorageProvider()),
-        new EffectiveQuotaService(), Tracker, Scans, Repository);
+        new EffectiveQuotaService(new SshServer.Interfaces.Users.EffectiveUserSettingsService(Repository)), Tracker, Scans, Repository);
 
     /// <summary>Adds a user (password of the test user) with an empty root directory of its own; returns the root.</summary>
     public string AddQuotaUser(string username, Action<User> configure)

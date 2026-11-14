@@ -27,7 +27,10 @@ public class User
     /// </summary>
     public List<PublicKeyEntry>? PublicKeys { get; set; }
 
-    /// <summary>The login methods that the user may use. Default: all. A refused method fails like a wrong credential.</summary>
+    /// <summary>
+    /// The login methods that the user may use. Default: all. A refused method fails like a wrong credential. A user
+    /// with all methods gets the methods of its groups (issue #61).
+    /// </summary>
     public AuthMethods AllowedAuthMethods { get; set; } = AuthMethods.All;
 
     /// <summary>
@@ -38,25 +41,51 @@ public class User
 
     public bool OnlyWhitelistedIps { get; set; }
     public List<string>? WhitelistedIps { get; set; }
-    public DateTime LastSuccessfulLogin { get; set; }
+
+    /// <summary>The time (UTC) of the last successful login, or null before the first one.</summary>
+    public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>A note of the administrator. Not used by the server.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Whether the user may log in (issue #61). A disabled user is refused like a wrong password; its files stay.</summary>
+    public UserStatus Status { get; set; } = UserStatus.Enabled;
+
+    /// <summary>The time (UTC) from which the user cannot log in any more (issue #61). Null: never.</summary>
+    public DateTime? ExpiresAt { get; set; }
+
+    /// <summary>The number of sessions the user may have open at the same time (issue #61). 0: no limit.</summary>
+    public int MaxSessions { get; set; }
 
     /// <summary>
-    /// The permissions per virtual directory (issue #59). The longest matching directory wins. Null, or no entry for
-    /// "/", means <see cref="FilePermissions.All"/> at the root: a user stored before this property existed keeps
-    /// full access. Resolve them with <see cref="IEffectivePermissionsService"/>, never here.
+    /// The time (UTC) the password was set (issue #61), for <see cref="ServerSettings.PasswordMaxAgeDays"/>. Null: not
+    /// known; such a password does not expire.
     /// </summary>
-    public Dictionary<string, FilePermissions>? Permissions { get; set; } = new() { ["/"] = FilePermissions.All };
+    public DateTime? PasswordChangedAt { get; set; }
 
-    /// <summary>The file name filters per virtual directory (issue #59). Null or empty: no filter.</summary>
+    /// <summary>The primary group (issue #61, <see cref="Groups.Group"/>): its settings come first after the user's own.</summary>
+    public int? PrimaryGroupId { get; set; }
+
+    /// <summary>The other groups, in the order in which their settings apply after the primary group.</summary>
+    public List<int> SecondaryGroupIds { get; set; } = new();
+
+    /// <summary>
+    /// The permissions per virtual directory (issue #59). The longest matching directory wins. Null or empty: not set,
+    /// the permissions of the groups apply, else <see cref="FilePermissions.All"/> at the root. No entry for "/" means
+    /// <see cref="FilePermissions.All"/> at the root. Resolve them with <see cref="Users.IEffectiveUserSettingsService"/>, never here.
+    /// </summary>
+    public Dictionary<string, FilePermissions>? Permissions { get; set; }
+
+    /// <summary>The file name filters per virtual directory (issue #59). Null or empty: not set, the filters of the groups apply.</summary>
     public Dictionary<string, PathFilter>? PathFilters { get; set; }
 
     /// <summary>
-    /// The storage of "/" (issue #56): a provider and its options. Null: the default storage, the local disk at
-    /// <see cref="UserRootDirectory"/>, as before this property existed.
+    /// The storage of "/" (issue #56): a provider and its options. Null: the storage template of the groups (issue #61),
+    /// else the default storage, the local disk at <see cref="UserRootDirectory"/>, as before this property existed.
     /// </summary>
     public StorageConfig? Storage { get; set; }
 
-    /// <summary>The virtual folders mounted into the file system of the user (issue #56).</summary>
+    /// <summary>The virtual folders mounted into the file system of the user (issue #56); the groups can add more.</summary>
     public List<VirtualFolderMount> VirtualFolders { get; set; } = new();
 
     /// <summary>
@@ -76,4 +105,11 @@ public class User
     /// user. Null: only administrators without a scope see the user.
     /// </summary>
     public int? RoleId { get; set; }
+}
+
+/// <summary>The status of a <see cref="User"/> (issue #61).</summary>
+public enum UserStatus
+{
+    Enabled,
+    Disabled,
 }

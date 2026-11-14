@@ -22,6 +22,9 @@ namespace FxSshSftpServer.Models
         [Range(0, 86400, ErrorMessage = "The idle timeout must be from 0 to 86400 seconds.")]
         public int IdleTimeout { get; set; }
 
+        [Range(0, 3650, ErrorMessage = "The maximum password age must be from 0 to 3650 days.")]
+        public int PasswordMaxAgeDays { get; set; }
+
         public bool EnableCommand { get; set; }
 
         public bool EnableDirectTcpIp { get; set; }
@@ -32,6 +35,7 @@ namespace FxSshSftpServer.Models
             BindToAddress = EntryList.Format(settings.BindToAddress),
             ServerBanner = settings.ServerBanner ?? "",
             IdleTimeout = settings.IdleTimeout,
+            PasswordMaxAgeDays = settings.PasswordMaxAgeDays,
             EnableCommand = settings.EnableCommand,
             EnableDirectTcpIp = settings.EnableDirectTcpIp,
         };
@@ -42,6 +46,7 @@ namespace FxSshSftpServer.Models
             settings.BindToAddress = EntryList.Parse(BindToAddress);
             settings.ServerBanner = string.IsNullOrWhiteSpace(ServerBanner) ? null : ServerBanner.Trim();
             settings.IdleTimeout = IdleTimeout;
+            settings.PasswordMaxAgeDays = PasswordMaxAgeDays;
             settings.EnableCommand = EnableCommand;
             settings.EnableDirectTcpIp = EnableDirectTcpIp;
         }

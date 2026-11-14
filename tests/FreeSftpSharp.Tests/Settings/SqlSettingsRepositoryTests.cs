@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Users;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -44,7 +45,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         HashedPassword = TestCredentials.HashPassword("secret"),
         OnlyWhitelistedIps = true,
         WhitelistedIps = new List<string> { "10.0.0.0/8", "192.168.1.5" },
-        LastSuccessfulLogin = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+        LastLoginAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
     };
 
     [Fact]
@@ -178,7 +179,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Null(stored.RequireAllOf);
         Assert.True(stored.OnlyWhitelistedIps);
         Assert.Equal(new[] { "10.0.0.0/8", "192.168.1.5" }, stored.WhitelistedIps);
-        Assert.Equal(user.LastSuccessfulLogin, stored.LastSuccessfulLogin);
+        Assert.Equal(user.LastLoginAt, stored.LastLoginAt);
         Assert.Equal(new[] { "alice" }, _repository.GetAllUsers().Select(u => u.Username));
     }
 
@@ -208,7 +209,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         user.UserRootDirectory = "/other";
         user.OnlyWhitelistedIps = false;
         user.WhitelistedIps = new List<string>();
-        user.LastSuccessfulLogin = new DateTime(2026, 5, 6, 7, 8, 9, DateTimeKind.Utc);
+        user.LastLoginAt = new DateTime(2026, 5, 6, 7, 8, 9, DateTimeKind.Utc);
 
         Assert.True(_repository.UpdateUser(user));
 
@@ -221,7 +222,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.False(stored.OnlyWhitelistedIps);
         Assert.NotNull(stored.WhitelistedIps);
         Assert.Empty(stored.WhitelistedIps);
-        Assert.Equal(user.LastSuccessfulLogin, stored.LastSuccessfulLogin);
+        Assert.Equal(user.LastLoginAt, stored.LastLoginAt);
     }
 
     private static Dictionary<string, FilePermissions> SamplePermissions() => new()
@@ -264,7 +265,8 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
     {
         _repository.AddUser(NewUser("perms2"));
         var user = _repository.GetUser("perms2");
-        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, user.Permissions);
+        // Only "/" = All is the same as no permissions of the user since #61 (so a group can give them): not set any more.
+        Assert.Null(user.Permissions);
         Assert.Null(user.PathFilters);
 
         user.Permissions = SamplePermissions();
@@ -309,9 +311,10 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Null(user.PublicKeys); // "key" is not a readable key: it did not work before and is dropped
         Assert.Equal(AuthMethods.All, user.AllowedAuthMethods);
         Assert.Equal(new[] { "10.0.0.0/8" }, user.WhitelistedIps);
-        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, user.Permissions);
+        // Only "/" = All is the same as no permissions of the user since #61 (so a group can give them): not set any more.
+        Assert.Null(user.Permissions);
         Assert.Null(user.PathFilters);
-        Assert.True(new EffectivePermissionsService().Resolve(user).IsUnrestricted);
+        Assert.True(new EffectiveUserSettingsService().Resolve(user).Permissions.IsUnrestricted);
 
         // The migrated user can get rules like a new one.
         user.Permissions = SamplePermissions();

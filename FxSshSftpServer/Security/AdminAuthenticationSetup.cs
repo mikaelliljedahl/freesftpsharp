@@ -82,6 +82,8 @@ namespace FxSshSftpServer.Security
             services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
             // The virtual folders (#56) too: changing them needs ManageFolders; their users are those in the scope.
             services.AddScoped(sp => new SshServerModule.Storage.VirtualFolderService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
+            // The groups (#61): changing them needs ManageGroups; a scoped administrator sees only the groups of its role.
+            services.AddScoped(sp => new SshServer.Interfaces.Groups.GroupService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
             // The quota counters (#62): the usage, rescan and reset of the users in the scope (the singletons come with AddSshServerStorage).
             services.AddScoped(sp => new SshServerModule.Quotas.QuotaAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>(),
                 sp.GetRequiredService<SshServer.Interfaces.Quotas.IEffectiveQuotaService>(), sp.GetRequiredService<SshServerModule.Quotas.QuotaUsageTracker>(),

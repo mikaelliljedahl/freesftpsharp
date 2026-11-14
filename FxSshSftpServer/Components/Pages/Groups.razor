@@ -1,0 +1,307 @@
+@page "/groups"
+@attribute [Authorize(Policy = AdminPolicies.ManageGroups)]
+@using SshServer.Interfaces.Groups
+@using SshServer.Interfaces.Storage
+@using SshServerModule.Storage
+@inject GroupService GroupService
+@inject VirtualFolderService FolderService
+@inject StorageConfigService StorageService
+@inject ToastService Toasts
+
+<PageTitle>Groups - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Groups</h1>
+        <p class="text-body-secondary mb-0">
+            Shared settings for many users. A user takes every setting that it does not set itself from its primary group,
+            then from its other groups in order. Add users to groups on the <a href="users">Users</a> page.
+        </p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-group"><i class="bi bi-collection"></i> Add group</button>
+</div>
+
+<div class="row g-4">
+    <div class="@(form is null ? "col-12" : "col-xl-5")">
+        <div class="card">
+            @if (groups.Count == 0)
+            {
+                <div class="card-body text-body-secondary" id="no-groups">No groups yet. Use "Add group" to create the first one.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="group-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Settings</th>
+                                <th scope="col" class="d-none d-md-table-cell">Members</th>
+                                <th scope="col"><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in groups)
+                            {
+                                var members = GroupService.MembersOf(group.Id);
+                                <tr class="group-row">
+                                    <td>
+                                        <div class="fw-semibold">@group.Name</div>
+                                        @if (!string.IsNullOrWhiteSpace(group.Description))
+                                        {
+                                            <div class="small text-body-secondary">@group.Description</div>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (group.Storage is not null)
+                                        {
+                                            <span class="badge text-bg-light border me-1">@StorageService.DisplayName(group.Storage)</span>
+                                        }
+                                        @if (group.Permissions is { Count: > 0 })
+                                        {
+                                            <span class="badge text-bg-secondary me-1">permissions</span>
+                                        }
+                                        @if (group.VirtualFolders.Count > 0)
+                                        {
+                                            <span class="badge text-bg-secondary me-1">+@group.VirtualFolders.Count @(group.VirtualFolders.Count == 1 ? "folder" : "folders")</span>
+                                        }
+                                        @if (group.AllowedAuthMethods is not null)
+                                        {
+                                            <span class="badge text-bg-primary me-1">methods</span>
+                                        }
+                                        @if (group.AllowedIps is { Count: > 0 })
+                                        {
+                                            <span class="badge text-bg-warning">IP</span>
+                                        }
+                                    </td>
+                                    <td class="d-none d-md-table-cell small group-members">@(members.Count == 0 ? "nobody" : string.Join(", ", members))</td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-primary edit-group" title="Edit" aria-label="Edit @group.Name" @onclick="() => Edit(group)"><i class="bi bi-pencil"></i></button>
+                                            <button type="button" class="btn btn-outline-danger delete-group" title="Delete" aria-label="Delete @group.Name" @onclick="() => AskDelete(group)"><i class="bi bi-trash"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (form is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>@(form.IsNew ? "New group" : $"Edit {form.OriginalName}")</span>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseForm"></button>
+                </div>
+                <div class="card-body">
+                    <form @onsubmit="Save" id="group-form">
+                        <div class="mb-3">
+                            <label class="form-label" for="group-name">Name</label>
+                            <input type="text" class="form-control" id="group-name" value="@form.Name" @onchange="e => form.Name = e.Value?.ToString() ?? string.Empty" autocomplete="off" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="group-description">Description</label>
+                            <input type="text" class="form-control" id="group-description" value="@form.Description" @onchange="e => form.Description = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Storage template</legend>
+                            <div class="small text-body-secondary mb-2">
+                                The storage of the members that have no storage of their own. Write <code>@StorageTemplate.UsernamePlaceholder</code>
+                                in a directory or key prefix, for example <code>/srv/sftp/@StorageTemplate.UsernamePlaceholder</code>, so that every member gets its own folder.
+                            </div>
+                            <StorageEditor Settings="form.Storage" IdPrefix="group-storage" Problems="storageProblems"
+                                           DefaultLabel="Not set: the members keep their own storage" OnProviderChanged="() => storageProblems = null" />
+                        </fieldset>
+
+                        <MountEditor Mounts="form.Mounts" Folders="folders" Problems="mountProblems" Subject="members" />
+                        <QuotaEditor Model="form.Quotas" NotSetText="not set by the group (the members without their own value are unlimited)" />
+
+                        <div class="border rounded p-3 mb-3">
+                            <div class="form-check form-switch mb-0">
+                                <input type="checkbox" class="form-check-input" id="group-set-permissions" checked="@form.SetPermissions"
+                                       @onchange="e => form.SetPermissions = e.Value is true" />
+                                <label class="form-check-label" for="group-set-permissions">Set the permissions and path filters of the members</label>
+                            </div>
+                            <div class="form-text">Members with permissions of their own keep them.</div>
+                        </div>
+                        @if (form.SetPermissions)
+                        {
+                            <PermissionEditor Permissions="form.Permissions" PathFilters="form.PathFilters" Subject="members">
+                                <PermissionMessages><ProblemList Problems="permissionProblems" Id="permission-problems" /></PermissionMessages>
+                                <FilterMessages><ProblemList Problems="filterProblems" Id="filter-problems" /></FilterMessages>
+                            </PermissionEditor>
+                        }
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Login</legend>
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" class="form-check-input" id="group-restrict-methods" checked="@form.RestrictMethods"
+                                       @onchange="e => form.RestrictMethods = e.Value is true" />
+                                <label class="form-check-label" for="group-restrict-methods">Set the login methods of the members</label>
+                            </div>
+                            @if (form.RestrictMethods)
+                            {
+                                <div class="mb-2">
+                                    <div class="form-check form-check-inline">
+                                        <input type="checkbox" class="form-check-input" id="group-allow-password" checked="@form.AllowPassword" @onchange="e => form.AllowPassword = e.Value is true" />
+                                        <label class="form-check-label" for="group-allow-password">Password</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input type="checkbox" class="form-check-input" id="group-allow-public-key" checked="@form.AllowPublicKey" @onchange="e => form.AllowPublicKey = e.Value is true" />
+                                        <label class="form-check-label" for="group-allow-public-key">Public key</label>
+                                    </div>
+                                    <div class="form-text">For members that allow every method themselves.</div>
+                                </div>
+                            }
+                            <label class="form-label small mb-1" for="group-allowed-ips">Allowed networks</label>
+                            <textarea id="group-allowed-ips" class="form-control font-monospace" rows="2" placeholder="192.168.1.0/24"
+                                      value="@form.AllowedIps" @onchange="e => form.AllowedIps = e.Value?.ToString() ?? string.Empty"></textarea>
+                            <div class="form-text">CIDR networks or single addresses, one per line, for members without an IP whitelist of their own. Empty: not set.</div>
+                        </fieldset>
+
+                        <ProblemList Problems="problems" Id="group-problems" />
+
+                        @if (!form.IsNew)
+                        {
+                            <p class="small text-body-secondary mb-3">Members: <span id="group-members">@(form.Members.Count == 0 ? "nobody" : string.Join(", ", form.Members))</span></p>
+                        }
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                            <button type="submit" class="btn btn-primary" id="save-group"><i class="bi bi-floppy"></i> @(form.IsNew ? "Create group" : "Save group")</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete group" ConfirmText="Delete" OnConfirm="Delete">
+    Delete the group <strong>@pendingDelete?.Name</strong>? A group with members cannot be deleted: remove its members first on the Users page.
+</ConfirmDialog>
+
+@code {
+    private IReadOnlyList<Group> groups = [];
+    private IReadOnlyList<VirtualFolder> folders = [];
+    private GroupForm form;
+    private IReadOnlyList<string> problems;
+    private IReadOnlyList<string> permissionProblems;
+    private IReadOnlyList<string> filterProblems;
+    private IReadOnlyList<string> storageProblems;
+    private IReadOnlyList<string> mountProblems;
+    private Group pendingDelete;
+    private ConfirmDialog deleteDialog;
+
+    protected override void OnInitialized() => Load();
+
+    private void Load()
+    {
+        groups = GroupService.List();
+        folders = FolderService.List();
+    }
+
+    private void StartNew()
+    {
+        form = GroupForm.New(StorageService);
+        ClearProblems();
+    }
+
+    private void Edit(Group group)
+    {
+        var stored = GroupService.Get(group.Id);
+        if (stored is null)
+        {
+            Toasts.ShowError($"The group {group.Name} does not exist any more.");
+            Load();
+            return;
+        }
+        form = GroupForm.From(stored, GroupService.MembersOf(stored.Id), StorageService);
+        ClearProblems();
+    }
+
+    private void CloseForm() => form = null;
+
+    private void ClearProblems()
+    {
+        problems = null;
+        permissionProblems = null;
+        filterProblems = null;
+        storageProblems = null;
+        mountProblems = null;
+    }
+
+    private void Save()
+    {
+        ClearProblems();
+        problems = form.Problems();
+        (permissionProblems, filterProblems) = form.TableProblems();
+        var mounts = FolderService.ValidateMounts(form.MountList());
+        mountProblems = mounts.Count > 0 ? mounts : null;
+        StorageConfig storage = null;
+        if (form.HasStorage)
+        {
+            var result = StorageService.Build(form.Storage);
+            storageProblems = result.IsValid ? null : result.Problems;
+            storage = result.Config;
+        }
+        if (problems.Count > 0 || permissionProblems.Count > 0 || filterProblems.Count > 0 || mountProblems is not null || storageProblems is not null)
+            return;
+
+        var group = form.ToGroup(storage);
+        bool saved;
+        try
+        {
+            saved = form.IsNew ? GroupService.TryAdd(group) : GroupService.TryUpdate(group);
+        }
+        catch (AdminAccessDeniedException ex)
+        {
+            Toasts.ShowError(ex.Message);
+            return;
+        }
+        if (!saved)
+        {
+            problems = [$"The name {group.Name} is already used by another group."];
+            return;
+        }
+
+        Toasts.ShowSuccess($"The group {group.Name} was saved.");
+        Load();
+        Edit(group);
+    }
+
+    private void AskDelete(Group group)
+    {
+        pendingDelete = group;
+        deleteDialog.Open();
+    }
+
+    private Task Delete()
+    {
+        try
+        {
+            if (pendingDelete is not null && GroupService.Remove(pendingDelete.Id))
+            {
+                Toasts.ShowSuccess($"The group {pendingDelete.Name} was deleted.");
+                if (form?.Id == pendingDelete.Id)
+                    form = null;
+            }
+            else
+            {
+                Toasts.ShowError($"The group {pendingDelete?.Name} could not be deleted.");
+            }
+        }
+        catch (Exception ex) when (ex is GroupAdministrationException or AdminAccessDeniedException)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+        Load();
+        return Task.CompletedTask;
+    }
+}

@@ -73,7 +73,7 @@ public sealed class QuotaSettingsTests : IDisposable
         Assert.Null(user.TransferQuota);
         Assert.Null(user.Bandwidth);
         Assert.Null(Assert.Single(user.VirtualFolders).Quota);
-        Assert.True(new EffectiveQuotaService().Resolve(user).IsUnlimited);
+        Assert.True(new EffectiveQuotaService(new SshServer.Interfaces.Users.EffectiveUserSettingsService(repository)).Resolve(user).IsUnlimited);
         using (var db = new SettingsDbContext(options))
         {
             Assert.Contains(db.Database.GetAppliedMigrations(), m => m.EndsWith("_AddQuotas", StringComparison.Ordinal));

@@ -2,8 +2,6 @@ using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Permissions;
-using SshServer.Interfaces.Quotas;
-using SshServer.Interfaces.Net;
 using SshServer.Interfaces.Storage;
 using System.Linq;
 using SshServer.Interfaces.Security;
@@ -75,7 +73,45 @@ namespace FxSshSftpServer.Models
         /// <summary>Empty (one method is enough), <see cref="KeyThenPassword"/>, <see cref="PasswordThenKey"/> or <see cref="KeyThenKeyboardInteractive"/>.</summary>
         public string MultiStep { get; set; } = "";
 
-        public DateTime LastSuccessfulLogin { get; set; }
+        public DateTime? LastLoginAt { get; set; }
+
+        /// <summary>A note of the administrator.</summary>
+        [StringLength(1000, ErrorMessage = "The description can have at most 1000 characters.")]
+        public string Description { get; set; } = "";
+
+        /// <summary>The user may log in (<see cref="UserStatus.Enabled"/>).</summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>The day (UTC) from which the user cannot log in; null: never. The user expires at 00:00 UTC of that day.</summary>
+        public DateTime? ExpiresOn { get; set; }
+
+        [Range(0, 10_000, ErrorMessage = "The session limit must be from 0 to 10000 (0: no limit).")]
+        public int MaxSessions { get; set; }
+
+        /// <summary>The time the password was set (display only).</summary>
+        public DateTime? PasswordChangedAt { get; set; }
+
+        /// <summary>The primary group (issue #61); 0: none.</summary>
+        public int PrimaryGroupId { get; set; }
+
+        /// <summary>
+        /// The secondary groups in their order. The page toggles only the groups that the administrator sees, so a group
+        /// outside its scope stays as it is.
+        /// </summary>
+        public List<int> SecondaryGroupIds { get; set; } = new();
+
+        public bool HasGroups => PrimaryGroupId != 0 || SecondaryGroupIds.Count > 0;
+
+        /// <summary>
+        /// For a user with groups: no own permissions and path filters, the groups give them. Without groups the tables
+        /// are always shown; "/" with every permission and no filter is then the same as not set.
+        /// </summary>
+        public bool InheritPermissions { get; set; }
+
+        /// <summary>A selected group has a storage template, so the user needs no root directory (set by the page).</summary>
+        public bool GroupProvidesStorage { get; set; }
+
+        public bool UsesOwnPermissions => !HasGroups || !InheritPermissions;
 
         /// <summary>The permissions per directory (issue #59); the first row is always "/".</summary>
         public List<PermissionRow> Permissions { get; set; } = new() { PermissionRow.Root() };
@@ -83,32 +119,8 @@ namespace FxSshSftpServer.Models
         /// <summary>The path filters per directory (issue #59).</summary>
         public List<PathFilterRow> PathFilters { get; set; } = new();
 
-        /// <summary>The disk quota of the own storage in MiB (issue #62); 0: unlimited.</summary>
-        public decimal QuotaSizeMiB { get; set; }
-
-        /// <summary>The maximum number of files of the own storage; 0: unlimited.</summary>
-        public long QuotaFiles { get; set; }
-
-        /// <summary>The transfer quota in MiB (upload, download, both together); 0: unlimited.</summary>
-        public decimal UploadQuotaMiB { get; set; }
-
-        public decimal DownloadQuotaMiB { get; set; }
-
-        public decimal TotalQuotaMiB { get; set; }
-
-        /// <summary>The bandwidth of a session in KiB/s; 0: unlimited.</summary>
-        public int UploadKiBPerSecond { get; set; }
-
-        public int DownloadKiBPerSecond { get; set; }
-
-        /// <summary>Other bandwidth values for some client networks.</summary>
-        public List<BandwidthOverrideRow> BandwidthOverrides { get; set; } = new();
-
-        public const decimal BytesPerMiB = 1024 * 1024;
-
-        public static decimal ToMiB(long bytes) => bytes / BytesPerMiB;
-
-        public static long ToBytes(decimal mib) => (long)Math.Round(mib * BytesPerMiB, MidpointRounding.AwayFromZero);
+        /// <summary>The quotas and the bandwidth of the user (issue #62); not set: unlimited, or the values of its groups.</summary>
+        public QuotaForm Quotas { get; set; } = new();
 
         public static UserForm New() => new() { IsNew = true };
 
@@ -117,29 +129,9 @@ namespace FxSshSftpServer.Models
             Storage = storage.Edit(user.Storage),
             Mounts = (user.VirtualFolders ?? new List<VirtualFolderMount>())
                 .OrderBy(m => m.MountPath, StringComparer.Ordinal)
-                .Select(m => new MountRow
-                {
-                    VirtualFolderId = m.VirtualFolderId,
-                    MountPath = m.MountPath,
-                    QuotaSizeMiB = ToMiB(m.Quota?.MaxSizeBytes ?? 0),
-                    QuotaFiles = m.Quota?.MaxFiles ?? 0,
-                })
+                .Select(MountRow.From)
                 .ToList(),
-            QuotaSizeMiB = ToMiB(user.DiskQuota?.MaxSizeBytes ?? 0),
-            QuotaFiles = user.DiskQuota?.MaxFiles ?? 0,
-            UploadQuotaMiB = ToMiB(user.TransferQuota?.MaxUploadBytes ?? 0),
-            DownloadQuotaMiB = ToMiB(user.TransferQuota?.MaxDownloadBytes ?? 0),
-            TotalQuotaMiB = ToMiB(user.TransferQuota?.MaxTotalBytes ?? 0),
-            UploadKiBPerSecond = user.Bandwidth?.UploadKiBPerSecond ?? 0,
-            DownloadKiBPerSecond = user.Bandwidth?.DownloadKiBPerSecond ?? 0,
-            BandwidthOverrides = (user.Bandwidth?.Overrides ?? new List<BandwidthOverride>())
-                .Select(o => new BandwidthOverrideRow
-                {
-                    Sources = EntryList.Format(o.Sources),
-                    UploadKiBPerSecond = o.UploadKiBPerSecond,
-                    DownloadKiBPerSecond = o.DownloadKiBPerSecond,
-                })
-                .ToList(),
+            Quotas = QuotaForm.From(user.DiskQuota, user.TransferQuota, user.Bandwidth),
             IsNew = false,
             Username = user.Username ?? "",
             UserRootDirectory = user.UserRootDirectory ?? "",
@@ -151,12 +143,17 @@ namespace FxSshSftpServer.Models
             AllowPublicKey = user.AllowedAuthMethods.HasFlag(AuthMethods.PublicKey),
             OtherAllowedMethods = user.AllowedAuthMethods & ~(AuthMethods.Password | AuthMethods.PublicKey),
             MultiStep = MultiStepOf(user.RequireAllOf),
-            LastSuccessfulLogin = user.LastSuccessfulLogin,
-            Permissions = PermissionRowsOf(user.Permissions),
-            PathFilters = (user.PathFilters ?? new Dictionary<string, PathFilter>())
-                .OrderBy(f => f.Key, StringComparer.Ordinal)
-                .Select(f => PathFilterRow.From(f.Key, f.Value))
-                .ToList(),
+            LastLoginAt = user.LastLoginAt,
+            Description = user.Description ?? "",
+            Enabled = user.Status == UserStatus.Enabled,
+            ExpiresOn = user.ExpiresAt?.Date,
+            MaxSessions = user.MaxSessions,
+            PasswordChangedAt = user.PasswordChangedAt,
+            PrimaryGroupId = user.PrimaryGroupId ?? 0,
+            SecondaryGroupIds = (user.SecondaryGroupIds ?? new List<int>()).ToList(),
+            InheritPermissions = user.Permissions is not { Count: > 0 } && (user.PathFilters is null || user.PathFilters.Values.All(f => f.IsEmpty)),
+            Permissions = PermissionTables.RowsOf(user.Permissions),
+            PathFilters = PermissionTables.FilterRowsOf(user.PathFilters),
         };
 
         private static string MultiStepOf(List<AuthMethods> steps) =>
@@ -173,46 +170,29 @@ namespace FxSshSftpServer.Models
             _ => null,
         };
 
-        /// <summary>The rows of the stored permissions: "/" first (All when it is not stored), then by path.</summary>
-        private static List<PermissionRow> PermissionRowsOf(Dictionary<string, FilePermissions> permissions)
-        {
-            var rows = (permissions ?? new Dictionary<string, FilePermissions>())
-                .Select(p => new PermissionRow { Path = p.Key, Permissions = p.Value })
-                .ToList();
-            if (!rows.Any(r => r.IsRoot))
-                rows.Add(PermissionRow.Root());
-            return rows.OrderBy(r => r.IsRoot ? 0 : 1).ThenBy(r => r.Path, StringComparer.Ordinal).ToList();
-        }
-
-        private Dictionary<string, FilePermissions> PermissionDictionary()
-        {
-            var result = new Dictionary<string, FilePermissions>(StringComparer.Ordinal);
-            foreach (var row in Permissions)
-                result.TryAdd(NormalizedOrRaw(row.Path), row.Permissions);
-            return result;
-        }
-
-        private Dictionary<string, PathFilter> FilterDictionary()
-        {
-            var result = new Dictionary<string, PathFilter>(StringComparer.Ordinal);
-            foreach (var row in PathFilters)
-                result.TryAdd(NormalizedOrRaw(row.Path), row.ToFilter());
-            return result;
-        }
-
-        /// <summary>A valid path is stored normalized; an invalid one is kept as typed, so the validation can tell about it.</summary>
-        private static string NormalizedOrRaw(string path)
-        {
-            var trimmed = (path ?? "").Trim();
-            return trimmed.StartsWith('/') ? VirtualPath.Normalize(trimmed) : trimmed;
-        }
-
         /// <summary>
         /// Writes the form to <paramref name="user"/> (a new user, or the stored copy of an existing one). A new
         /// password is hashed with <see cref="PasswordHasher"/>; the plain text never leaves the form.
         /// </summary>
         /// <remarks>The storage configuration is built and validated by <see cref="StorageConfigService"/>; the caller sets <see cref="User.Storage"/>.</remarks>
-        public void ApplyTo(User user, int passwordIterations = PasswordHasher.DefaultIterations)
+        /// <param name="utcNow">The time of a new password (<see cref="User.PasswordChangedAt"/>). Null: now.</param>
+        public void ApplyTo(User user, int passwordIterations = PasswordHasher.DefaultIterations, DateTime? utcNow = null)
+        {
+            ApplySettingsTo(user);
+            if (!string.IsNullOrEmpty(NewPassword))
+            {
+                user.HashedPassword = PasswordHasher.Hash(NewPassword, passwordIterations);
+                user.PasswordChangedAt = utcNow ?? DateTime.UtcNow;
+            }
+            else if (RemovePassword)
+            {
+                user.HashedPassword = null;
+                user.PasswordChangedAt = null;
+            }
+        }
+
+        /// <summary>Writes every field except the password: also for the preview of the effective settings.</summary>
+        public void ApplySettingsTo(User user)
         {
             if (IsNew)
                 user.Username = Username.Trim();
@@ -222,41 +202,34 @@ namespace FxSshSftpServer.Models
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
             user.AllowedAuthMethods = AllowedMethods;
             user.RequireAllOf = RequiredSteps;
-            user.DiskQuota = DiskQuota.OrNull(new DiskQuota { MaxSizeBytes = ToBytes(QuotaSizeMiB), MaxFiles = QuotaFiles });
-            user.TransferQuota = TransferQuota.OrNull(new TransferQuota
+            if (UsesOwnPermissions)
             {
-                MaxUploadBytes = ToBytes(UploadQuotaMiB),
-                MaxDownloadBytes = ToBytes(DownloadQuotaMiB),
-                MaxTotalBytes = ToBytes(TotalQuotaMiB),
-            });
-            var overrides = BandwidthOverrides
-                .Select(o => new BandwidthOverride { Sources = EntryList.Parse(o.Sources), UploadKiBPerSecond = o.UploadKiBPerSecond, DownloadKiBPerSecond = o.DownloadKiBPerSecond })
-                .ToList();
-            user.Bandwidth = UploadKiBPerSecond <= 0 && DownloadKiBPerSecond <= 0 && overrides.Count == 0
-                ? null
-                : new BandwidthLimit { UploadKiBPerSecond = UploadKiBPerSecond, DownloadKiBPerSecond = DownloadKiBPerSecond, Overrides = overrides.Count == 0 ? null : overrides };
-            user.Permissions = PermissionDictionary();
-            var filters = FilterDictionary().Where(f => !f.Value.IsEmpty).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
-            user.PathFilters = filters.Count == 0 ? null : filters;
-            if (!string.IsNullOrEmpty(NewPassword))
-                user.HashedPassword = PasswordHasher.Hash(NewPassword, passwordIterations);
-            else if (RemovePassword)
-                user.HashedPassword = null;
+                // Without groups, "/" = All and no filter is the same as not set; then a group can give them later.
+                user.Permissions = !HasGroups && PermissionTables.IsRootAllOnly(Permissions) ? null : PermissionTables.ToDictionary(Permissions);
+                user.PathFilters = PermissionTables.NonEmptyFilters(PathFilters);
+            }
+            else
+            {
+                user.Permissions = null;
+                user.PathFilters = null;
+            }
+            user.Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
+            user.Status = Enabled ? UserStatus.Enabled : UserStatus.Disabled;
+            user.ExpiresAt = ExpiresOn is { } day ? DateTime.SpecifyKind(day.Date, DateTimeKind.Utc) : null;
+            user.MaxSessions = MaxSessions;
+            user.PrimaryGroupId = PrimaryGroupId == 0 ? null : PrimaryGroupId;
+            user.SecondaryGroupIds = SecondaryGroupIds.Where(id => id != PrimaryGroupId).Distinct().ToList();
+            user.DiskQuota = Quotas.Disk;
+            user.TransferQuota = Quotas.Transfer;
+            user.Bandwidth = Quotas.Bandwidth;
         }
 
         /// <summary>The mounts of the form, with normalized paths.</summary>
-        public List<VirtualFolderMount> MountList() => Mounts
-            .Select(m => new VirtualFolderMount
-            {
-                VirtualFolderId = m.VirtualFolderId,
-                MountPath = NormalizedOrRaw(m.MountPath),
-                Quota = DiskQuota.OrNull(new DiskQuota { MaxSizeBytes = ToBytes(m.QuotaSizeMiB), MaxFiles = m.QuotaFiles }),
-            })
-            .ToList();
+        public List<VirtualFolderMount> MountList() => Mounts.Select(m => m.ToMount()).ToList();
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (UsesDefaultStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
+            if (UsesDefaultStorage && !GroupProvidesStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
                 yield return new ValidationResult("Enter the root directory of the user on the server.", new[] { nameof(UserRootDirectory) });
 
             if (!string.IsNullOrEmpty(NewPassword))
@@ -273,54 +246,16 @@ namespace FxSshSftpServer.Models
                 foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
                     yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
 
-            // Rows that are typed twice are found here; the dictionaries keep only the first of them.
-            foreach (var path in Permissions.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
-                yield return new ValidationResult($"The path {path.Key} has permissions twice.", new[] { nameof(Permissions) });
-            foreach (var path in PathFilters.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
-                yield return new ValidationResult($"The path {path.Key} has a filter twice.", new[] { nameof(PathFilters) });
-            foreach (var problem in PermissionRulesValidator.Validate(PermissionDictionary(), null))
+            foreach (var problem in Quotas.Problems(Mounts))
+                yield return new ValidationResult(problem, new[] { nameof(Quotas) });
+
+            if (!UsesOwnPermissions)
+                yield break;
+            var (permissionProblems, filterProblems) = PermissionTables.Problems(Permissions, PathFilters);
+            foreach (var problem in permissionProblems)
                 yield return new ValidationResult(problem, new[] { nameof(Permissions) });
-            foreach (var problem in PermissionRulesValidator.Validate(null, FilterDictionary()))
+            foreach (var problem in filterProblems)
                 yield return new ValidationResult(problem, new[] { nameof(PathFilters) });
-
-            if (QuotaSizeMiB < 0 || QuotaFiles < 0 || Mounts.Any(m => m.QuotaSizeMiB < 0 || m.QuotaFiles < 0))
-                yield return new ValidationResult("A disk quota cannot be negative (0 is unlimited).", new[] { nameof(QuotaSizeMiB) });
-            if (UploadQuotaMiB < 0 || DownloadQuotaMiB < 0 || TotalQuotaMiB < 0)
-                yield return new ValidationResult("A transfer quota cannot be negative (0 is unlimited).", new[] { nameof(UploadQuotaMiB) });
-            if (UploadKiBPerSecond < 0 || DownloadKiBPerSecond < 0 || BandwidthOverrides.Any(o => o.UploadKiBPerSecond < 0 || o.DownloadKiBPerSecond < 0))
-                yield return new ValidationResult("A bandwidth cannot be negative (0 is unlimited).", new[] { nameof(UploadKiBPerSecond) });
-            foreach (var row in BandwidthOverrides)
-            {
-                var sources = EntryList.Parse(row.Sources);
-                if (sources.Count == 0)
-                    yield return new ValidationResult("Enter the client networks of each bandwidth override.", new[] { nameof(BandwidthOverrides) });
-                foreach (var invalid in CidrNotation.FindInvalid(sources))
-                    yield return new ValidationResult($"Not a valid network: {invalid}", new[] { nameof(BandwidthOverrides) });
-            }
         }
-    }
-
-    /// <summary>One virtual folder mounted for a user, in the form.</summary>
-    public sealed class MountRow
-    {
-        public int VirtualFolderId { get; set; }
-        public string MountPath { get; set; } = "";
-
-        /// <summary>The disk quota of the folder for this user in MiB (issue #62); 0: unlimited.</summary>
-        public decimal QuotaSizeMiB { get; set; }
-
-        /// <summary>The maximum number of files in the folder; 0: unlimited.</summary>
-        public long QuotaFiles { get; set; }
-    }
-
-    /// <summary>Other bandwidth values for some client networks (issue #62), in the form.</summary>
-    public sealed class BandwidthOverrideRow
-    {
-        /// <summary>The networks in CIDR notation, one per line or separated by commas.</summary>
-        public string Sources { get; set; } = "";
-
-        public int UploadKiBPerSecond { get; set; }
-
-        public int DownloadKiBPerSecond { get; set; }
     }
 }

@@ -1,4 +1,5 @@
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Users;
 
 namespace SshServer.Interfaces.Quotas;
 
@@ -19,31 +20,41 @@ public sealed record EffectiveQuotas(DiskQuota? Disk, IReadOnlyDictionary<string
     /// <summary>True when the own storage or a virtual folder has a disk quota.</summary>
     public bool HasDiskQuota => Disk is not null || Mounts.Count > 0;
 
+    /// <summary>The quotas of the effective settings of a user (its own values, else those of its groups).</summary>
+    public static EffectiveQuotas From(EffectiveUserSettings settings)
+    {
+        var mounts = new Dictionary<string, DiskQuota>(StringComparer.Ordinal);
+        foreach (var mount in settings.VirtualFolders)
+        {
+            if (DiskQuota.OrNull(mount.Quota) is { } quota)
+                mounts[VirtualPath.Normalize(mount.MountPath)] = quota;
+        }
+        var result = new EffectiveQuotas(settings.DiskQuota, mounts, settings.TransferQuota, settings.Bandwidth);
+        return result.IsUnlimited ? Unlimited : result;
+    }
+
     /// <summary>The disk quota of the mount at <paramref name="mountPath"/>, or null.</summary>
     public DiskQuota? ForMount(string mountPath) => Mounts.TryGetValue(VirtualPath.Normalize(mountPath), out var quota) ? quota : null;
 }
 
 /// <summary>
-/// The one place that decides which quotas and which bandwidth apply to a user. The storage factory gets them here,
-/// never from the user itself. When groups (#61) come, their defaults are merged here.
+/// The quotas and the bandwidth that apply to a user. They are settings of <see cref="IEffectiveUserSettingsService"/>
+/// (the user, then its groups, #61), so this service only takes them from there.
 /// </summary>
 public interface IEffectiveQuotaService
 {
     EffectiveQuotas Resolve(User user);
 }
 
-/// <summary>The quotas of a user are its own <see cref="User.DiskQuota"/>, <see cref="User.TransferQuota"/>, <see cref="User.Bandwidth"/> and the quota of each mount.</summary>
+/// <summary>The quotas of the effective settings of a user (<see cref="EffectiveQuotas.From"/>).</summary>
 public sealed class EffectiveQuotaService : IEffectiveQuotaService
 {
-    public EffectiveQuotas Resolve(User user)
+    private readonly IEffectiveUserSettingsService _settings;
+
+    public EffectiveQuotaService(IEffectiveUserSettingsService settings)
     {
-        var mounts = new Dictionary<string, DiskQuota>(StringComparer.Ordinal);
-        foreach (var mount in user.VirtualFolders ?? [])
-        {
-            if (DiskQuota.OrNull(mount.Quota) is { } quota)
-                mounts[VirtualPath.Normalize(mount.MountPath)] = quota;
-        }
-        var result = new EffectiveQuotas(DiskQuota.OrNull(user.DiskQuota), mounts, TransferQuota.OrNull(user.TransferQuota), BandwidthLimit.OrNull(user.Bandwidth));
-        return result.IsUnlimited ? EffectiveQuotas.Unlimited : result;
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     }
+
+    public EffectiveQuotas Resolve(User user) => EffectiveQuotas.From(_settings.Resolve(user));
 }

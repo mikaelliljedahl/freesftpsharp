@@ -35,8 +35,10 @@ namespace FxSsh.SshServerModule.Security
         /// <summary>
         /// Checks whether <paramref name="method"/> may be tried now. Returns null when it may, or the reason why not
         /// (for the log and the events; the client gets the same failure as for a wrong credential).
+        /// <paramref name="allowedMethods"/> are the effective methods of the user (with its groups, issue #61); null:
+        /// <see cref="User.AllowedAuthMethods"/>.
         /// </summary>
-        public string Check(User user, AuthMethods method, bool totp)
+        public string Check(User user, AuthMethods method, bool totp, AuthMethods? allowedMethods = null)
         {
             ArgumentNullException.ThrowIfNull(user);
             Synchronize(user, totp);
@@ -53,7 +55,7 @@ namespace FxSsh.SshServerModule.Security
                 if (IsCodeStep(steps, _done.Count, totp))
                     return null;
             }
-            if ((user.AllowedAuthMethods & method) != method)
+            if (((allowedMethods ?? user.AllowedAuthMethods) & method) != method)
                 return "the method is not allowed for the user";
             return null;
         }

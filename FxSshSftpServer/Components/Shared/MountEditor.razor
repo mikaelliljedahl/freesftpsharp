@@ -1,0 +1,95 @@
+@* The virtual folders mounted for a user or a group (issues #56, #61). The ids are the same on both pages. *@
+
+<fieldset class="border rounded p-3 mb-3">
+    <legend class="float-none w-auto px-2 fs-6 mb-0">Virtual folders</legend>
+    <div class="small text-body-secondary mb-2">
+        Other storage locations that the @Subject sees as directories, for example a shared S3 prefix at <code>/incoming</code>.
+        A file cannot be renamed between two storages. The quota of a folder is counted per folder, for every user that mounts it. Manage the folders on the <a href="virtual-folders">Virtual folders</a> page.
+    </div>
+    @if (Mounts.Count > 0)
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-2" id="mount-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Virtual folder</th>
+                        <th scope="col">Mount path</th>
+                        <th scope="col" title="The disk quota of the folder for this mount (#62); 0 is unlimited">Quota (MiB)</th>
+                        <th scope="col" title="The maximum number of files in the folder; 0 is unlimited">Max files</th>
+                        <th scope="col"><span class="visually-hidden">Remove</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Mounts.Count; i++)
+                    {
+                        var row = Mounts[i];
+                        var index = i;
+                        <tr class="mount-row">
+                            <td style="min-width: 10rem">
+                                <select class="form-select form-select-sm" id="mount-folder-@index" aria-label="Virtual folder"
+                                        value="@row.VirtualFolderId" @onchange="e => row.VirtualFolderId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0">
+                                    <option value="0">Select a folder</option>
+                                    @foreach (var folder in Folders)
+                                    {
+                                        <option value="@folder.Id">@folder.Name</option>
+                                    }
+                                </select>
+                            </td>
+                            <td style="min-width: 10rem">
+                                <input type="text" class="form-control form-control-sm font-monospace" id="mount-path-@index" aria-label="Mount path"
+                                       placeholder="/shared" value="@row.MountPath" @onchange="e => row.MountPath = e.Value?.ToString() ?? string.Empty" />
+                            </td>
+                            <td style="min-width: 6rem">
+                                <input type="number" min="0" step="any" class="form-control form-control-sm" id="mount-quota-@index" aria-label="Quota in MiB"
+                                       value="@row.QuotaSizeMiB.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="e => row.QuotaSizeMiB = QuotaEditor.Number(e.Value)" />
+                            </td>
+                            <td style="min-width: 5rem">
+                                <input type="number" min="0" step="1" class="form-control form-control-sm" id="mount-files-@index" aria-label="Maximum number of files"
+                                       value="@row.QuotaFiles" @onchange="e => row.QuotaFiles = (long)QuotaEditor.Number(e.Value)" />
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-mount" title="Remove" aria-label="Remove the mount @row.MountPath"
+                                        @onclick="() => Mounts.RemoveAt(index)"><i class="bi bi-x"></i></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    @if (Problems is { Count: > 0 })
+    {
+        <ul class="text-danger small mb-2 ps-3" id="mount-problems">
+            @foreach (var problem in Problems)
+            {
+                <li>@problem</li>
+            }
+        </ul>
+    }
+    @if (Folders.Count == 0)
+    {
+        <div class="small text-body-secondary" id="no-folders">There are no virtual folders yet.</div>
+    }
+    else
+    {
+        <button type="button" class="btn btn-sm btn-outline-primary" id="add-mount"
+                @onclick="AddMount"><i class="bi bi-plus"></i> Mount a folder</button>
+    }
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public List<MountRow> Mounts { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<SshServer.Interfaces.Storage.VirtualFolder> Folders { get; set; }
+
+    [Parameter] public IReadOnlyList<string> Problems { get; set; }
+
+    /// <summary>"user" or "members of the group", for the help text.</summary>
+    [Parameter] public string Subject { get; set; } = "user";
+
+    private void AddMount()
+    {
+        var first = Folders.FirstOrDefault(f => !Mounts.Any(m => m.VirtualFolderId == f.Id)) ?? Folders[0];
+        Mounts.Add(new MountRow { VirtualFolderId = first.Id, MountPath = "/" + first.Name });
+    }
+}

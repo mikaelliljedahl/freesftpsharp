@@ -1,0 +1,120 @@
+@using SshServer.Interfaces.Permissions
+@* The permission and path filter tables of a user or a group (issues #59, #61). The ids are the same on both pages. *@
+
+<fieldset class="border rounded p-3 mb-3">
+    <legend class="float-none w-auto px-2 fs-6 mb-0">Permissions</legend>
+    <div class="small text-body-secondary mb-2">
+        What the @Subject may do in each directory. The most specific path wins: the permissions of
+        <code>/incoming</code> also apply to <code>/incoming/2026</code>, until that path has its own row.
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-2" id="permission-table">
+            <thead>
+                <tr>
+                    <th scope="col">Path</th>
+                    @foreach (var column in PermissionRow.Columns)
+                    {
+                        <th scope="col" class="text-center small" title="@column.Description">@column.Title</th>
+                    }
+                    <th scope="col"><span class="visually-hidden">Remove</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Permissions.Count; i++)
+                {
+                    var row = Permissions[i];
+                    var index = i;
+                    <tr class="permission-row">
+                        <td style="min-width: 10rem">
+                            <input type="text" class="form-control form-control-sm font-monospace" id="permission-path-@index" aria-label="Path"
+                                   value="@row.Path" readonly="@(index == 0)" placeholder="/incoming"
+                                   @onchange="e => row.Path = e.Value?.ToString() ?? string.Empty" />
+                        </td>
+                        @foreach (var column in PermissionRow.Columns)
+                        {
+                            var flag = column.Flag;
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input" id="permission-@index-@flag" aria-label="@column.Title in @row.Path"
+                                       checked="@row.Has(flag)" @onchange="e => row.Set(flag, e.Value is true)" />
+                            </td>
+                        }
+                        <td class="text-end">
+                            @if (index > 0)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-permission" title="Remove" aria-label="Remove the row @row.Path"
+                                        @onclick="() => Permissions.RemoveAt(index)"><i class="bi bi-x"></i></button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @PermissionMessages
+    <button type="button" class="btn btn-sm btn-outline-primary" id="add-permission"
+            @onclick="() => Permissions.Add(new PermissionRow { Permissions = FilePermissions.All })"><i class="bi bi-plus"></i> Add a path</button>
+</fieldset>
+
+<fieldset class="border rounded p-3 mb-3">
+    <legend class="float-none w-auto px-2 fs-6 mb-0">Path filters</legend>
+    <div class="small text-body-secondary mb-2">
+        File name patterns with <code>*</code> and <code>?</code>, separated by commas; case is ignored.
+        With allowed patterns, only matching files can be uploaded, downloaded, renamed or deleted.
+        Denied patterns are refused. Hidden files and directories are not listed and do not exist for the user.
+    </div>
+    @if (PathFilters.Count > 0)
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-2" id="filter-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Path</th>
+                        <th scope="col">Allowed</th>
+                        <th scope="col">Denied</th>
+                        <th scope="col">Hidden</th>
+                        <th scope="col"><span class="visually-hidden">Remove</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < PathFilters.Count; i++)
+                    {
+                        var row = PathFilters[i];
+                        var index = i;
+                        <tr class="filter-row">
+                            <td style="min-width: 8rem"><input type="text" class="form-control form-control-sm font-monospace" id="filter-path-@index" aria-label="Path" placeholder="/"
+                                                               value="@row.Path" @onchange="e => row.Path = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td><input type="text" class="form-control form-control-sm font-monospace" id="filter-allowed-@index" aria-label="Allowed patterns" placeholder="*.csv"
+                                       value="@row.Allowed" @onchange="e => row.Allowed = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td><input type="text" class="form-control form-control-sm font-monospace" id="filter-denied-@index" aria-label="Denied patterns" placeholder="*.exe"
+                                       value="@row.Denied" @onchange="e => row.Denied = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td><input type="text" class="form-control form-control-sm font-monospace" id="filter-hidden-@index" aria-label="Hidden patterns" placeholder=".git"
+                                       value="@row.Hidden" @onchange="e => row.Hidden = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-filter" title="Remove" aria-label="Remove the filter of @row.Path"
+                                        @onclick="() => PathFilters.RemoveAt(index)"><i class="bi bi-x"></i></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    @FilterMessages
+    <button type="button" class="btn btn-sm btn-outline-primary" id="add-filter"
+            @onclick="() => PathFilters.Add(new PathFilterRow { Path = PathFilters.Count == 0 ? SshServer.Interfaces.Storage.VirtualPath.Root : string.Empty })"><i class="bi bi-plus"></i> Add a filter</button>
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public List<PermissionRow> Permissions { get; set; }
+
+    [Parameter, EditorRequired] public List<PathFilterRow> PathFilters { get; set; }
+
+    /// <summary>"user" or "members of the group", for the help text.</summary>
+    [Parameter] public string Subject { get; set; } = "user";
+
+    /// <summary>The problems of the permission table (for example a ValidationMessage).</summary>
+    [Parameter] public RenderFragment PermissionMessages { get; set; }
+
+    /// <summary>The problems of the filter table.</summary>
+    [Parameter] public RenderFragment FilterMessages { get; set; }
+}

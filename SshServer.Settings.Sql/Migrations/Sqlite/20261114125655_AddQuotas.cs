@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 /// <inheritdoc />
-public partial class _20261114124410_AddQuotas : Migration
+public partial class _20261114125655_AddQuotas : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -32,6 +32,30 @@ public partial class _20261114124410_AddQuotas : Migration
         migrationBuilder.AddColumn<string>(
             name: "TransferQuota",
             table: "Users",
+            type: "TEXT",
+            nullable: true);
+
+        migrationBuilder.AddColumn<string>(
+            name: "Quota",
+            table: "GroupVirtualFolders",
+            type: "TEXT",
+            nullable: true);
+
+        migrationBuilder.AddColumn<string>(
+            name: "Bandwidth",
+            table: "Groups",
+            type: "TEXT",
+            nullable: true);
+
+        migrationBuilder.AddColumn<string>(
+            name: "DiskQuota",
+            table: "Groups",
+            type: "TEXT",
+            nullable: true);
+
+        migrationBuilder.AddColumn<string>(
+            name: "TransferQuota",
+            table: "Groups",
             type: "TEXT",
             nullable: true);
 
@@ -74,5 +98,21 @@ public partial class _20261114124410_AddQuotas : Migration
         migrationBuilder.DropColumn(
             name: "TransferQuota",
             table: "Users");
+
+        migrationBuilder.DropColumn(
+            name: "Quota",
+            table: "GroupVirtualFolders");
+
+        migrationBuilder.DropColumn(
+            name: "Bandwidth",
+            table: "Groups");
+
+        migrationBuilder.DropColumn(
+            name: "DiskQuota",
+            table: "Groups");
+
+        migrationBuilder.DropColumn(
+            name: "TransferQuota",
+            table: "Groups");
     }
 }

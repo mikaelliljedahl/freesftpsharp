@@ -157,7 +157,7 @@ public sealed class QuotaServicesTests : IDisposable
     public async Task A_user_without_a_quota_gets_no_decorator_and_a_user_with_one_queues_the_first_scan()
     {
         var queue = new QuotaScanQueue();
-        var decorators = new QuotaDecorators(new EffectiveQuotaService(), _tracker, queue, _clock);
+        var decorators = new QuotaDecorators(_tracker, queue, _clock);
         var factory = TestStorage.Factory([new LocalDiskStorageProvider()], _ => new UserStorageResolver(new UserRootDefaultStorage()), quotas: decorators);
         var client = new ClientContext("SFTP", "127.0.0.1");
 
@@ -197,12 +197,49 @@ public sealed class QuotaServicesTests : IDisposable
         Assert.Equal((0L, 0L), (_tracker.Current(Alice).UploadedBytes, _tracker.Current(Alice).DownloadedBytes));
     }
 
+    [Fact]
+    public void A_user_without_own_limits_gets_those_of_its_groups_and_its_own_values_win()
+    {
+        var repository = new InMemorySettingsRepository(new ServerSettings());
+        var primary = new SshServer.Interfaces.Groups.Group
+        {
+            Name = "primary",
+            DiskQuota = new DiskQuota { MaxSizeBytes = 1_000 },
+            VirtualFolders = [new VirtualFolderMount { VirtualFolderId = 4, MountPath = "/team", Quota = new DiskQuota { MaxFiles = 7 } }],
+        };
+        var secondary = new SshServer.Interfaces.Groups.Group
+        {
+            Name = "secondary",
+            DiskQuota = new DiskQuota { MaxSizeBytes = 9_999 },
+            TransferQuota = new TransferQuota { MaxDownloadBytes = 50 },
+            Bandwidth = new BandwidthLimit { DownloadKiBPerSecond = 64 },
+        };
+        repository.AddGroup(primary);
+        repository.AddGroup(secondary);
+        var service = new EffectiveQuotaService(new SshServer.Interfaces.Users.EffectiveUserSettingsService(repository));
+        var member = new User { Username = "m", PrimaryGroupId = primary.Id, SecondaryGroupIds = [secondary.Id] };
+
+        var inherited = service.Resolve(member);
+
+        Assert.Equal(1_000, inherited.Disk!.MaxSizeBytes);        // the primary group first
+        Assert.Equal(50, inherited.Transfer!.MaxDownloadBytes);   // only a secondary group sets it
+        Assert.Equal(64, inherited.Bandwidth!.DownloadKiBPerSecond);
+        Assert.Equal(7, inherited.ForMount("/team")!.MaxFiles);   // the quota of a group mount comes with the mount
+
+        member.DiskQuota = new DiskQuota { MaxFiles = 3 };
+        member.Bandwidth = new BandwidthLimit(); // unlimited is "not set": the group value stays
+        var own = service.Resolve(member);
+        Assert.Equal((0L, 3L), (own.Disk!.MaxSizeBytes, own.Disk.MaxFiles));
+        Assert.Equal(64, own.Bandwidth!.DownloadKiBPerSecond);
+        Assert.True(service.Resolve(new User { Username = "alone" }).IsUnlimited);
+    }
+
     private QuotaScanService Scanner(ISettingsRepository repository, QuotaScanQueue queue)
     {
         var providers = new SshServerModule.Storage.StorageProviderRegistry([new LocalDiskStorageProvider()]);
         var codec = TestStorage.Codec(new LocalDiskStorageProvider());
         return new QuotaScanService(new UserStorageResolver(new UserRootDefaultStorage(), repository), providers, codec,
-            new EffectiveQuotaService(), _tracker, queue, repository, time: _clock);
+            new EffectiveQuotaService(new SshServer.Interfaces.Users.EffectiveUserSettingsService(repository)), _tracker, queue, repository, time: _clock);
     }
 
     private static StorageConfig Local(string root)
