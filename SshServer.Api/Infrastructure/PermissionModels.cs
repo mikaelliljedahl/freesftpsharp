@@ -1,4 +1,6 @@
 using SshServer.Api.Endpoints;
+using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
@@ -37,7 +39,7 @@ internal static class PermissionModels
     }
 
     public static Dictionary<string, List<string>>? Names(Dictionary<string, FilePermissions>? permissions) =>
-        permissions is { Count: > 0 } ? permissions.ToDictionary(p => p.Key, p => FlagNames.Of(p.Value).ToList(), StringComparer.Ordinal) : null;
+        UserAttributes.PermissionNames(permissions);
 
     public static Dictionary<string, PathFilterModel>? Models(Dictionary<string, PathFilter>? filters) =>
         filters is { Count: > 0 } ? filters.ToDictionary(p => p.Key, p => PathFilterModel.From(p.Value), StringComparer.Ordinal) : null;

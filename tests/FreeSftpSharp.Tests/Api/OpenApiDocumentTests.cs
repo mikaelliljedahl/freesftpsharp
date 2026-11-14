@@ -1,7 +1,10 @@
 using System.Net;
+using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FreeSftpSharp.Tests.WebUi;
+using SshServer.Interfaces.Authentication;
 
 namespace FreeSftpSharp.Tests.Api;
 
@@ -63,6 +66,59 @@ public sealed class OpenApiDocumentTests : IClassFixture<ApiFactory>
         Assert.True(committed == generated,
             "docs/openapi.json differs from the generated OpenAPI document. Run the tests with FREESFTPSHARP_UPDATE_OPENAPI=1 and commit the file.");
     }
+
+    /// <summary>
+    /// The answer of the authentication hook (#136) is <see cref="UserAttributes"/>: each of its fields is in the user
+    /// schemas of the API with the same name and JSON type. Only the groups differ: the provider gives local group names,
+    /// the API has the ids.
+    /// </summary>
+    [Fact]
+    public async Task The_user_schemas_have_the_fields_of_the_authentication_hook_answer()
+    {
+        var schemas = (await GetDocumentAsync())["components"]!["schemas"]!;
+        string[] byName = ["primaryGroup", "groups"];
+
+        foreach (var schemaName in new[] { "UserView", "UserWrite" })
+        {
+            var properties = schemas[schemaName]!["properties"]!.AsObject();
+            foreach (var property in typeof(UserAttributes).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var name = JsonNamingPolicy.CamelCase.ConvertName(property.Name);
+                if (byName.Contains(name))
+                {
+                    Assert.False(properties.ContainsKey(name), $"{schemaName} has {name}; the hook answer gives group names.");
+                    continue;
+                }
+                Assert.True(properties.ContainsKey(name), $"{schemaName} has no field {name}.");
+                Assert.Contains(JsonType(property.PropertyType), Types(properties[name]!));
+            }
+            Assert.True(properties.ContainsKey("primaryGroupId"));
+            Assert.True(properties.ContainsKey("secondaryGroupIds"));
+        }
+    }
+
+    private static string JsonType(Type type)
+    {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (type == typeof(string))
+            return "string";
+        if (type == typeof(bool))
+            return "boolean";
+        if (type == typeof(int))
+            return "integer";
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+            return "object";
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+            return "array";
+        throw new InvalidOperationException($"No JSON type for {type}.");
+    }
+
+    private static IEnumerable<string> Types(JsonNode schema) => schema["type"] switch
+    {
+        JsonArray types => types.Select(t => t!.GetValue<string>()),
+        JsonValue type => [type.GetValue<string>()],
+        _ => [],
+    };
 
     private async Task<JsonObject> GetDocumentAsync()
     {

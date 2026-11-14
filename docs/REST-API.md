@@ -52,6 +52,11 @@ a new password, other permissions, another scope or a disabled account ends ever
 and stored in the settings database, encrypted with the data protection keys (`DataProtection:KeysPath`), so several
 nodes that share the database and the key ring accept each other's tokens.
 
+With `Auth:Oidc:Admin:DisableLocalLogin` (single sign-on only, [OIDC.md](OIDC.md)) there is no password login: `POST
+/api/v1/token` answers 403 with a problem text ("The password login of the administrators is turned off ... Use an API
+key"), also for the right password. API keys keep working, and so does `POST /api/v1/token/refresh` for a token that
+is still valid.
+
 An administrator with a second factor (#63) gives its TOTP code, or one of its recovery codes, in `totpCode`; without a
 valid code there is no token. The check is the same as on the login page (`ITwoFactorVerifier`): a code works once, and
 wrong codes count for the lockout of the second factor.
@@ -77,7 +82,7 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 - A request with an API key cannot create or revoke API keys, so a leaked key cannot make new ones.
 - `GET /api/v1/api-keys` lists the keys of the caller; `?all=true` (ManageAdmins) lists those of the administrators it
   may manage. `DELETE /api/v1/api-keys/{id}` revokes a key.
-- The changes of an administrator through the API key are in the audit log as `name (API key terraform)`.
+- The changes of an administrator through the API key (users, groups, virtual folders, settings, admins, roles, webhooks, event rules) are in the audit log as `name (API key terraform)`.
 
 ## Resources
 
@@ -97,7 +102,7 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/admins`, `/roles` | ManageAdmins | list, get, create, `PUT`, `PATCH` (admins), delete |
 | `/api-keys` | any administrator (bearer token) | list, create, revoke |
 | `/connections` | ViewConnections; DisconnectConnections to close one | list, `DELETE /connections/{id}` |
-| `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to` |
+| `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to`; `actor` is who made a change |
 | `/shares` | ManageUsers (and the scope role) | the share links of the users (#70), newest first (`?username`), without the password hash; `DELETE /shares/{id}` revokes one |
 | `/webhooks` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/test`, `GET /{id}/deliveries`, `POST /deliveries/{id}/redeliver`, `GET /event-types` |
 | `/event-rules` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/run` (scheduled and on-demand rules), `GET /{id}/runs`, `GET /action-types` |

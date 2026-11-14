@@ -39,3 +39,33 @@ public static class UserProtocolRules
         return names.Count == 0 ? "none" : string.Join(", ", names);
     }
 }
+
+/// <summary>The protocols in JSON (#71): the REST API and the answer of the authentication hook (#136), as lower-case names: <c>sftp</c>, <c>webdav</c>, <c>web</c>, <c>ftp</c>.</summary>
+public static class ProtocolNames
+{
+    private static readonly (UserProtocols Flag, string Name)[] All =
+    [
+        (UserProtocols.Sftp, "sftp"), (UserProtocols.WebDav, "webdav"), (UserProtocols.Web, "web"), (UserProtocols.Ftp, "ftp"),
+    ];
+
+    public static IReadOnlyList<string> Of(UserProtocols protocols) => All.Where(a => protocols.HasFlag(a.Flag)).Select(a => a.Name).ToList();
+
+    /// <summary>The flags of the names (without case); "all" is every protocol. The unknown names are in <paramref name="unknown"/>.</summary>
+    public static UserProtocols Parse(IEnumerable<string>? names, List<string> unknown)
+    {
+        var protocols = UserProtocols.None;
+        foreach (var name in names ?? [])
+        {
+            var key = name?.Trim().ToLowerInvariant();
+            if (key == "all")
+                protocols |= UserProtocols.All;
+            else if (All.FirstOrDefault(a => a.Name == key) is { Name: not null } match)
+                protocols |= match.Flag;
+            else
+                unknown.Add(name ?? "");
+        }
+        return protocols;
+    }
+
+    public const string Allowed = "sftp, webdav, web, ftp";
+}

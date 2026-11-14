@@ -34,6 +34,7 @@ using SshServer.Api;
 using FreeSftpSharp.WebDav;
 
 using FxSshSftpServer.Security;
+using FxSshSftpServer.Security.Oidc;
 using FxSshSftpServer.WebClient;
 
 if (FxSsh.SshServerModule.Cli.VersionCommand.IsRequested(args))
@@ -72,6 +73,7 @@ Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
 builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook, storage and TOTP secrets
 builder.Services.AddWebClient(builder.Configuration); // the web client of the SFTP users (#69) at /client: off unless WebClient:Enabled
+builder.Services.AddOidcSignIn(builder.Configuration); // OpenID Connect sign-in (#73): no handler unless Auth:Oidc:Admin or Auth:Oidc:Client has an Authority
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -134,6 +136,7 @@ else
 
 Log.Debug("UseHttpsRedirection()...");
 app.UseHttpsRedirection();
+app.UseOidcSignIn(); // with Auth:Oidc:*:DisableLocalLogin a POST to the password login answers 404
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();

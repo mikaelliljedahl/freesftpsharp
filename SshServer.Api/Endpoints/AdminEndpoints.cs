@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using SshServer.Administration;
 using Microsoft.Extensions.Logging;
 using FxSsh.SshServerModule.Security;
+using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.TwoFactor;
 

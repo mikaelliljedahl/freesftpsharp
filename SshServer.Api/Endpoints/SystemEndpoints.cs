@@ -37,6 +37,9 @@ internal static class SystemEndpoints
 
     public const string InvalidCredentials = "Invalid user name or password.";
 
+    public const string PasswordLoginDisabled =
+        "The password login of the administrators is turned off (Auth:Oidc:Admin:DisableLocalLogin). Use an API key (X-API-Key).";
+
     public static void Map(RouteGroupBuilder api)
     {
         api.MapPost("/token", TokenAsync)
@@ -79,6 +82,12 @@ internal static class SystemEndpoints
         var logger = loggers.CreateLogger("SshServer.Api.Token");
         var ct = http.RequestAborted;
         var client = http.Connection.RemoteIpAddress?.ToString();
+        // With the single sign-on only (#73) no password gives a token; the password is not checked at all.
+        if (http.RequestServices.GetService<IAdminPasswordLoginPolicy>() is { PasswordLoginAllowed: false })
+        {
+            logger.LogWarning("API token refused for {Client}: the password login of the administrators is off.", client);
+            return ApiResults.Forbidden(PasswordLoginDisabled);
+        }
         if (throttle.IsLockedOut(client))
         {
             logger.LogWarning("API token refused for {Client}: locked out after too many failures.", client);

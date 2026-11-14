@@ -1,4 +1,6 @@
 using System;
+using System.Security.Claims;
+using FxSsh.SshServerModule.Security;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -41,18 +43,34 @@ namespace FxSshSftpServer.Security
         public async Task<IActionResult> CompleteAsync(PageModel page, Admin admin, string method, string returnUrl)
         {
             var context = page.HttpContext;
-            var client = context.Connection.RemoteIpAddress?.ToString();
-            _throttle.RecordSuccess(client);
-            _logger.LogInformation("Admin {UserName} logged in from {Client} ({Method}).", admin.Username, client, method);
-            await _administration.RecordLoginAsync(admin, context.RequestAborted);
-            await PublishAsync(context, AuthEventType.LoginOk, admin.Username, method, null);
-
-            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, AdminClaims.CreatePrincipal(admin));
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, await RecordSuccessAsync(context, admin, method, null));
 
             var target = page.Url.IsLocalUrl(returnUrl) ? returnUrl : "/";
             if (admin.MustChangePassword)
                 return page.LocalRedirect("/ChangePassword?ReturnUrl=" + Uri.EscapeDataString(target));
             return page.LocalRedirect(target);
+        }
+
+        /// <summary>
+        /// The success of a login (the throttle, the log, the time of the login, the events) and the principal of the login
+        /// cookie. <paramref name="identityProvider"/> is the scheme of an OpenID Connect sign-in (#73): it adds the claim
+        /// for the logout at the provider and the <see cref="AuthEventType.IdpLogin"/> event.
+        /// </summary>
+        public async Task<ClaimsPrincipal> RecordSuccessAsync(HttpContext context, Admin admin, string method, string identityProvider)
+        {
+            var client = context.Connection.RemoteIpAddress?.ToString();
+            _throttle.RecordSuccess(client);
+            _logger.LogInformation("Admin {UserName} logged in from {Client} ({Method}).", LogText.Clean(admin.Username), client, method);
+            await _administration.RecordLoginAsync(admin, context.RequestAborted);
+            await PublishAsync(context, AuthEventType.LoginOk, admin.Username, method, null);
+
+            var principal = AdminClaims.CreatePrincipal(admin);
+            if (!string.IsNullOrEmpty(identityProvider))
+            {
+                ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(Oidc.OidcClaims.IdentityProviderClaim, identityProvider));
+                await PublishAsync(context, AuthEventType.IdpLogin, admin.Username, method, null);
+            }
+            return principal;
         }
 
         public Task PublishFailedAsync(HttpContext context, string userName, string method, string reason) =>

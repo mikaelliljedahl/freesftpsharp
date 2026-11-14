@@ -169,7 +169,11 @@ public sealed class ExternalUserProvisioner
             if (invalid.Count > 0)
                 return "the networks of the provider are not valid: " + string.Join(", ", invalid);
             user.WhitelistedIps = definition.AllowedIps.Select(ip => ip.Trim()).ToList();
-            user.OnlyWhitelistedIps = user.WhitelistedIps.Count > 0;
+            user.OnlyWhitelistedIps = definition.OnlyAllowedIps ?? user.WhitelistedIps.Count > 0;
+        }
+        else if (definition.OnlyAllowedIps is { } onlyAllowed)
+        {
+            user.OnlyWhitelistedIps = onlyAllowed;
         }
 
         if (definition.MaxSessions is { } maxSessions)
@@ -177,6 +181,13 @@ public sealed class ExternalUserProvisioner
             if (maxSessions < 0)
                 return "the session limit of the provider is not valid";
             user.MaxSessions = maxSessions;
+        }
+
+        if (definition.AllowedProtocols is { } protocols)
+        {
+            if ((protocols & UserProtocols.All) == UserProtocols.None)
+                return "the protocols of the provider are not valid: allow at least one protocol";
+            user.AllowedProtocols = protocols;
         }
 
         if (definition.Description != null)
@@ -193,6 +204,7 @@ public sealed class ExternalUserProvisioner
         to.WhitelistedIps = from.WhitelistedIps?.ToList();
         to.MaxSessions = from.MaxSessions;
         to.Description = from.Description;
+        to.AllowedProtocols = from.AllowedProtocols;
     }
 
     private static bool ManagedFieldsDiffer(User a, User b) =>
@@ -202,7 +214,8 @@ public sealed class ExternalUserProvisioner
         || a.OnlyWhitelistedIps != b.OnlyWhitelistedIps
         || !(a.WhitelistedIps ?? []).SequenceEqual(b.WhitelistedIps ?? [])
         || a.MaxSessions != b.MaxSessions
-        || !string.Equals(a.Description, b.Description, StringComparison.Ordinal);
+        || !string.Equals(a.Description, b.Description, StringComparison.Ordinal)
+        || a.AllowedProtocols != b.AllowedProtocols;
 
     private static bool SamePermissions(Dictionary<string, FilePermissions>? a, Dictionary<string, FilePermissions>? b)
     {

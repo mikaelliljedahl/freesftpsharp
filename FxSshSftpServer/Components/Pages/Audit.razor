@@ -15,7 +15,7 @@
     <div>
         <h1 class="h3 mb-0">Audit</h1>
         <p class="text-body-secondary mb-0">
-            What happened on the server: file transfers and changes, logins, bans and changes of users and settings. Times are UTC.
+            What happened on the server: file transfers and changes, logins, bans and changes of users and settings, with the administrator who made them. Times are UTC.
         </p>
     </div>
     <div class="d-flex gap-2">
@@ -93,6 +93,9 @@
                 <span class="badge @StatusClass(context.Status)">@context.Status</span>
             </TemplateColumn>
             <PropertyColumn Title="User" Property="@(e => e.Username)" />
+            <TemplateColumn Title="By" Class="d-none d-md-table-cell">
+                <span class="audit-actor" title="The administrator, API key, user (self) or system that made the change">@context.Actor</span>
+            </TemplateColumn>
             <PropertyColumn Title="Address" Property="@(e => e.RemoteIp)" Class="d-none d-md-table-cell" />
             <TemplateColumn Title="Path" Class="d-none d-lg-table-cell">
                 <span class="font-monospace-sm">@context.Path</span>
@@ -210,8 +213,6 @@
             parts.Add(ms.ToString(CultureInfo.InvariantCulture) + " ms");
         if (entry.Protocol is not null)
             parts.Add(entry.Protocol);
-        if (entry.Actor is not null)
-            parts.Add("by " + entry.Actor);
         if (entry.Message is not null)
             parts.Add(entry.Message);
         return string.Join(" · ", parts);

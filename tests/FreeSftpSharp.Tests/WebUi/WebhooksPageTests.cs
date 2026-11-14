@@ -42,14 +42,14 @@ public sealed class WebhooksPageTests : AdminUiComponentContext, IAsyncLifetime
     public async Task A_new_webhook_is_created_with_a_generated_secret_that_is_stored_encrypted()
     {
         var page = Render<WebhooksPage>();
-        page.Find("#add-webhook").Click();
+        page.Click("#add-webhook");
         var secret = page.Find("#webhook-secret").GetAttribute("value")!;
         Assert.Matches("^[0-9a-f]{64}$", secret);
 
-        page.Find("#webhook-name").Change("uploads");
-        page.Find("#webhook-url").Change("https://hooks.example.com/sftp");
-        page.Find("#event-File-Upload").Change(true);
-        page.Find("#webhook-form").Submit();
+        page.Change("#webhook-name", "uploads");
+        page.Change("#webhook-url", "https://hooks.example.com/sftp");
+        page.Change("#event-File-Upload", true);
+        page.Submit("#webhook-form");
 
         page.WaitForAssertion(() => Assert.Contains("uploads", page.Find("#webhook-table").TextContent));
         var stored = Assert.Single(await _host.Store.ListAsync(CancellationToken.None));
@@ -63,11 +63,11 @@ public sealed class WebhooksPageTests : AdminUiComponentContext, IAsyncLifetime
     public async Task A_refused_rule_is_shown_and_nothing_is_saved()
     {
         var page = Render<WebhooksPage>();
-        page.Find("#add-webhook").Click();
-        page.Find("#webhook-name").Change("plain");
-        page.Find("#webhook-url").Change("http://hooks.example.com/sftp");
+        page.Click("#add-webhook");
+        page.Change("#webhook-name", "plain");
+        page.Change("#webhook-url", "http://hooks.example.com/sftp");
 
-        page.Find("#webhook-form").Submit();
+        page.Submit("#webhook-form");
 
         page.WaitForAssertion(() => Assert.Contains("https://", page.Find("#webhook-errors").TextContent));
         Assert.Empty(await _host.Store.ListAsync(CancellationToken.None));
@@ -79,7 +79,7 @@ public sealed class WebhooksPageTests : AdminUiComponentContext, IAsyncLifetime
         await _host.AddWebhookAsync(new WebhookInput { Name = "receiver", Url = "https://hooks.example.com/x" });
         var page = Render<WebhooksPage>();
 
-        page.Find(".send-test").Click();
+        page.Click(".send-test");
 
         page.WaitForAssertion(() => Assert.Contains("System.WebhookTest", page.Find("#delivery-table").TextContent));
         Assert.Contains(nameof(WebhookDeliveryStatus.Pending), page.Find("#delivery-table").TextContent);

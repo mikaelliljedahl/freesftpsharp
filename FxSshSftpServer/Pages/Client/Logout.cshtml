@@ -1,2 +1,20 @@
 @page
 @model LogoutModel
+@{
+    ViewData["Title"] = "Log out";
+}
+@section Head {
+    @if (Model.ProviderLogout)
+    {
+        <meta http-equiv="refresh" content="0;url=@LogoutModel.ProviderLogoutPath" />
+    }
+}
+<div class="client-narrow">
+    <div class="card">
+        <div class="card-body p-4">
+            <h1 class="h4 mb-3">Logged out</h1>
+            <p id="provider-logout">You are logged out here. Ending the session at @Model.ProviderName ...</p>
+            <a class="btn btn-primary" href="@LogoutModel.ProviderLogoutPath">Continue</a>
+        </div>
+    </div>
+</div>

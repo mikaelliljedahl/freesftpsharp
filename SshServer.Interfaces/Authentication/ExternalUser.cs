@@ -26,8 +26,17 @@ public sealed class ExternalUser
     /// <summary>The networks the user may log in from (CIDR or single addresses). Null: unchanged; empty: every address.</summary>
     public IReadOnlyList<string>? AllowedIps { get; init; }
 
+    /// <summary>
+    /// Whether only <see cref="AllowedIps"/> may log in (<see cref="User.OnlyWhitelistedIps"/>). Null: true when
+    /// <see cref="AllowedIps"/> is given and not empty, else unchanged.
+    /// </summary>
+    public bool? OnlyAllowedIps { get; init; }
+
     /// <summary>The number of sessions at the same time (<see cref="User.MaxSessions"/>, 0: no limit). Null: unchanged.</summary>
     public int? MaxSessions { get; init; }
+
+    /// <summary>The protocols the user may log in with (<see cref="User.AllowedProtocols"/>). Null: unchanged.</summary>
+    public UserProtocols? AllowedProtocols { get; init; }
 
     /// <summary>The note of the user (<see cref="User.Description"/>). Null: unchanged.</summary>
     public string? Description { get; init; }

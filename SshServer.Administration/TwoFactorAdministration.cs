@@ -171,7 +171,7 @@ namespace SshServer.Administration
             await _events.PublishAsync(new ProviderEvent(ProviderAction.Update, type, name)
             {
                 Timestamp = _time.GetUtcNow(),
-                Actor = _current.Actor.Username,
+                Actor = _current.Actor.AuditName,
                 ChangedFields = [ChangedField],
             }, ct);
         }

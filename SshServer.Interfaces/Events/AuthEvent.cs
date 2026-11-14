@@ -8,6 +8,12 @@ public enum AuthEventType
     Logout,
     IpBanned,
     IpUnbanned,
+
+    /// <summary>
+    /// A sign-in through an identity provider (OpenID Connect, #73), after its <see cref="LoginOk"/>: an event rule (#68)
+    /// can adjust the account. <see cref="AuthEvent.Method"/> is "oidc".
+    /// </summary>
+    IdpLogin,
 }
 
 /// <summary>A login, a logout or an IP ban.</summary>
