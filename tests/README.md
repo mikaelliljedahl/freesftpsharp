@@ -39,6 +39,10 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Storage/AzureBlob/AzureBlobNameMapperTests` | unit | name prefix normalization, file names, directory prefixes, names of listed blobs, the 1,024 character, 254 segment and trailing-dot limits |
 | `Storage/AzureBlob/AzureBlobStorageProviderTests` | unit | `AddAzureBlobStorage` registers "azure-blob" once, the defaults, every invalid option with its reason, `ToString` hides the secrets, create without a request, one client per account, container and credentials |
 | `EndToEnd/AzureBlobEndToEndTests` | end-to-end (Azurite, OpenSSH `sftp`, SSH.NET; trait `Category=Azure`) | a 100 MiB `put` is one block blob of 25 blocks and SSH.NET downloads the same bytes; the file operations through SSH.NET; a lost connection during an upload leaves no blob |
+| `Storage/Gcs/EmulatorGcsConformanceTests` | conformance (fake-gcs-server; trait `Category=Gcs`) | the whole suite for `GcsFileSystem` below a key prefix; skipped unless `FREESFTPSHARP_TEST_GCS_ENDPOINT` is set |
+| `Storage/Gcs/GcsFileSystemTests` | unit (emulator) | resumable upload of many chunks and of exact chunks, append by compose (no temporary object left), abort after chunks / of a small file / of an overwrite / of an append, exclusive create race, storage class |
+| `Storage/Gcs/GcsKeyMapperTests`, `GcsStorageProviderTests` | unit | key mapping, `AddGcsStorage`, every invalid option, secret hidden, client sharing, error translation by status |
+| `EndToEnd/GcsEndToEndTests` | end-to-end (emulator, OpenSSH `sftp`, SSH.NET; trait `Category=Gcs`) | a 40 MiB `put` through OpenSSH and an SSH.NET download, file operations, a lost connection leaves no object |
 | `Storage/PermissionFileSystemTests` | unit (`InMemoryFileSystem`) | the permission decorator: upload-only can create but not list, download, overwrite, delete, rename or mkdir; a more specific directory overrides its parent; overwrite without upload; an upload-only open is exclusive so a file that appears meanwhile is not replaced; download-only; chmod/times/size need their permission, also through a handle; rename needs the permission in both directories, overwrite to replace, and is refused for a directory with own rules; stat needs some permission; normalized paths; another spelling on a case-insensitive storage; denied, allowed and hidden patterns; backend errors pass through |
 | `Storage/FileHandleAbortTests` | unit (`AbortSpyFileSystem`) | an abort reaches the backend as `IFileHandle.AbortAsync` through the permission, events (failed upload event) and connection tracking decorators; a lost SFTP session aborts the open files, SSH_FXP_CLOSE closes normally |
 | `Storage/PermissionFileSystemConformanceTests`, `PermissionFileSystemDenyEverythingTests` | conformance, unit | the whole suite through the decorator with rules that allow everything; with `/ = None` every operation of `IFileSystem` (checked by reflection) fails with `PermissionDenied` and nothing reaches the backend (`RecordingFileSystem`) |
@@ -125,7 +129,8 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
   S3 backend), with request counters and failure injection. `Storage/S3/S3TestServer` is the real S3 server of the S3
   tests: `FREESFTPSHARP_TEST_S3_ENDPOINT`, and optionally `FREESFTPSHARP_TEST_S3_ACCESS_KEY`, `_SECRET_KEY` (default
   `minioadmin`) and `_BUCKET` (default `freesftpsharp-tests`, created when missing). `SftpServerFixture.CreateFileSystemFactory`
-  can be overridden for another backend (`S3SftpServerFixture`).
+  can be overridden for another backend (`S3SftpServerFixture`). `Storage/Gcs/GcsTestServer` is the emulator of the GCS
+  tests (`FREESFTPSHARP_TEST_GCS_ENDPOINT`, optionally `_BUCKET`); `GcsSftpServerFixture` is its server fixture.
 - `Storage/InMemoryFileSystem` is an `IFileSystem` in memory with configurable capabilities. It is only in the test
   project. Use it as the backend of SFTP tests (`new SftpEngineClient(new InMemoryFileSystem())`) and to test a storage
   decorator alone.

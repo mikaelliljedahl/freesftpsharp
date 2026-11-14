@@ -9,6 +9,8 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Events;
 using SshServer.Settings.Sql.Audit;
+using SshServer.Settings.Sql.Webhooks;
+using SshServer.Interfaces.Webhooks;
 using Microsoft.Extensions.Options;
 
 namespace SshServer.Settings.Sql
@@ -19,7 +21,8 @@ namespace SshServer.Settings.Sql
         /// Registers the <see cref="ISettingsRepository"/> selected by the configuration
         /// (see <see cref="SettingsStorageOptions"/>): SQLite by default, LiteDB when <c>Settings:Provider</c> is <c>LiteDb</c>.
         /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
-        /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>).
+        /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>),
+        /// and the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it).
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -37,6 +40,9 @@ namespace SshServer.Settings.Sql
                         events: sp.GetService<IEventBus>(),
                         time: sp.GetService<TimeProvider>()));
                     services.TryAddSingleton<IAuditLog>(_ => new SqlAuditLog(dbOptions));
+                    // Like the audit log: the repository creates and migrates the database when the host starts. The store
+                    // does not resolve the repository (that would be a cycle: repository, event bus, webhook sink, store).
+                    services.TryAddSingleton<IWebhookStore>(_ => new SqlWebhookStore(dbOptions));
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -47,6 +53,7 @@ namespace SshServer.Settings.Sql
                 case SettingsProvider.LiteDb:
                     services.AddSingleton<ISettingsRepository>(_ => new SettingsRepository(options.LiteDbPath));
                     services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
+                    services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
                     break;
 
                 default:
