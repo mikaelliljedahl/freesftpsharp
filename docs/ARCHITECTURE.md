@@ -217,7 +217,7 @@ plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Au
   expiry stay local.
 - **Every protocol** does the same steps: read the stored user, check `UserLoginRules` and the effective settings
   (refusal: `SpendFailureTimeAsync`, the time of a wrong password), `VerifyAsync`, check again with a returned user,
-  `Save`. `HostedServer` does it for SSH; the password login of the other protocols uses the same service.
+  `Save`. `HostedServer` does it for SSH, `PasswordLoginService` for WebDAV and the later password protocols.
 
 ## Quotas and bandwidth
 
