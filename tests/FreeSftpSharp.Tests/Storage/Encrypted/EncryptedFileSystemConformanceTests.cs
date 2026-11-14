@@ -20,12 +20,16 @@ public sealed class EncryptedFileSystemConformanceTests : FileSystemConformanceT
         {
             var root = Path.Combine(_tempDirectory, "root");
             Directory.CreateDirectory(root);
-            FileSystem = new EncryptedFileSystem(new LocalFileSystem(root), TestKeys.Provider("a", ("a", TestKeys.KeyA)));
+            var inner = new LocalFileSystem(root);
+            FileSystem = new EncryptedFileSystem(inner, TestKeys.Provider("a", ("a", TestKeys.KeyA)));
+            // The local disk without what the format cannot do; the rest (for example CaseInsensitivePaths on Windows) passes through.
+            ExpectedCapabilities = inner.Capabilities
+                & ~(StorageCapabilities.RandomAccessWrite | StorageCapabilities.Append | StorageCapabilities.ServerSideCopy);
         }
 
         public IFileSystem FileSystem { get; }
 
-        public StorageCapabilities ExpectedCapabilities => StorageCapabilities.Rename | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions;
+        public StorageCapabilities ExpectedCapabilities { get; }
 
         public void Dispose()
         {

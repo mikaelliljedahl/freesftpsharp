@@ -39,6 +39,11 @@ public sealed class EncryptedFileSystem : IFileSystem
         _fillSalt = fillSalt;
     }
 
+    /// <summary>
+    /// The capabilities of the inner storage without <see cref="Unsupported"/>. The names are not encrypted, so
+    /// <see cref="StorageCapabilities.CaseInsensitivePaths"/> of the inner storage passes through on purpose: the
+    /// permission decorator must compare paths like the disk under it does.
+    /// </summary>
     public StorageCapabilities Capabilities => _inner.Capabilities & ~Unsupported;
 
     public async ValueTask<FileSystemEntry?> StatAsync(string path, bool followLinks, CancellationToken ct)

@@ -260,10 +260,38 @@ public sealed class EncryptedFileSystemTests : IDisposable
     [Fact]
     public void Capabilities_are_those_of_the_inner_storage_without_random_write_append_and_copy()
     {
-        Assert.Equal(StorageCapabilities.Rename | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions, CreateFileSystem().Capabilities);
+        const StorageCapabilities notByTheFormat = StorageCapabilities.RandomAccessWrite | StorageCapabilities.Append | StorageCapabilities.ServerSideCopy;
+        Assert.Equal(new LocalFileSystem(_root).Capabilities & ~notByTheFormat, CreateFileSystem().Capabilities);
         Assert.Equal(StorageCapabilities.Rename,
             new EncryptedFileSystem(new InMemoryFileSystem(StorageCapabilities.Rename | StorageCapabilities.RandomAccessWrite | StorageCapabilities.Append),
                 TestKeys.Provider("a", ("a", TestKeys.KeyA))).Capabilities);
+    }
+
+    [Fact]
+    public void Case_insensitive_paths_of_the_inner_storage_pass_through()
+    {
+        // The names are not encrypted, so the inner storage compares them; the permission decorator must know it.
+        var keys = TestKeys.Provider("a", ("a", TestKeys.KeyA));
+
+        Assert.True(new EncryptedFileSystem(new CapabilitiesOnly(StorageCapabilities.CaseInsensitivePaths | StorageCapabilities.Rename), keys)
+            .Capabilities.HasFlag(StorageCapabilities.CaseInsensitivePaths));
+        Assert.False(new EncryptedFileSystem(new CapabilitiesOnly(StorageCapabilities.Rename), keys)
+            .Capabilities.HasFlag(StorageCapabilities.CaseInsensitivePaths));
+    }
+
+    /// <summary>A storage that only declares capabilities (the test reads nothing else).</summary>
+    private sealed class CapabilitiesOnly(StorageCapabilities capabilities) : IFileSystem
+    {
+        public StorageCapabilities Capabilities => capabilities;
+        public ValueTask<FileSystemEntry?> StatAsync(string path, bool followLinks, CancellationToken ct) => throw new NotSupportedException();
+        public IAsyncEnumerable<FileSystemEntry> ListAsync(string path, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask<IFileHandle> OpenAsync(string path, FileOpenFlags flags, FileAttributesUpdate? initial, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask CreateDirectoryAsync(string path, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask DeleteFileAsync(string path, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask DeleteDirectoryAsync(string path, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask RenameAsync(string oldPath, string newPath, RenameFlags flags, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask SetAttributesAsync(string path, FileAttributesUpdate update, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask<StorageSpace?> GetStorageSpaceAsync(string path, CancellationToken ct) => throw new NotSupportedException();
     }
 
     [Fact]
