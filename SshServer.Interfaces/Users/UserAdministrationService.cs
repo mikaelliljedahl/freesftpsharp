@@ -170,6 +170,49 @@ namespace SshServer.Interfaces.Users
         }
 
         /// <summary>
+        /// Makes an app password for a user (issue #71) and stores its hash. Returns the stored entry and the secret, which
+        /// is shown once and never stored. Throws <see cref="UserAdministrationException"/> for an empty or used name, no
+        /// protocol, or an expiry in the past.
+        /// </summary>
+        public (AppPassword Entry, string Secret) CreateAppPassword(string username, string? name, UserProtocols protocols,
+            DateTime? expiresAtUtc, DateTime utcNow)
+        {
+            var user = GetExistingUser(username);
+            var trimmed = name?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0)
+                throw new UserAdministrationException("Enter a name for the app password.");
+            if (trimmed.Length > AppPasswordGenerator.MaximumNameLength)
+                throw new UserAdministrationException($"The name can have at most {AppPasswordGenerator.MaximumNameLength} characters.");
+            if ((protocols & UserProtocols.All) == UserProtocols.None || (protocols & ~UserProtocols.All) != UserProtocols.None)
+                throw new UserAdministrationException("Select at least one protocol for the app password.");
+            if (expiresAtUtc is { } expires && expires <= utcNow)
+                throw new UserAdministrationException("The expiry of the app password is in the past.");
+            var list = user.AppPasswords?.ToList() ?? new List<AppPassword>();
+            if (list.Any(a => string.Equals(a.Name, trimmed, StringComparison.OrdinalIgnoreCase)))
+                throw new UserAdministrationException($"The user already has an app password with the name '{trimmed}'.");
+
+            var created = AppPasswordGenerator.Create(trimmed, protocols, utcNow, expiresAtUtc);
+            list.Add(created.Entry);
+            user.AppPasswords = list;
+            if (!_repository.UpdateUser(user))
+                throw new UserAdministrationException($"The app passwords of '{user.Username}' could not be saved.");
+            return created;
+        }
+
+        /// <summary>Removes the app password with this id from a user. Returns false when the user does not have it.</summary>
+        public bool RemoveAppPassword(string username, string id)
+        {
+            var user = GetExistingUser(username);
+            var list = user.AppPasswords?.ToList() ?? new List<AppPassword>();
+            if (list.RemoveAll(a => a.Id == id) == 0)
+                return false;
+            user.AppPasswords = list.Count == 0 ? null : list;
+            if (!_repository.UpdateUser(user))
+                throw new UserAdministrationException($"The app passwords of '{user.Username}' could not be saved.");
+            return true;
+        }
+
+        /// <summary>
         /// Reads the keys of a text. Throws <see cref="UserAdministrationException"/> with all refused lines, or when
         /// there is no key.
         /// </summary>

@@ -303,6 +303,16 @@ namespace FxSsh.SshServerModule
                 return "the address is not in the whitelist of the user";
             }
 
+            if (!user.AllowedProtocols.Allows(UserProtocols.Sftp))
+            {
+                // The same failure as a wrong credential (SSH has no "forbidden"), also in time.
+                if (method == AuthMethods.Password)
+                    UserLogics.SimulatePasswordCheck();
+                _logger.LogInformation("Authentication ({Method}) of {Username} refused: SFTP is not an allowed protocol of the user.",
+                    e.AuthMethod, e.Username);
+                return "the protocol is not allowed for the user";
+            }
+
             var refusal = attempt.Progress.Check(user, method);
             if (refusal != null)
             {
@@ -320,7 +330,8 @@ namespace FxSsh.SshServerModule
                         e.Username, e.KeyAlgorithm, e.Fingerprint, e.Result);
                     return e.Result ? null : "the public key is not accepted";
                 case AuthMethods.Password:
-                    e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
+                    e.Result = AppPasswordGenerator.Find(user, e.Password, UserProtocols.Sftp, Now.UtcDateTime) != null
+                        || UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
                     _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
                     return e.Result ? null : "wrong password";
                 default:

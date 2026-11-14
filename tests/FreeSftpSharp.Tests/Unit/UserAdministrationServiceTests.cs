@@ -36,6 +36,42 @@ public sealed class UserAdministrationServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateAppPassword_stores_only_the_hash_and_RemoveAppPassword_removes_it()
+    {
+        _repository.AddUser(new User { Username = "alice" });
+        var now = new DateTime(2026, 11, 14, 0, 0, 0, DateTimeKind.Utc);
+
+        var (entry, secret) = _service.CreateAppPassword("alice", " Laptop ", UserProtocols.WebDav, null, now);
+
+        Assert.Matches("^[A-Za-z0-9]{7}(-[A-Za-z0-9]{7}){3}$", secret);
+        var stored = Assert.Single(_repository.GetUser("alice").AppPasswords!);
+        Assert.Equal("Laptop", stored.Name);
+        Assert.Equal(now, stored.CreatedAt);
+        Assert.StartsWith(AppPasswordGenerator.HashPrefix, stored.SecretHash);
+        Assert.DoesNotContain(secret, stored.SecretHash);
+        Assert.NotNull(AppPasswordGenerator.Find(_repository.GetUser("alice"), secret, UserProtocols.WebDav, now));
+        Assert.Null(AppPasswordGenerator.Find(_repository.GetUser("alice"), secret, UserProtocols.Sftp, now));
+
+        Assert.True(_service.RemoveAppPassword("alice", entry.Id));
+        Assert.Null(_repository.GetUser("alice").AppPasswords);
+        Assert.False(_service.RemoveAppPassword("alice", entry.Id));
+    }
+
+    [Fact]
+    public void CreateAppPassword_refuses_bad_input()
+    {
+        _repository.AddUser(new User { Username = "alice" });
+        var now = DateTime.UtcNow;
+        _service.CreateAppPassword("alice", "one", UserProtocols.WebDav, null, now);
+
+        Assert.Throws<UserAdministrationException>(() => _service.CreateAppPassword("alice", " ", UserProtocols.WebDav, null, now));
+        Assert.Throws<UserAdministrationException>(() => _service.CreateAppPassword("alice", "two", UserProtocols.None, null, now));
+        Assert.Throws<UserAdministrationException>(() => _service.CreateAppPassword("alice", "ONE", UserProtocols.WebDav, null, now));
+        Assert.Throws<UserAdministrationException>(() => _service.CreateAppPassword("alice", "two", UserProtocols.WebDav, now.AddDays(-1), now));
+        Assert.Throws<UserAdministrationException>(() => _service.CreateAppPassword("nobody", "two", UserProtocols.WebDav, null, now));
+    }
+
+    [Fact]
     public void Create_makes_a_missing_root_directory()
     {
         var root = _temp.File("a/b/c");

@@ -1,3 +1,5 @@
+using SshServer.Interfaces.Authentication;
+
 namespace SshServer.Interfaces.Events;
 
 /// <summary>The change of a <see cref="ProviderEvent"/>.</summary>
@@ -62,7 +64,17 @@ public sealed record UserSnapshot(string Username, string UserRootDirectory, boo
         user.OnlyWhitelistedIps, user.WhitelistedIps?.ToList() ?? [],
         user.PublicKeys?.Select(k => k.Fingerprint).ToList() ?? [],
         user.AllowedAuthMethods.ToString(), string.Join(",", user.RequireAllOf ?? []), user.Storage?.Provider,
-        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList());
+        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList())
+    {
+        AllowedProtocols = user.AllowedProtocols.ToString(),
+        AppPasswords = (user.AppPasswords ?? []).Select(a => $"{a.Name} ({a.Protocols})").ToList(),
+    };
+
+    /// <summary>The protocols that the user may use (#71).</summary>
+    public string AllowedProtocols { get; init; } = nameof(UserProtocols.All);
+
+    /// <summary>The names and protocols of the app passwords (#71), never their hashes.</summary>
+    public IReadOnlyList<string> AppPasswords { get; init; } = [];
 }
 
 /// <summary>A <see cref="Storage.VirtualFolder"/> without its storage options (they can have secrets).</summary>

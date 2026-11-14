@@ -224,6 +224,30 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Equal(user.LastSuccessfulLogin, stored.LastSuccessfulLogin);
     }
 
+    [Fact]
+    public void The_protocols_and_app_passwords_of_a_user_are_stored()
+    {
+        _repository.AddUser(NewUser("carol"));
+        var user = _repository.GetUser("carol");
+        Assert.Equal(UserProtocols.All, user.AllowedProtocols);
+        var (entry, secret) = AppPasswordGenerator.Create("Finder", UserProtocols.WebDav, new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        user.AllowedProtocols = UserProtocols.WebDav;
+        user.AppPasswords = [entry];
+
+        Assert.True(_repository.UpdateUser(user));
+
+        var stored = _repository.GetUser("carol");
+        Assert.Equal(UserProtocols.WebDav, stored.AllowedProtocols);
+        var app = Assert.Single(stored.AppPasswords!);
+        Assert.Equal("Finder", app.Name);
+        Assert.Equal(entry.SecretHash, app.SecretHash);
+        Assert.Equal(UserProtocols.WebDav, app.Protocols);
+        Assert.Equal(new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc), app.ExpiresAt);
+        Assert.True(app.Matches(secret));
+        Assert.DoesNotContain(secret, app.SecretHash);
+    }
+
     private static Dictionary<string, FilePermissions> SamplePermissions() => new()
     {
         ["/"] = FilePermissions.List | FilePermissions.Download,
@@ -308,6 +332,8 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Equal("hash", user.HashedPassword);
         Assert.Null(user.PublicKeys); // "key" is not a readable key: it did not work before and is dropped
         Assert.Equal(AuthMethods.All, user.AllowedAuthMethods);
+        Assert.Equal(UserProtocols.All, user.AllowedProtocols); // #71: a user of an older database keeps SFTP
+        Assert.Null(user.AppPasswords);
         Assert.Equal(new[] { "10.0.0.0/8" }, user.WhitelistedIps);
         Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, user.Permissions);
         Assert.Null(user.PathFilters);

@@ -84,6 +84,10 @@ public class SettingsDbContext : DbContext
             b.Property(u => u.AllowedAuthMethods).IsRequired().HasMaxLength(128).HasConversion<string>();
             b.Property(u => u.RequireAllOf).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<List<AuthMethods>>(v), JsonComparer<List<AuthMethods>>());
+            // By name, so "All" also covers a protocol that a later version adds.
+            b.Property(u => u.AllowedProtocols).IsRequired().HasMaxLength(128).HasConversion<string>();
+            b.Property(u => u.AppPasswords).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<List<AppPassword>>(v), JsonComparer<List<AppPassword>>());
             b.PrimitiveCollection(u => u.WhitelistedIps).IsRequired(false);
             b.Property(u => u.Permissions).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<Dictionary<string, FilePermissions>>(v), JsonComparer<Dictionary<string, FilePermissions>>());

@@ -72,6 +72,15 @@ namespace FxSshSftpServer.Models
 
         public DateTime LastSuccessfulLogin { get; set; }
 
+        /// <summary>The user may log in with SFTP (issue #71).</summary>
+        public bool AllowSftp { get; set; } = true;
+
+        /// <summary>The user may log in with WebDAV (issue #71), when WebDAV is on for the server.</summary>
+        public bool AllowWebDav { get; set; } = true;
+
+        /// <summary>The stored app passwords, for display. The page changes them at once through <see cref="UserAdministrationService"/>, not with Save.</summary>
+        public List<AppPassword> AppPasswords { get; set; } = new();
+
         /// <summary>The permissions per directory (issue #59); the first row is always "/".</summary>
         public List<PermissionRow> Permissions { get; set; } = new() { PermissionRow.Root() };
 
@@ -99,6 +108,9 @@ namespace FxSshSftpServer.Models
             OtherAllowedMethods = user.AllowedAuthMethods & ~(AuthMethods.Password | AuthMethods.PublicKey),
             MultiStep = MultiStepOf(user.RequireAllOf),
             LastSuccessfulLogin = user.LastSuccessfulLogin,
+            AllowSftp = user.AllowedProtocols.Allows(UserProtocols.Sftp),
+            AllowWebDav = user.AllowedProtocols.Allows(UserProtocols.WebDav),
+            AppPasswords = user.AppPasswords?.ToList() ?? new List<AppPassword>(),
             Permissions = PermissionRowsOf(user.Permissions),
             PathFilters = (user.PathFilters ?? new Dictionary<string, PathFilter>())
                 .OrderBy(f => f.Key, StringComparer.Ordinal)
@@ -111,6 +123,9 @@ namespace FxSshSftpServer.Models
 
         private AuthMethods AllowedMethods =>
             (AllowPassword ? AuthMethods.Password : AuthMethods.None) | (AllowPublicKey ? AuthMethods.PublicKey : AuthMethods.None) | OtherAllowedMethods;
+
+        private UserProtocols AllowedProtocols =>
+            (AllowSftp ? UserProtocols.Sftp : UserProtocols.None) | (AllowWebDav ? UserProtocols.WebDav : UserProtocols.None);
 
         private List<AuthMethods> RequiredSteps => MultiStep switch
         {
@@ -168,6 +183,7 @@ namespace FxSshSftpServer.Models
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
             user.AllowedAuthMethods = AllowedMethods;
             user.RequireAllOf = RequiredSteps;
+            user.AllowedProtocols = AllowedProtocols; // every protocol ticked is stored as "All"
             user.Permissions = PermissionDictionary();
             var filters = FilterDictionary().Where(f => !f.Value.IsEmpty).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
             user.PathFilters = filters.Count == 0 ? null : filters;
@@ -200,6 +216,9 @@ namespace FxSshSftpServer.Models
             else
                 foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
                     yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
+
+            if (!AllowSftp && !AllowWebDav)
+                yield return new ValidationResult("Allow at least one protocol.", new[] { nameof(AllowSftp) });
 
             // Rows that are typed twice are found here; the dictionaries keep only the first of them.
             foreach (var path in Permissions.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
