@@ -409,6 +409,17 @@ namespace FxSsh.Tests.Messages
         }
 
         [TestMethod]
+        public void Userauth_Failure_writes_the_given_methods_and_partial_success()
+        {
+            var failure = new FailureMessage(new[] { "password" }, partialSuccess: true).GetPacket();
+            var reader = new SshDataReader(failure);
+            Assert.AreEqual(FailureMessage.MessageNumber, reader.ReadByte());
+            Assert.AreEqual("password", reader.ReadString(Encoding.ASCII));
+            Assert.IsTrue(reader.ReadBoolean());
+            Assert.AreEqual(0L, reader.DataAvailable);
+        }
+
+        [TestMethod]
         public void Load_rejects_payload_with_wrong_leading_message_number()
         {
             var message = new DisconnectMessage();

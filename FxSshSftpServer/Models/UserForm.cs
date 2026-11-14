@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Permissions;
@@ -41,7 +42,24 @@ namespace FxSshSftpServer.Models
 
         public bool HasPassword { get; set; }
 
-        public string RsaPublicKey { get; set; }
+        /// <summary>The stored keys, for display. The page changes them at once through <see cref="UserAdministrationService"/>, not with Save.</summary>
+        public List<PublicKeyEntry> PublicKeys { get; set; } = new();
+
+        /// <summary>The value of <see cref="MultiStep"/> for [PublicKey, Password].</summary>
+        public const string KeyThenPassword = "publickey,password";
+
+        /// <summary>The value of <see cref="MultiStep"/> for [Password, PublicKey].</summary>
+        public const string PasswordThenKey = "password,publickey";
+
+        public bool AllowPassword { get; set; } = true;
+
+        public bool AllowPublicKey { get; set; } = true;
+
+        /// <summary>The allowed methods that the form does not show (keyboard-interactive, #63); they are kept as stored.</summary>
+        public AuthMethods OtherAllowedMethods { get; set; } = AuthMethods.KeyboardInteractive;
+
+        /// <summary>Empty (one method is enough), <see cref="KeyThenPassword"/> or <see cref="PasswordThenKey"/>.</summary>
+        public string MultiStep { get; set; } = "";
 
         public DateTime LastSuccessfulLogin { get; set; }
 
@@ -61,13 +79,30 @@ namespace FxSshSftpServer.Models
             OnlyWhitelistedIps = user.OnlyWhitelistedIps,
             WhitelistedIps = EntryList.Format(user.WhitelistedIps),
             HasPassword = !string.IsNullOrWhiteSpace(user.HashedPassword),
-            RsaPublicKey = user.RsaPublicKey,
+            PublicKeys = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>(),
+            AllowPassword = user.AllowedAuthMethods.HasFlag(AuthMethods.Password),
+            AllowPublicKey = user.AllowedAuthMethods.HasFlag(AuthMethods.PublicKey),
+            OtherAllowedMethods = user.AllowedAuthMethods & ~(AuthMethods.Password | AuthMethods.PublicKey),
+            MultiStep = MultiStepOf(user.RequireAllOf),
             LastSuccessfulLogin = user.LastSuccessfulLogin,
             Permissions = PermissionRowsOf(user.Permissions),
             PathFilters = (user.PathFilters ?? new Dictionary<string, PathFilter>())
                 .OrderBy(f => f.Key, StringComparer.Ordinal)
                 .Select(f => PathFilterRow.From(f.Key, f.Value))
                 .ToList(),
+        };
+
+        private static string MultiStepOf(List<AuthMethods> steps) =>
+            steps is { Count: > 0 } ? string.Join(",", steps.Select(AuthMethodRules.ToSshName)) : "";
+
+        private AuthMethods AllowedMethods =>
+            (AllowPassword ? AuthMethods.Password : AuthMethods.None) | (AllowPublicKey ? AuthMethods.PublicKey : AuthMethods.None) | OtherAllowedMethods;
+
+        private List<AuthMethods> RequiredSteps => MultiStep switch
+        {
+            KeyThenPassword => new List<AuthMethods> { AuthMethods.PublicKey, AuthMethods.Password },
+            PasswordThenKey => new List<AuthMethods> { AuthMethods.Password, AuthMethods.PublicKey },
+            _ => null,
         };
 
         /// <summary>The rows of the stored permissions: "/" first (All when it is not stored), then by path.</summary>
@@ -115,6 +150,8 @@ namespace FxSshSftpServer.Models
             user.UserRootDirectory = UserRootDirectory.Trim();
             user.OnlyWhitelistedIps = OnlyWhitelistedIps;
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
+            user.AllowedAuthMethods = AllowedMethods;
+            user.RequireAllOf = RequiredSteps;
             user.Permissions = PermissionDictionary();
             var filters = FilterDictionary().Where(f => !f.Value.IsEmpty).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
             user.PathFilters = filters.Count == 0 ? null : filters;
@@ -133,6 +170,12 @@ namespace FxSshSftpServer.Models
                 if (!string.Equals(NewPassword, ConfirmPassword, StringComparison.Ordinal))
                     yield return new ValidationResult("The passwords are not the same.", new[] { nameof(ConfirmPassword) });
             }
+
+            if (!AllowPassword && !AllowPublicKey)
+                yield return new ValidationResult("Allow the password, the public key or both.", new[] { nameof(AllowPassword) });
+            else
+                foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
+                    yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
 
             // Rows that are typed twice are found here; the dictionaries keep only the first of them.
             foreach (var path in Permissions.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))

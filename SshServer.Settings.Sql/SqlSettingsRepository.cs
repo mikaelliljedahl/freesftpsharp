@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
 using SshServer.Settings.LiteDb;
 
@@ -62,6 +63,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             ImportFromLiteDb(db, legacyLiteDbPath);
         }
 
+        MigrateLegacyPublicKeys(db);
+
         if (!db.ServerSettings.Any())
         {
             db.ServerSettings.Add(new ServerSettings
@@ -72,6 +75,44 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             db.SaveChanges();
             _logger.LogInformation("Created new server settings with a new host key in the settings database");
         }
+    }
+
+    /// <summary>
+    /// Converts the old single key of each user (the column RsaPublicKey, a base64 CSP blob) to an entry of
+    /// <see cref="User.PublicKeys"/> and clears the column, so a user keeps the key it had (issue #58). A key that cannot
+    /// be read did not work before either; it is removed with a warning.
+    /// </summary>
+    private void MigrateLegacyPublicKeys(SettingsDbContext db)
+    {
+        var users = db.Users.Where(u => EF.Property<string?>(u, SettingsDbContext.LegacyRsaPublicKey) != null).ToList();
+        if (users.Count == 0)
+            return;
+
+        var now = _time.GetUtcNow().UtcDateTime;
+        var converted = 0;
+        foreach (var user in users)
+        {
+            var legacy = db.Entry(user).Property<string?>(SettingsDbContext.LegacyRsaPublicKey);
+            if (!string.IsNullOrWhiteSpace(legacy.CurrentValue))
+            {
+                try
+                {
+                    var entry = SshPublicKey.FromLegacyCspBlob(legacy.CurrentValue, now);
+                    var keys = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>();
+                    if (!keys.Any(k => k.KeyBase64 == entry.KeyBase64))
+                        keys.Add(entry);
+                    user.PublicKeys = keys;
+                    converted++;
+                }
+                catch (PublicKeyFormatException)
+                {
+                    _logger.LogWarning("The old public key of user {Username} cannot be read and was removed. Add the key of the user again.", user.Username);
+                }
+            }
+            legacy.CurrentValue = null;
+        }
+        db.SaveChanges();
+        _logger.LogInformation("Moved the public key of {Count} user(s) to the key list of the user.", converted);
     }
 
     private void ImportFromLiteDb(SettingsDbContext db, string liteDbPath)
@@ -193,7 +234,9 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             Username = newUser.Username,
             UserRootDirectory = newUser.UserRootDirectory,
             HashedPassword = newUser.HashedPassword,
-            RsaPublicKey = newUser.RsaPublicKey,
+            PublicKeys = newUser.PublicKeys,
+            AllowedAuthMethods = newUser.AllowedAuthMethods,
+            RequireAllOf = newUser.RequireAllOf,
             OnlyWhitelistedIps = newUser.OnlyWhitelistedIps,
             WhitelistedIps = newUser.WhitelistedIps,
             LastSuccessfulLogin = newUser.LastSuccessfulLogin,
@@ -218,12 +261,14 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
 
         var before = UserSnapshot.From(stored);
         var passwordChanged = stored.HashedPassword != updatedUser.HashedPassword;
-        var keyChanged = stored.RsaPublicKey != updatedUser.RsaPublicKey;
+        var keyChanged = PublicKeyBlobs(stored) != PublicKeyBlobs(updatedUser);
         var roleChanged = stored.RoleId != updatedUser.RoleId;
         stored.HashedPassword = updatedUser.HashedPassword;
         stored.LastSuccessfulLogin = updatedUser.LastSuccessfulLogin;
         stored.OnlyWhitelistedIps = updatedUser.OnlyWhitelistedIps;
-        stored.RsaPublicKey = updatedUser.RsaPublicKey;
+        stored.PublicKeys = updatedUser.PublicKeys;
+        stored.AllowedAuthMethods = updatedUser.AllowedAuthMethods;
+        stored.RequireAllOf = updatedUser.RequireAllOf;
         stored.UserRootDirectory = updatedUser.UserRootDirectory;
         stored.WhitelistedIps = updatedUser.WhitelistedIps;
         stored.Permissions = updatedUser.Permissions;
@@ -235,8 +280,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         // The snapshot tells only whether there is a password or key; a new one is a change too.
         if (passwordChanged && !changed.Contains(nameof(UserSnapshot.HasPassword)))
             changed.Add("Password");
-        if (keyChanged && !changed.Contains(nameof(UserSnapshot.HasPublicKey)))
-            changed.Add("PublicKey");
+        if (keyChanged && !changed.Contains(nameof(UserSnapshot.PublicKeyFingerprints)))
+            changed.Add("PublicKeys");
         if (roleChanged)
             changed.Add(nameof(User.RoleId));
         if (changed.Count > 0)
@@ -247,6 +292,10 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             });
         return true;
     }
+
+    /// <summary>The key blobs of a user in one text, to see whether a key changed (also an expiry or a comment).</summary>
+    private static string PublicKeyBlobs(User user) =>
+        string.Join("\n", (user.PublicKeys ?? []).Select(k => $"{k.KeyBase64} {k.ExpiresAt:O} {k.Comment}"));
 
     /// <summary>The names of the properties with different values; lists are compared by their items.</summary>
     private static List<string> ChangedFields<T>(T before, T after)

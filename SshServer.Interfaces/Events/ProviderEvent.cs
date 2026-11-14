@@ -47,13 +47,19 @@ public sealed record ProviderEvent(ProviderAction Action, ProviderObjectType Obj
     public IReadOnlyList<string> ChangedFields { get; init; } = [];
 }
 
-/// <summary>A <see cref="User"/> without its password hash and public key.</summary>
+/// <summary>
+/// A <see cref="User"/> without its password hash and public keys: only whether it has them, and the fingerprints of the
+/// keys (not secret, they identify a key in the audit log).
+/// </summary>
 public sealed record UserSnapshot(string Username, string UserRootDirectory, bool HasPassword, bool HasPublicKey,
-    bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps)
+    bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps, IReadOnlyList<string> PublicKeyFingerprints,
+    string AllowedAuthMethods, string RequireAllOf)
 {
     public static UserSnapshot From(User user) => new(user.Username, user.UserRootDirectory,
-        !string.IsNullOrEmpty(user.HashedPassword), !string.IsNullOrEmpty(user.RsaPublicKey),
-        user.OnlyWhitelistedIps, user.WhitelistedIps?.ToList() ?? []);
+        !string.IsNullOrEmpty(user.HashedPassword), user.PublicKeys is { Count: > 0 },
+        user.OnlyWhitelistedIps, user.WhitelistedIps?.ToList() ?? [],
+        user.PublicKeys?.Select(k => k.Fingerprint).ToList() ?? [],
+        user.AllowedAuthMethods.ToString(), string.Join(",", user.RequireAllOf ?? []));
 }
 
 /// <summary>The <see cref="ServerSettings"/> without the host keys.</summary>
