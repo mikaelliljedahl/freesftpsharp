@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
-using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Users;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
 using SshServerModule.Events;
@@ -21,9 +21,9 @@ namespace SshServerModule.Storage
     /// <list type="number">
     /// <item><see cref="MountedFileSystem"/>: routes the paths of the virtual folders to their storage (#56); left out
     /// for a user without virtual folders. Every rule below sees the virtual paths of the user.</item>
-    /// <item><see cref="PermissionFileSystem"/>: per-path permissions and path filters (#59); left out for a user who
-    /// may do everything, and for an operation of the server itself (<see cref="ClientContext.SkipPermissions"/>, the
-    /// actions of the event rules).</item>
+    /// <item><see cref="PermissionFileSystem"/>: the effective per-path permissions and path filters (#59, with the
+    /// groups #61); left out for a user who may do everything, and for an operation of the server itself
+    /// (<see cref="ClientContext.SkipPermissions"/>, the actions of the event rules).</item>
     /// <item><see cref="EventingFileSystem"/>: the events of every operation of the client (#65). Outside the
     /// permissions, so an operation that the permissions refuse still gives an event (status Error) in the audit log;
     /// a hook can refuse an upload, download or delete before the permissions are checked.</item>
@@ -36,7 +36,7 @@ namespace SshServerModule.Storage
         private readonly IStorageProviderRegistry _registry;
         private readonly IUserStorageResolver _resolver;
         private readonly StorageOptionsCodec _codec;
-        private readonly IEffectivePermissionsService _permissions;
+        private readonly IEffectiveUserSettingsService _settings;
         private readonly IConnectionRegistry? _connections;
         private readonly IEventBus? _events;
         private readonly TimeProvider _time;
@@ -45,12 +45,12 @@ namespace SshServerModule.Storage
         /// <param name="events">The event bus (AddSshServerEvents). Null: no events.</param>
         /// <param name="time">The clock of the events. Null: the system clock.</param>
         public StorageFileSystemFactory(IStorageProviderRegistry registry, IUserStorageResolver resolver, StorageOptionsCodec codec,
-            IEffectivePermissionsService permissions, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null)
+            IEffectiveUserSettingsService settings, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null)
         {
             _registry = registry;
             _resolver = resolver;
             _codec = codec;
-            _permissions = permissions;
+            _settings = settings;
             _connections = connections;
             _events = events;
             _time = time ?? TimeProvider.System;
@@ -77,7 +77,7 @@ namespace SshServerModule.Storage
                 fileSystem = new MountedFileSystem(fileSystem, mounts);
             }
             if (!client.SkipPermissions)
-                fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
+                fileSystem = PermissionFileSystem.Wrap(fileSystem, _settings.Resolve(user).Permissions);
             if (_events != null)
                 fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Root.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)

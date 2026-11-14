@@ -1,0 +1,16 @@
+@* A list of validation problems under a form section; nothing when there is none. *@
+@if (Problems is { Count: > 0 })
+{
+    <ul class="text-danger small mb-2 ps-3" id="@Id">
+        @foreach (var problem in Problems)
+        {
+            <li>@problem</li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<string> Problems { get; set; }
+
+    [Parameter] public string Id { get; set; }
+}

@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text;
 using LiteDB;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Groups;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 
 
@@ -30,6 +32,17 @@ namespace FxSsh.SshServerModule
         /// </summary>
         public string? RsaPublicKey { get; set; }
 
+        /// <summary>
+        /// The last login in files of versions before issue #61 (the field "LastSuccessfulLogin"). The repository moves it
+        /// to <see cref="User.LastLoginAt"/> at start.
+        /// </summary>
+        [BsonField("LastSuccessfulLogin")]
+        public DateTime? LegacyLastLogin { get; set; }
+
+        /// <summary>True for permissions that are only "/" = All: the same as no permissions of the user (issue #61).</summary>
+        public static bool IsRootAllOnly(Dictionary<string, FilePermissions>? permissions) =>
+            permissions is { Count: 1 } && permissions.TryGetValue("/", out var root) && root == FilePermissions.All;
+
         public User MapToUser()
         {
             var user = (User)this;
@@ -41,7 +54,7 @@ namespace FxSsh.SshServerModule
         {
             this.Username = user.Username;
             this.HashedPassword = user.HashedPassword;
-            this.LastSuccessfulLogin = user.LastSuccessfulLogin;
+            this.LastLoginAt = user.LastLoginAt;
             this.OnlyWhitelistedIps = user.OnlyWhitelistedIps;
             this.PublicKeys = user.PublicKeys;
             this.AllowedAuthMethods = user.AllowedAuthMethods;
@@ -52,11 +65,25 @@ namespace FxSsh.SshServerModule
             this.PathFilters = user.PathFilters;
             this.Storage = user.Storage;
             this.VirtualFolders = (user.VirtualFolders ?? new List<VirtualFolderMount>()).ToList();
+            CopyLifecycle(user, this);
+            this.RoleId = user.RoleId;
             this.Id = new ObjectId();
         }
 
         public UserWithObjectId()
         {
+        }
+
+        /// <summary>The fields of issue #61.</summary>
+        internal static void CopyLifecycle(User from, User to)
+        {
+            to.Description = from.Description;
+            to.Status = from.Status;
+            to.ExpiresAt = from.ExpiresAt;
+            to.MaxSessions = from.MaxSessions;
+            to.PasswordChangedAt = from.PasswordChangedAt;
+            to.PrimaryGroupId = from.PrimaryGroupId;
+            to.SecondaryGroupIds = (from.SecondaryGroupIds ?? new List<int>()).ToList();
         }
     }
 
@@ -87,6 +114,7 @@ namespace FxSsh.SshServerModule
             _serverSettings.EnableCommand = UpdatedSettings.EnableCommand;
             _serverSettings.EnableDirectTcpIp = UpdatedSettings.EnableDirectTcpIp;
             _serverSettings.IdleTimeout = UpdatedSettings.IdleTimeout;
+            _serverSettings.PasswordMaxAgeDays = UpdatedSettings.PasswordMaxAgeDays;
             _serverSettings.ListenToPort = UpdatedSettings.ListenToPort;
             _serverSettings.MaxLoginAttemptsBeforeBan = UpdatedSettings.MaxLoginAttemptsBeforeBan;
             _serverSettings.OnlyWhitelistedIps = UpdatedSettings.OnlyWhitelistedIps;
@@ -151,7 +179,7 @@ namespace FxSsh.SshServerModule
            
 
             user.HashedPassword = UpdatedUser.HashedPassword;
-            user.LastSuccessfulLogin = UpdatedUser.LastSuccessfulLogin;
+            user.LastLoginAt = UpdatedUser.LastLoginAt;
             user.OnlyWhitelistedIps = UpdatedUser.OnlyWhitelistedIps;
             user.PublicKeys = UpdatedUser.PublicKeys;
             user.AllowedAuthMethods = UpdatedUser.AllowedAuthMethods;
@@ -162,6 +190,8 @@ namespace FxSsh.SshServerModule
             user.PathFilters = UpdatedUser.PathFilters;
             user.Storage = UpdatedUser.Storage;
             user.VirtualFolders = (UpdatedUser.VirtualFolders ?? new List<VirtualFolderMount>()).ToList();
+            UserWithObjectId.CopyLifecycle(UpdatedUser, user);
+            user.RoleId = UpdatedUser.RoleId;
             return usercol.Update(user);
             
         }
@@ -200,7 +230,45 @@ namespace FxSsh.SshServerModule
                 user.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
                 usercol.Update(user);
             }
+            foreach (var group in GroupCollection.FindAll().Where(g => g.VirtualFolders != null && g.VirtualFolders.Any(m => m.VirtualFolderId == id)).ToList())
+            {
+                group.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
+                GroupCollection.Update(group);
+            }
             return true;
+        }
+
+        private ILiteCollection<Group> GroupCollection => db.GetCollection<Group>("groups");
+
+        public List<Group> GetGroups() => GroupCollection.FindAll().OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        public Group? GetGroup(int id) => GroupCollection.FindById(id);
+
+        public bool AddGroup(Group group)
+        {
+            if (string.IsNullOrWhiteSpace(group.Name) || GetGroups().Any(g => string.Equals(g.Name, group.Name, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            var stored = group.Clone();
+            stored.Id = 0;
+            GroupCollection.Insert(stored);
+            group.Id = stored.Id;
+            return true;
+        }
+
+        public bool UpdateGroup(Group group)
+        {
+            if (string.IsNullOrWhiteSpace(group.Name) || GroupCollection.FindById(group.Id) == null
+                || GetGroups().Any(g => g.Id != group.Id && string.Equals(g.Name, group.Name, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            return GroupCollection.Update(group.Clone());
+        }
+
+        public bool RemoveGroup(int id)
+        {
+            var usercol = db.GetCollection<UserWithObjectId>("users");
+            if (usercol.FindAll().Any(u => GroupService.IsMember(u, id)))
+                return false;
+            return GroupCollection.Delete(id);
         }
 
         /// <summary>The legacy default: "config.db" in the current directory.</summary>
@@ -221,6 +289,21 @@ namespace FxSsh.SshServerModule
 
             // Index users using username property
             usercol.EnsureIndex(x => x.Username, true);
+
+            // Issue #61: the last login has a new field, "/" = All is the same as no permissions (so a group can give
+            // them), and the age of a password counts from the upgrade.
+            foreach (var old in usercol.FindAll().Where(u => u.LegacyLastLogin != null || UserWithObjectId.IsRootAllOnly(u.Permissions)
+                                                             || (u.PasswordChangedAt == null && !string.IsNullOrEmpty(u.HashedPassword))).ToList())
+            {
+                if (old.LegacyLastLogin is { } last && old.LastLoginAt == null && last != default)
+                    old.LastLoginAt = last;
+                old.LegacyLastLogin = null;
+                if (UserWithObjectId.IsRootAllOnly(old.Permissions))
+                    old.Permissions = null;
+                if (old.PasswordChangedAt == null && !string.IsNullOrEmpty(old.HashedPassword))
+                    old.PasswordChangedAt = DateTime.UtcNow;
+                usercol.Update(old);
+            }
 
             // Issue #58: move the old single key of each user to the key list.
             foreach (var legacy in usercol.Find(u => u.RsaPublicKey != null).ToList())

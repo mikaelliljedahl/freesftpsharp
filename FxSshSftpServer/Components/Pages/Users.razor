@@ -12,6 +12,8 @@
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject SshServerModule.Storage.StorageConfigService StorageService
 @inject SshServerModule.Storage.VirtualFolderService FolderService
+@inject SshServer.Interfaces.Groups.GroupService GroupService
+@inject SshServer.Interfaces.Users.IEffectiveUserSettingsService UserSettings
 @inject IJSRuntime JS
 @inject ToastService Toasts
 
@@ -63,7 +65,19 @@
                             }
                             @if (context.OnlyWhitelistedIps && context.WhitelistedIps is { Count: > 0 })
                             {
-                                <span class="badge text-bg-warning" title="Only from whitelisted networks">IP</span>
+                                <span class="badge text-bg-warning me-1" title="Only from whitelisted networks">IP</span>
+                            }
+                            @if (context.Status != UserStatus.Enabled)
+                            {
+                                <span class="badge text-bg-danger me-1 user-disabled">disabled</span>
+                            }
+                            else if (UserLoginRules.IsExpired(context, DateTime.UtcNow))
+                            {
+                                <span class="badge text-bg-danger me-1 user-expired">expired</span>
+                            }
+                            @if (GroupNames(context) is { Length: > 0 } names)
+                            {
+                                <span class="badge text-bg-light border user-groups" title="Groups">@names</span>
                             }
                         </TemplateColumn>
                         @if (form is null)
@@ -82,8 +96,8 @@
                                     <span class="badge text-bg-secondary ms-1" title="Virtual folders">+@mounts.Count @(mounts.Count == 1 ? "folder" : "folders")</span>
                                 }
                             </TemplateColumn>
-                            <TemplateColumn Title="Last login (UTC)" SortBy="@(GridSort<User>.ByAscending(u => u.LastSuccessfulLogin))" Class="d-none d-md-table-cell">
-                                @LastLogin(context.LastSuccessfulLogin)
+                            <TemplateColumn Title="Last login (UTC)" SortBy="@(GridSort<User>.ByAscending(u => u.LastLoginAt))" Class="d-none d-md-table-cell">
+                                @LastLogin(context.LastLoginAt)
                             </TemplateColumn>
                         }
                         <TemplateColumn Title="" Align="Align.End">
@@ -121,6 +135,86 @@
                         </div>
 
                         <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Account</legend>
+                            <div class="form-check form-switch mb-2">
+                                <InputCheckbox id="user-enabled" class="form-check-input" @bind-Value="form.Enabled" />
+                                <label class="form-check-label" for="user-enabled">Enabled: the user may log in</label>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="user-expires">Expires on (UTC, optional)</label>
+                                    <InputDate id="user-expires" class="form-control" @bind-Value="form.ExpiresOn" />
+                                    <div class="form-text">From this day on, the user cannot log in.</div>
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="user-max-sessions">Maximum sessions</label>
+                                    <InputNumber id="user-max-sessions" class="form-control" @bind-Value="form.MaxSessions" />
+                                    <ValidationMessage For="() => form.MaxSessions" />
+                                    <div class="form-text">Open at the same time. 0: no limit.</div>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-label" for="user-description">Description</label>
+                                <InputText id="user-description" class="form-control" @bind-Value="form.Description" />
+                                <ValidationMessage For="() => form.Description" />
+                            </div>
+                            @if (!form.Enabled || (form.ExpiresOn is { } expiresOn && expiresOn.Date <= DateTime.UtcNow.Date))
+                            {
+                                <div class="form-text text-warning-emphasis" id="login-blocked"><i class="bi bi-exclamation-triangle"></i> The user cannot log in. Saving a disabled user closes its open sessions; the sessions of an expired user keep running until they end.</div>
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Groups</legend>
+                            <div class="small text-body-secondary mb-2">
+                                A setting that the user does not set itself comes from the primary group, then from the other groups in order.
+                                Manage the groups on the <a href="groups">Groups</a> page.
+                            </div>
+                            @if (groups.Count == 0 && !form.HasGroups)
+                            {
+                                <div class="small text-body-secondary" id="no-groups">There are no groups yet.</div>
+                            }
+                            else
+                            {
+                                <label class="form-label small mb-1" for="primary-group">Primary group</label>
+                                <select id="primary-group" class="form-select form-select-sm mb-2" value="@form.PrimaryGroupId" @onchange="OnPrimaryGroupChanged">
+                                    <option value="0">None</option>
+                                    @foreach (var group in groups)
+                                    {
+                                        <option value="@group.Id">@group.Name</option>
+                                    }
+                                    @if (form.PrimaryGroupId != 0 && !groups.Any(g => g.Id == form.PrimaryGroupId))
+                                    {
+                                        <option value="@form.PrimaryGroupId">A group outside your scope</option>
+                                    }
+                                </select>
+                                <div class="small mb-1">Secondary groups</div>
+                                @foreach (var group in groups.Where(g => g.Id != form.PrimaryGroupId))
+                                {
+                                    var id = group.Id;
+                                    <div class="form-check form-check-inline">
+                                        <input type="checkbox" class="form-check-input secondary-group" id="secondary-group-@id" checked="@form.SecondaryGroupIds.Contains(id)"
+                                               @onchange="e => ToggleSecondaryGroup(id, e.Value is true)" />
+                                        <label class="form-check-label" for="secondary-group-@id">@group.Name</label>
+                                    </div>
+                                }
+                                @if (form.SecondaryGroupIds.Any(id => !groups.Any(g => g.Id == id)))
+                                {
+                                    <div class="form-text">The user is also in groups outside your scope; they stay.</div>
+                                }
+                            }
+                            @if (groupProblems is { Count: > 0 })
+                            {
+                                <ul class="text-danger small mb-0 mt-2 ps-3" id="group-problems">
+                                    @foreach (var problem in groupProblems)
+                                    {
+                                        <li>@problem</li>
+                                    }
+                                </ul>
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Storage</legend>
                             <StorageEditor Settings="form.Storage" IdPrefix="user-storage" Problems="storageProblems"
                                            DefaultLabel="Default: a directory on the server" OnProviderChanged="() => storageProblems = null" />
@@ -142,72 +236,7 @@
                         }
                         </fieldset>
 
-                        <fieldset class="border rounded p-3 mb-3">
-                            <legend class="float-none w-auto px-2 fs-6 mb-0">Virtual folders</legend>
-                            <div class="small text-body-secondary mb-2">
-                                Other storage locations that the user sees as directories, for example a shared S3 prefix at <code>/incoming</code>.
-                                A file cannot be renamed between two storages. Manage the folders on the <a href="virtual-folders">Virtual folders</a> page.
-                            </div>
-                            @if (form.Mounts.Count > 0)
-                            {
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle mb-2" id="mount-table">
-                                        <thead>
-                                            <tr>
-                                                <th scope="col">Virtual folder</th>
-                                                <th scope="col">Mount path</th>
-                                                <th scope="col"><span class="visually-hidden">Remove</span></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @for (var i = 0; i < form.Mounts.Count; i++)
-                                            {
-                                                var row = form.Mounts[i];
-                                                var index = i;
-                                                <tr class="mount-row">
-                                                    <td style="min-width: 10rem">
-                                                        <select class="form-select form-select-sm" id="mount-folder-@index" aria-label="Virtual folder"
-                                                                value="@row.VirtualFolderId" @onchange="e => row.VirtualFolderId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0">
-                                                            <option value="0">Select a folder</option>
-                                                            @foreach (var folder in folders)
-                                                            {
-                                                                <option value="@folder.Id">@folder.Name</option>
-                                                            }
-                                                        </select>
-                                                    </td>
-                                                    <td style="min-width: 10rem">
-                                                        <input type="text" class="form-control form-control-sm font-monospace" id="mount-path-@index" aria-label="Mount path"
-                                                               placeholder="/shared" value="@row.MountPath" @onchange="e => row.MountPath = e.Value?.ToString() ?? string.Empty" />
-                                                    </td>
-                                                    <td class="text-end">
-                                                        <button type="button" class="btn btn-sm btn-outline-danger remove-mount" title="Remove" aria-label="Remove the mount @row.MountPath"
-                                                                @onclick="() => form.Mounts.RemoveAt(index)"><i class="bi bi-x"></i></button>
-                                                    </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                            }
-                            @if (mountProblems is { Count: > 0 })
-                            {
-                                <ul class="text-danger small mb-2 ps-3" id="mount-problems">
-                                    @foreach (var problem in mountProblems)
-                                    {
-                                        <li>@problem</li>
-                                    }
-                                </ul>
-                            }
-                            @if (folders.Count == 0)
-                            {
-                                <div class="small text-body-secondary" id="no-folders">There are no virtual folders yet.</div>
-                            }
-                            else
-                            {
-                                <button type="button" class="btn btn-sm btn-outline-primary" id="add-mount"
-                                        @onclick="AddMount"><i class="bi bi-plus"></i> Mount a folder</button>
-                            }
-                        </fieldset>
+                        <MountEditor Mounts="form.Mounts" Folders="folders" Problems="mountProblems" />
 
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
@@ -375,112 +404,84 @@
                             <div class="form-text">CIDR networks or single addresses, one per line. With an empty list nothing is checked.</div>
                         </fieldset>
 
-                        <fieldset class="border rounded p-3 mb-3">
-                            <legend class="float-none w-auto px-2 fs-6 mb-0">Permissions</legend>
-                            <div class="small text-body-secondary mb-2">
-                                What the user may do in each directory. The most specific path wins: the permissions of
-                                <code>/incoming</code> also apply to <code>/incoming/2026</code>, until that path has its own row.
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table table-sm align-middle mb-2" id="permission-table">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col">Path</th>
-                                            @foreach (var column in PermissionRow.Columns)
-                                            {
-                                                <th scope="col" class="text-center small" title="@column.Description">@column.Title</th>
-                                            }
-                                            <th scope="col"><span class="visually-hidden">Remove</span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @for (var i = 0; i < form.Permissions.Count; i++)
-                                        {
-                                            var row = form.Permissions[i];
-                                            var index = i;
-                                            <tr class="permission-row">
-                                                <td style="min-width: 10rem">
-                                                    <input type="text" class="form-control form-control-sm font-monospace" id="permission-path-@index" aria-label="Path"
-                                                           value="@row.Path" readonly="@(index == 0)" placeholder="/incoming"
-                                                           @onchange="e => row.Path = e.Value?.ToString() ?? string.Empty" />
-                                                </td>
-                                                @foreach (var column in PermissionRow.Columns)
-                                                {
-                                                    var flag = column.Flag;
-                                                    <td class="text-center">
-                                                        <input type="checkbox" class="form-check-input" id="permission-@index-@flag" aria-label="@column.Title in @row.Path"
-                                                               checked="@row.Has(flag)" @onchange="e => row.Set(flag, e.Value is true)" />
-                                                    </td>
-                                                }
-                                                <td class="text-end">
-                                                    @if (index > 0)
-                                                    {
-                                                        <button type="button" class="btn btn-sm btn-outline-danger remove-permission" title="Remove" aria-label="Remove the row @row.Path"
-                                                                @onclick="() => form.Permissions.RemoveAt(index)"><i class="bi bi-x"></i></button>
-                                                    }
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                            <ValidationMessage For="() => form.Permissions" />
-                            <button type="button" class="btn btn-sm btn-outline-primary" id="add-permission"
-                                    @onclick="() => form.Permissions.Add(new PermissionRow { Permissions = FilePermissions.All })"><i class="bi bi-plus"></i> Add a path</button>
-                        </fieldset>
-
-                        <fieldset class="border rounded p-3 mb-3">
-                            <legend class="float-none w-auto px-2 fs-6 mb-0">Path filters</legend>
-                            <div class="small text-body-secondary mb-2">
-                                File name patterns with <code>*</code> and <code>?</code>, separated by commas; case is ignored.
-                                With allowed patterns, only matching files can be uploaded, downloaded, renamed or deleted.
-                                Denied patterns are refused. Hidden files and directories are not listed and do not exist for the user.
-                            </div>
-                            @if (form.PathFilters.Count > 0)
-                            {
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle mb-2" id="filter-table">
-                                        <thead>
-                                            <tr>
-                                                <th scope="col">Path</th>
-                                                <th scope="col">Allowed</th>
-                                                <th scope="col">Denied</th>
-                                                <th scope="col">Hidden</th>
-                                                <th scope="col"><span class="visually-hidden">Remove</span></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @for (var i = 0; i < form.PathFilters.Count; i++)
-                                            {
-                                                var row = form.PathFilters[i];
-                                                var index = i;
-                                                <tr class="filter-row">
-                                                    <td style="min-width: 8rem"><input type="text" class="form-control form-control-sm font-monospace" id="filter-path-@index" aria-label="Path" placeholder="/"
-                                                                                       value="@row.Path" @onchange="e => row.Path = e.Value?.ToString() ?? string.Empty" /></td>
-                                                    <td><input type="text" class="form-control form-control-sm font-monospace" id="filter-allowed-@index" aria-label="Allowed patterns" placeholder="*.csv"
-                                                               value="@row.Allowed" @onchange="e => row.Allowed = e.Value?.ToString() ?? string.Empty" /></td>
-                                                    <td><input type="text" class="form-control form-control-sm font-monospace" id="filter-denied-@index" aria-label="Denied patterns" placeholder="*.exe"
-                                                               value="@row.Denied" @onchange="e => row.Denied = e.Value?.ToString() ?? string.Empty" /></td>
-                                                    <td><input type="text" class="form-control form-control-sm font-monospace" id="filter-hidden-@index" aria-label="Hidden patterns" placeholder=".git"
-                                                               value="@row.Hidden" @onchange="e => row.Hidden = e.Value?.ToString() ?? string.Empty" /></td>
-                                                    <td class="text-end">
-                                                        <button type="button" class="btn btn-sm btn-outline-danger remove-filter" title="Remove" aria-label="Remove the filter of @row.Path"
-                                                                @onclick="() => form.PathFilters.RemoveAt(index)"><i class="bi bi-x"></i></button>
-                                                    </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
+                        @if (form.HasGroups)
+                        {
+                            <div class="border rounded p-3 mb-3">
+                                <div class="form-check form-switch mb-0">
+                                    <InputCheckbox id="inherit-permissions" class="form-check-input" @bind-Value="form.InheritPermissions" />
+                                    <label class="form-check-label" for="inherit-permissions">Use the permissions and path filters of the groups</label>
                                 </div>
-                            }
-                            <ValidationMessage For="() => form.PathFilters" />
-                            <button type="button" class="btn btn-sm btn-outline-primary" id="add-filter"
-                                    @onclick="() => form.PathFilters.Add(new PathFilterRow { Path = form.PathFilters.Count == 0 ? SshServer.Interfaces.Storage.VirtualPath.Root : string.Empty })"><i class="bi bi-plus"></i> Add a filter</button>
-                        </fieldset>
+                                <div class="form-text">Off: the user has its own permissions below, and a group cannot change them.</div>
+                            </div>
+                        }
+                        @if (form.UsesOwnPermissions)
+                        {
+                            <PermissionEditor Permissions="form.Permissions" PathFilters="form.PathFilters">
+                                <PermissionMessages><ValidationMessage For="() => form.Permissions" /></PermissionMessages>
+                                <FilterMessages><ValidationMessage For="() => form.PathFilters" /></FilterMessages>
+                            </PermissionEditor>
+                        }
+
+                        @if (form.HasGroups && Preview() is { } effective)
+                        {
+                            <div class="card border-info-subtle mb-3" id="effective-settings">
+                                <div class="card-header small fw-semibold">Effective settings</div>
+                                <ul class="list-group list-group-flush small">
+                                    <li class="list-group-item" id="effective-storage">
+                                        <span class="fw-semibold">Storage:</span>
+                                        @if (effective.StorageProblem is not null)
+                                        {
+                                            <span class="text-danger">@effective.StorageProblem</span>
+                                        }
+                                        else
+                                        {
+                                            @(effective.Storage is null ? "the default storage (the root directory)" : StorageService.DisplayName(effective.Storage))
+                                        }
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.StorageOrigin</span>
+                                    </li>
+                                    <li class="list-group-item" id="effective-permissions">
+                                        <span class="fw-semibold">Permissions:</span>
+                                        @string.Join("; ", effective.Permissions.Permissions.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => $"{p.Key} {PermissionText(p.Value)}"))
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.PermissionsOrigin</span>
+                                    </li>
+                                    <li class="list-group-item" id="effective-filters">
+                                        <span class="fw-semibold">Path filters:</span>
+                                        @(effective.Permissions.Filters.Count == 0 ? "none" : string.Join(", ", effective.Permissions.Filters.Keys.Order(StringComparer.Ordinal)))
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.PathFiltersOrigin</span>
+                                    </li>
+                                    <li class="list-group-item" id="effective-folders">
+                                        <span class="fw-semibold">Virtual folders:</span>
+                                        @if (effective.VirtualFolders.Count == 0)
+                                        {
+                                            <span>none</span>
+                                        }
+                                        @foreach (var mount in effective.VirtualFolders)
+                                        {
+                                            <span class="me-2"><code>@mount.MountPath</code> <span class="badge text-bg-light border origin">@mount.Origin</span></span>
+                                        }
+                                    </li>
+                                    <li class="list-group-item" id="effective-methods">
+                                        <span class="fw-semibold">Login methods:</span> @effective.AllowedAuthMethods
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.AllowedAuthMethodsOrigin</span>
+                                    </li>
+                                    <li class="list-group-item" id="effective-networks">
+                                        <span class="fw-semibold">Allowed networks:</span>
+                                        @(effective.AllowedIps.Count == 0 ? "any" : string.Join(", ", effective.AllowedIps))
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.AllowedIpsOrigin</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        }
 
                         @if (!form.IsNew)
                         {
-                            <p class="small text-body-secondary mb-3">Last successful login: <span id="last-login">@LastLogin(form.LastSuccessfulLogin)</span></p>
+                            <p class="small text-body-secondary mb-3">
+                                Last successful login: <span id="last-login">@LastLogin(form.LastLoginAt)</span>
+                                @if (form.PasswordChangedAt is { } changed)
+                                {
+                                    <span class="ms-2">Password set: <span id="password-changed">@Date(changed)</span></span>
+                                }
+                            </p>
                         }
 
                         <div class="d-flex justify-content-between gap-2">
@@ -516,6 +517,9 @@
     private IReadOnlyList<SshServer.Interfaces.Storage.VirtualFolder> folders = [];
     private IReadOnlyList<string> storageProblems;
     private IReadOnlyList<string> mountProblems;
+    private IReadOnlyList<string> groupProblems;
+    private IReadOnlyList<SshServer.Interfaces.Groups.Group> groups = [];
+    private bool hadGroups;
     private string search = "";
     private UserForm form;
     private string pendingDelete;
@@ -546,12 +550,14 @@
     {
         users = SettingsRepository.GetAllUsers();
         folders = FolderService.List();
+        groups = GroupService.List();
     }
 
     private void StartNew()
     {
         ResetKeyInput();
         form = UserForm.New();
+        hadGroups = false;
         ClearProblems();
     }
 
@@ -560,21 +566,25 @@
         ResetKeyInput();
         var stored = SettingsRepository.GetUser(user.Username);
         form = stored is null ? null : UserForm.From(stored, StorageService);
+        AfterFormLoaded();
         ClearProblems();
     }
 
     private void CloseForm() => form = null;
 
+    private void AfterFormLoaded()
+    {
+        if (form is null)
+            return;
+        hadGroups = form.HasGroups;
+        form.GroupProvidesStorage = SelectedGroups().Any(g => g.Storage is not null);
+    }
+
     private void ClearProblems()
     {
         storageProblems = null;
         mountProblems = null;
-    }
-
-    private void AddMount()
-    {
-        var first = folders.FirstOrDefault(f => !form.Mounts.Any(m => m.VirtualFolderId == f.Id)) ?? folders[0];
-        form.Mounts.Add(new MountRow { VirtualFolderId = first.Id, MountPath = "/" + first.Name });
+        groupProblems = null;
     }
 
     /// <summary>The storage of "/" from the form, or false with the problems shown in the form.</summary>
@@ -585,6 +595,16 @@
         var mounts = FolderService.ValidateMounts(form.MountList());
         if (mounts.Count > 0)
             mountProblems = mounts;
+        // The groups outside the scope of the administrator are not checked (it cannot see them; they stay as they are).
+        var visible = groups.Select(g => g.Id).ToHashSet();
+        var membership = new User
+        {
+            PrimaryGroupId = visible.Contains(form.PrimaryGroupId) ? form.PrimaryGroupId : null,
+            SecondaryGroupIds = form.SecondaryGroupIds.Where(visible.Contains).ToList(),
+        };
+        var groupCheck = GroupService.ValidateMembership(membership);
+        if (groupCheck.Count > 0)
+            groupProblems = groupCheck;
         if (!form.UsesDefaultStorage)
         {
             var result = StorageService.Build(form.Storage);
@@ -592,7 +612,7 @@
                 storageProblems = result.Problems;
             storage = result.Config;
         }
-        return storageProblems is null && mountProblems is null;
+        return storageProblems is null && mountProblems is null && groupProblems is null;
     }
 
     private void ResetKeyInput()
@@ -614,7 +634,7 @@
         var username = form.Username.Trim();
         if (!TryBuildStorage(out var storage))
         {
-            Toasts.ShowError($"The user {username} was not saved: check the storage and the virtual folders.");
+            Toasts.ShowError($"The user {username} was not saved: check the storage, the virtual folders and the groups.");
             return;
         }
         if (form.IsNew)
@@ -623,7 +643,17 @@
             // Hash off the circuit's synchronization context: PBKDF2 with 600,000 iterations takes a moment.
             await Task.Run(() => form.ApplyTo(user));
             user.Storage = storage;
-            if (!UserService.TryAdd(user))
+            bool added;
+            try
+            {
+                added = UserService.TryAdd(user);
+            }
+            catch (AdminAccessDeniedException ex)
+            {
+                Toasts.ShowError(ex.Message);
+                return;
+            }
+            if (!added)
             {
                 Toasts.ShowError($"The user {username} could not be created. Is the name already used?");
                 return;
@@ -642,7 +672,17 @@
             }
             await Task.Run(() => form.ApplyTo(user));
             user.Storage = storage;
-            if (!SettingsRepository.UpdateUser(user))
+            bool updated;
+            try
+            {
+                updated = SettingsRepository.UpdateUser(user);
+            }
+            catch (AdminAccessDeniedException ex)
+            {
+                Toasts.ShowError(ex.Message);
+                return;
+            }
+            if (!updated)
             {
                 Toasts.ShowError($"The user {username} could not be saved.");
                 return;
@@ -652,6 +692,7 @@
 
         LoadUsers();
         form = UserForm.From(SettingsRepository.GetUser(username), StorageService);
+        AfterFormLoaded();
     }
 
     private void AskDelete(string username)
@@ -764,6 +805,57 @@
 
     private static string Date(DateTime value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    private static string LastLogin(DateTime value) =>
-        value == default ? "never" : value.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+    private static string LastLogin(DateTime? value) =>
+        value is { } time ? time.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "never";
+
+    private string GroupNames(User user)
+    {
+        var ids = new List<int>();
+        if (user.PrimaryGroupId is { } primary)
+            ids.Add(primary);
+        ids.AddRange(user.SecondaryGroupIds ?? new List<int>());
+        return string.Join(", ", ids.Select(id => groups.FirstOrDefault(g => g.Id == id)?.Name).Where(n => n is not null));
+    }
+
+    private void OnPrimaryGroupChanged(ChangeEventArgs e)
+    {
+        form.PrimaryGroupId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        form.SecondaryGroupIds.Remove(form.PrimaryGroupId);
+        UpdateGroupState();
+    }
+
+    private void ToggleSecondaryGroup(int id, bool selected)
+    {
+        form.SecondaryGroupIds.Remove(id);
+        if (selected)
+            form.SecondaryGroupIds.Add(id);
+        UpdateGroupState();
+    }
+
+    /// <summary>A user that joins its first group takes the rules of the group, unless it has rules of its own.</summary>
+    private void UpdateGroupState()
+    {
+        form.GroupProvidesStorage = SelectedGroups().Any(g => g.Storage is not null);
+        if (!form.HasGroups)
+            form.InheritPermissions = false;
+        else if (!hadGroups && PermissionTables.IsRootAllOnly(form.Permissions) && form.PathFilters.Count == 0)
+            form.InheritPermissions = true;
+        hadGroups = form.HasGroups;
+    }
+
+    private IEnumerable<SshServer.Interfaces.Groups.Group> SelectedGroups() =>
+        groups.Where(g => g.Id == form.PrimaryGroupId || form.SecondaryGroupIds.Contains(g.Id));
+
+    /// <summary>The effective settings of the form as it is now (not saved), with the groups.</summary>
+    private SshServer.Interfaces.Users.EffectiveUserSettings Preview()
+    {
+        var user = new User { Username = form.Username?.Trim() ?? "" };
+        form.ApplySettingsTo(user);
+        user.Storage = form.UsesDefaultStorage ? null : new SshServer.Interfaces.Storage.StorageConfig { Provider = form.Storage.Provider };
+        return UserSettings.Resolve(user);
+    }
+
+    private static string PermissionText(FilePermissions permissions) =>
+        permissions == FilePermissions.All ? "all" : permissions == FilePermissions.None ? "none"
+            : string.Join(", ", PermissionRow.Columns.Where(c => (permissions & c.Flag) == c.Flag).Select(c => c.Title));
 }

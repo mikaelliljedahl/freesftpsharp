@@ -111,6 +111,7 @@ namespace SshServer.Interfaces.Users
                 Username = name,
                 UserRootDirectory = root,
                 HashedPassword = password == null ? null : PasswordHasher.Hash(password),
+                PasswordChangedAt = password == null ? null : DateTime.UtcNow,
                 PublicKeys = publicKeys?.ToList(),
                 OnlyWhitelistedIps = false,
                 WhitelistedIps = new List<string>(),

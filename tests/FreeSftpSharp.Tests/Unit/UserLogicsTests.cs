@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Users;
 using System.Net;
 using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
@@ -83,7 +84,7 @@ public sealed class UserLogicsTests
             WhitelistedIps = new List<string> { "192.168.0.0/16" },
         };
 
-        Assert.Equal(allowed, UserLogics.VerifyUserIpWhitelisted(user, new IPEndPoint(IPAddress.Parse(address), 50000)));
+        Assert.Equal(allowed, UserLogics.VerifyUserIpWhitelisted(new EffectiveUserSettingsService().Resolve(user).AllowedIps, new IPEndPoint(IPAddress.Parse(address), 50000)));
     }
 
     [Fact]
@@ -91,6 +92,6 @@ public sealed class UserLogicsTests
     {
         var user = new User { Username = "u", OnlyWhitelistedIps = false };
 
-        Assert.True(UserLogics.VerifyUserIpWhitelisted(user, new IPEndPoint(IPAddress.Parse("10.0.0.1"), 50000)));
+        Assert.True(UserLogics.VerifyUserIpWhitelisted(new EffectiveUserSettingsService().Resolve(user).AllowedIps, new IPEndPoint(IPAddress.Parse("10.0.0.1"), 50000)));
     }
 }

@@ -19,6 +19,9 @@ namespace SshServerModule.Connections
         private readonly ILogger _logger;
         private long _sequence;
 
+        /// <summary>Makes the session count and the login of <see cref="TrySetAuthenticated"/> one step.</summary>
+        private readonly object _authenticationLock = new();
+
         public ConnectionRegistry(TimeProvider time, ILogger<ConnectionRegistry>? logger = null)
         {
             _time = time ?? throw new ArgumentNullException(nameof(time));
@@ -45,18 +48,33 @@ namespace SshServerModule.Connections
             => Update(id, info => info with { ClientVersion = clientVersion });
 
         public void SetAuthenticated(Guid id, string username, string authMethod)
+            => TrySetAuthenticated(id, username, authMethod, maxSessions: 0);
+
+        public bool TrySetAuthenticated(Guid id, string username, string authMethod, int maxSessions)
         {
-            var now = _time.GetUtcNow();
-            var snapshot = Update(id, info => info with
+            ConnectionInfo? snapshot;
+            lock (_authenticationLock)
             {
-                Username = username,
-                AuthMethod = authMethod,
-                AuthenticatedAt = now,
-                LastActivity = now,
-            });
-            if (snapshot != null)
-                Raise(ConnectionEventKind.Authenticated, snapshot);
+                if (!_connections.ContainsKey(id) || (maxSessions > 0 && CountSessions(username, id) >= maxSessions))
+                    return false;
+                var now = _time.GetUtcNow();
+                snapshot = Update(id, info => info with
+                {
+                    Username = username,
+                    AuthMethod = authMethod,
+                    AuthenticatedAt = now,
+                    LastActivity = now,
+                });
+            }
+            if (snapshot == null)
+                return false;
+            Raise(ConnectionEventKind.Authenticated, snapshot);
+            return true;
         }
+
+        public int CountSessions(string username, Guid except)
+            => _connections.Values.Count(e => e.Snapshot() is { } info && info.Id != except
+                                              && string.Equals(info.Username, username, StringComparison.OrdinalIgnoreCase));
 
         public void RecordActivity(Guid id)
         {

@@ -60,6 +60,11 @@ public sealed class FailingDatabaseFactory : ObservabilityFactory
         public bool AddVirtualFolder(SshServer.Interfaces.Storage.VirtualFolder folder) => false;
         public bool UpdateVirtualFolder(SshServer.Interfaces.Storage.VirtualFolder folder) => false;
         public bool RemoveVirtualFolder(int id) => false;
+        public List<SshServer.Interfaces.Groups.Group> GetGroups() => throw new IOException("config.db is unreadable");
+        public SshServer.Interfaces.Groups.Group? GetGroup(int id) => null;
+        public bool AddGroup(SshServer.Interfaces.Groups.Group group) => false;
+        public bool UpdateGroup(SshServer.Interfaces.Groups.Group group) => false;
+        public bool RemoveGroup(int id) => false;
         public void Dispose() { }
     }
 }

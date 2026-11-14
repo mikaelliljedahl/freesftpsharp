@@ -53,16 +53,37 @@ public sealed record ProviderEvent(ProviderAction Action, ProviderObjectType Obj
 /// </summary>
 /// <param name="StorageProvider">The provider of <see cref="User.Storage"/>; null for the default storage. The options are left out (they can have secrets).</param>
 /// <param name="VirtualFolders">The mounts, as "mount path=virtual folder id".</param>
+/// <param name="SecondaryGroupIds">The secondary groups, as comma separated ids in their order.</param>
 public sealed record UserSnapshot(string Username, string UserRootDirectory, bool HasPassword, bool HasPublicKey,
     bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps, IReadOnlyList<string> PublicKeyFingerprints,
-    string AllowedAuthMethods, string RequireAllOf, string? StorageProvider, IReadOnlyList<string> VirtualFolders)
+    string AllowedAuthMethods, string RequireAllOf, string? StorageProvider, IReadOnlyList<string> VirtualFolders,
+    string Status, DateTime? ExpiresAt, int MaxSessions, string? Description, int? PrimaryGroupId, string SecondaryGroupIds)
 {
     public static UserSnapshot From(User user) => new(user.Username, user.UserRootDirectory,
         !string.IsNullOrEmpty(user.HashedPassword), user.PublicKeys is { Count: > 0 },
         user.OnlyWhitelistedIps, user.WhitelistedIps?.ToList() ?? [],
         user.PublicKeys?.Select(k => k.Fingerprint).ToList() ?? [],
         user.AllowedAuthMethods.ToString(), string.Join(",", user.RequireAllOf ?? []), user.Storage?.Provider,
-        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList());
+        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList(),
+        user.Status.ToString(), user.ExpiresAt, user.MaxSessions, user.Description, user.PrimaryGroupId,
+        string.Join(",", user.SecondaryGroupIds ?? []));
+}
+
+/// <summary>A <see cref="Groups.Group"/> without its storage options (they can have secrets).</summary>
+/// <param name="Permissions">The permissions, as "path=flags".</param>
+/// <param name="PathFilters">The filters, as "path=allowed;denied;hidden" with comma separated patterns.</param>
+/// <param name="VirtualFolders">The mounts, as "mount path=virtual folder id".</param>
+public sealed record GroupSnapshot(int Id, string Name, string? Description, IReadOnlyList<string> Permissions,
+    IReadOnlyList<string> PathFilters, string? StorageProvider, IReadOnlyList<string> VirtualFolders, string? AllowedAuthMethods,
+    IReadOnlyList<string> AllowedIps, int? RoleId)
+{
+    public static GroupSnapshot From(Groups.Group group) => new(group.Id, group.Name, group.Description,
+        (group.Permissions ?? []).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => $"{p.Key}={p.Value}").ToList(),
+        (group.PathFilters ?? []).OrderBy(p => p.Key, StringComparer.Ordinal)
+            .Select(p => $"{p.Key}={string.Join(",", p.Value.AllowedPatterns)};{string.Join(",", p.Value.DeniedPatterns)};{string.Join(",", p.Value.HiddenPatterns)}").ToList(),
+        group.Storage?.Provider,
+        group.VirtualFolders.Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList(),
+        group.AllowedAuthMethods?.ToString(), group.AllowedIps?.ToList() ?? [], group.RoleId);
 }
 
 /// <summary>A <see cref="Storage.VirtualFolder"/> without its storage options (they can have secrets).</summary>
@@ -75,10 +96,10 @@ public sealed record VirtualFolderSnapshot(int Id, string Name, string? Descript
 public sealed record ServerSettingsSnapshot(string? ServerBanner, int ListenToPort, IReadOnlyList<string> BindToAddress,
     IReadOnlyList<string> BlacklistedIps, bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps,
     int MaxLoginAttemptsBeforeBan, int LoginFailureWindowSeconds, int BanDurationSeconds, bool ExemptLoopbackFromBan,
-    int IdleTimeout, bool EnableCommand, bool EnableDirectTcpIp)
+    int IdleTimeout, bool EnableCommand, bool EnableDirectTcpIp, int PasswordMaxAgeDays)
 {
     public static ServerSettingsSnapshot From(ServerSettings s) => new(s.ServerBanner, s.ListenToPort,
         s.BindToAddress?.ToList() ?? [], s.BlacklistedIps?.ToList() ?? [], s.OnlyWhitelistedIps, s.WhitelistedIps?.ToList() ?? [],
         s.MaxLoginAttemptsBeforeBan, s.LoginFailureWindowSeconds, s.BanDurationSeconds, s.ExemptLoopbackFromBan,
-        s.IdleTimeout, s.EnableCommand, s.EnableDirectTcpIp);
+        s.IdleTimeout, s.EnableCommand, s.EnableDirectTcpIp, s.PasswordMaxAgeDays);
 }
