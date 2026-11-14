@@ -25,7 +25,8 @@ namespace SshServerModule.Storage
     /// <item>A rename between two storages throws <see cref="FileSystemError.OpNotSupported"/>: it would be a copy and a
     /// delete, which is not atomic and can be slow. The client can copy the file itself.</item>
     /// </list>
-    /// The storage rules (permissions, events) wrap this class, so they see the virtual paths of the user.
+    /// The storage rules (permissions, events) wrap this class, so they see the virtual paths of the user. An open file is
+    /// the handle of its storage itself (not wrapped), so <see cref="IFileHandle.AbortAsync"/> reaches that storage.
     /// <see cref="Capabilities"/> are the capabilities that every storage has, plus <see cref="StorageCapabilities.CaseInsensitivePaths"/>
     /// when one storage has it (so the permission rules match every spelling). Mount paths are compared like the root
     /// storage compares paths.
