@@ -62,6 +62,14 @@ the user, the password (`AllowedAuthMethods`; not alone for a multi-step login o
 (`User.AppPasswords`, per protocol) and the protocol flags (`User.AllowedProtocols`). The SFTP login of `HostedServer`
 checks the same flags. A protocol never repeats a storage rule.
 
+The web client of the users (#69, [WEB-CLIENT.md](WEB-CLIENT.md)) is a branch of the web host (`FxSshSftpServer/WebClient`,
+`AddWebClient()`, `UseWebClient()` and `MapWebClient()`, Razor Pages in `Pages/Client`), off unless `WebClient:Enabled`.
+It logs in with `PasswordLoginService` in its interactive mode (`PasswordLoginOptions.Interactive`: the caller asks for the
+TOTP code and lets an expired password be changed; no app passwords), with its own cookie scheme (`UserAuth`, path
+`/client`), and registers one connection per browser login (protocol `HTTP`, `ClientSessions`), which is also the store of
+the sessions. Every file action uses `IFileSystemFactory` with that connection; the page only maps the effective
+permissions to its buttons (`ClientPermissionMap`, the same `PathRuleResolver` as the permission decorator).
+
 ## Several nodes
 
 The settings database is EF Core on an `ISettingsDatabaseProvider` (#75): SQLite in `SshServer.Settings.Sql`, PostgreSQL
@@ -219,6 +227,25 @@ it before the credential check and refuses like a wrong credential; the session 
 recorded (`IConnectionRegistry.TrySetAuthenticated`, one step with the count), so two logins at the same time cannot
 both take the last session. The `DisabledUserDisconnector` sink (registered by `AddSshServerConnections()`) closes the
 connections of a user that is disabled or removed, from the provider events, through the registry.
+
+## Authentication providers
+
+The credential of a login (password, public key) is checked by the `IAuthenticationProvider`s (#64,
+`SshServer.Interfaces.Authentication`) through one service, `IUserAuthenticator` (`UserAuthenticator`,
+`AddSshServerAuthentication()`). The built-in `DatabaseAuthenticationProvider` checks the stored hash and keys; the
+plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Authentication.Ldap`
+(`AddLdapAuthentication()`) register only when their section is configured. The core never knows a provider type.
+
+- **Chain.** The providers run in the order of `Auth:Providers` (default: the database, then the plug-ins); the first
+  success or failure wins, "not handled" asks the next one. An exception of a provider is a failure (fail closed).
+- **Ownership.** `User.AuthenticationProvider` (null: the database) names the one provider that checks a stored user.
+- **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). The
+  `ExternalUserProvisioner` makes the user in memory; the protocol checks it like a stored user and calls
+  `IUserAuthenticator.Save` when the login is verified (SSH: after the signature of a public key). The status and the
+  expiry stay local.
+- **Every protocol** does the same steps: read the stored user, check `UserLoginRules` and the effective settings
+  (refusal: `SpendFailureTimeAsync`, the time of a wrong password), `VerifyAsync`, check again with a returned user,
+  `Save`. `HostedServer` does it for SSH, `PasswordLoginService` for WebDAV, the web client and the later password protocols.
 
 ## Quotas and bandwidth
 

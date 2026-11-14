@@ -8521,7 +8521,8 @@
           "transferQuota",
           "bandwidth",
           "lastLoginAt",
-          "passwordChangedAt"
+          "passwordChangedAt",
+          "authenticationProvider"
         ],
         "type": "object",
         "properties": {
@@ -8691,6 +8692,12 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "authenticationProvider": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

@@ -55,6 +55,25 @@ jobs:
           FAKE_GCS_BACKEND: memory
           FAKE_GCS_EXTERNAL_URL: http://127.0.0.1:4443
 
+      # The LDAP tests (#64) run against this OpenLDAP directory on Linux and are skipped elsewhere (an empty image skips
+      # the service on Windows). The image creates the users alice and bob and the group sftp-staff from its environment.
+      openldap:
+        image: ${{ matrix.os == 'ubuntu-latest' && 'bitnamilegacy/openldap:2.6.10' || '' }}
+        ports:
+          - 1389:1389
+        env:
+          LDAP_ROOT: dc=example,dc=org
+          LDAP_ADMIN_USERNAME: admin
+          LDAP_ADMIN_PASSWORD: adminpassword
+          LDAP_USERS: alice,bob
+          LDAP_PASSWORDS: alice-password,bob-password
+          LDAP_GROUP: sftp-staff
+        options: >-
+          --health-cmd "ldapsearch -x -H ldap://localhost:1389 -b dc=example,dc=org -D cn=admin,dc=example,dc=org -w adminpassword -s base"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+
       # The settings database tests (#75) run on SQLite everywhere and also against these PostgreSQL and SQL Server
       # servers on Linux (skipped elsewhere; an empty image skips the service on Windows). Each test makes its own database.
       postgres:
@@ -116,6 +135,7 @@ jobs:
         env:
           FREESFTPSHARP_TEST_AZURITE: ${{ runner.os == 'Linux' && 'http://127.0.0.1:10000' || '' }}
           FREESFTPSHARP_TEST_GCS_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:4443' || '' }}
+          FREESFTPSHARP_TEST_LDAP: ${{ runner.os == 'Linux' && '127.0.0.1:1389' || '' }}
           FREESFTPSHARP_TEST_S3_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:9000' || '' }}
           FREESFTPSHARP_TEST_S3_ACCESS_KEY: freesftpsharp
           FREESFTPSHARP_TEST_S3_SECRET_KEY: freesftpsharp-ci-only

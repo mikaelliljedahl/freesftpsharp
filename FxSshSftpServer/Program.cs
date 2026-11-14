@@ -26,10 +26,14 @@ using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
 using SshServer.Observability;
+using SshServerModule.Authentication;
+using SshServer.Authentication.Http;
+using SshServer.Authentication.Ldap;
 using SshServer.Api;
 using FreeSftpSharp.WebDav;
 
 using FxSshSftpServer.Security;
+using FxSshSftpServer.WebClient;
 
 if (FxSsh.SshServerModule.Cli.VersionCommand.IsRequested(args))
 {
@@ -66,6 +70,7 @@ builder.Services.AddRazorPages();
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
 builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook, storage and TOTP secrets
+builder.Services.AddWebClient(builder.Configuration); // the web client of the SFTP users (#69) at /client: off unless WebClient:Enabled
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -88,6 +93,9 @@ builder.Services.AddSshServerEvents(); // event bus; the audit log comes with Ad
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
 builder.Services.AddTwoFactor(builder.Configuration); // TOTP second factor (#63): off until a user or administrator sets up an app
 builder.Services.AddEventRules(builder.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
+builder.Services.AddSshServerAuthentication(builder.Configuration); // the credential check (#64): the database, then the providers in Auth:Providers
+builder.Services.AddHttpAuthHook(builder.Configuration); // the external HTTP hook (#64): off until Auth:HttpHook:Url is set
+builder.Services.AddLdapAuthentication(builder.Configuration); // LDAP / Active Directory (#64): off until Auth:Ldap:Server is set
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 builder.Services.AddRestApi(builder.Configuration); // the REST API under /api/v1 (#67), only with Api:Enabled
 Log.Debug("AddSshServerStorage...");
@@ -104,6 +112,9 @@ var app = builder.Build();
 
 app.UseSshServerObservability(); // before the login: probes and scrapers have no cookie
 app.MapWebDav(); // WebDAV has its own Basic login; nothing is mapped while it is off
+
+// The web client: 404 when it is off, its security headers when it is on. Before the admin gate: it needs no administrator.
+app.UseWebClient();
 
 // Without an admin credential the whole UI answers 503 (the SSH server still runs).
 app.UseAdminUiRequiresCredential();
@@ -128,7 +139,8 @@ app.UseAntiforgery();
 
 // The CSS, fonts and scripts (wwwroot and _framework/blazor.web.js) are local files; the login page needs them before a login.
 app.MapStaticAssets().AllowAnonymous();
-app.MapRazorPages(); // Login, Logout, Error
+app.MapRazorPages(); // Login, Logout, Error, and the pages of the web client (Pages/Client)
+app.MapWebClient(); // the endpoints of the web client (/client/api)
 app.MapRazorComponents<FxSshSftpServer.Components.App>()
     .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
 app.MapRestApi(); // bearer token or API key, never the login cookie

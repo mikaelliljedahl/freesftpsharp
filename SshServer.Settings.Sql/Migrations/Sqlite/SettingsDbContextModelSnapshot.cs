@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114135346_AddClusterState";
+    public override string LastMigrationId => "20261114141126_AddClusterState";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -477,6 +477,10 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<string>("AppPasswords")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AuthenticationProvider")
+                    .HasMaxLength(64)
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Bandwidth")

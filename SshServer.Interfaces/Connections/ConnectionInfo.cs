@@ -51,6 +51,9 @@ public static class ConnectionProtocols
 {
     public const string Sftp = "SFTP";
     public const string WebDav = "WebDAV";
+
+    /// <summary>A browser session of the web client (#69); one connection per login.</summary>
+    public const string Http = "HTTP";
 }
 
 public enum ConnectionEventKind

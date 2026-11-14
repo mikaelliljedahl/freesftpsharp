@@ -30,6 +30,9 @@ using SshServer.Settings.PostgreSql;
 using SshServer.Settings.SqlServer;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
+using SshServerModule.Authentication;
+using SshServer.Authentication.Http;
+using SshServer.Authentication.Ldap;
 
 if (VersionCommand.IsRequested(args))
 {
@@ -76,6 +79,9 @@ await new HostBuilder()
     services.AddWebhooks(hostContext.Configuration); // webhooks (#66): nothing is sent until one is configured
     services.AddTwoFactor(hostContext.Configuration); // TOTP second factor (#63): off until a user has an app set up
     services.AddEventRules(hostContext.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
+    services.AddSshServerAuthentication(hostContext.Configuration); // the credential check (#64): the database, then the providers in Auth:Providers
+    services.AddHttpAuthHook(hostContext.Configuration); // the external HTTP hook (#64): off until Auth:HttpHook:Url is set
+    services.AddLdapAuthentication(hostContext.Configuration); // LDAP / Active Directory (#64): off until Auth:Ldap:Server is set
     services.AddSshServerMetrics(); // meter and activities only; no exporter and no port
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();

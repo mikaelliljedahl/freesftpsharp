@@ -8,7 +8,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace SshServer.Settings.PostgreSql.Migrations;
 
 /// <inheritdoc />
-public partial class _20261114135343_InitialCreate : Migration
+public partial class _20261114141131_InitialCreate : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -469,6 +469,7 @@ public partial class _20261114135343_InitialCreate : Migration
                 TransferQuota = table.Column<string>(type: "text", nullable: true),
                 Bandwidth = table.Column<string>(type: "text", nullable: true),
                 RoleId = table.Column<int>(type: "integer", nullable: true),
+                AuthenticationProvider = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                 RsaPublicKey = table.Column<string>(type: "text", nullable: true)
             },
             constraints: table =>

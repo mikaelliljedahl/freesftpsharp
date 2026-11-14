@@ -1,0 +1,171 @@
+@page
+@model AccountModel
+@{
+    ViewData["Title"] = "Account";
+}
+<h1 class="h3 mb-3">Your account</h1>
+@if (Model.Message != null)
+{
+    <div class="alert alert-success" role="status" id="account-message">@Model.Message</div>
+}
+@if (Model.ErrorMessage != null)
+{
+    <div class="alert alert-danger" role="alert" id="account-error">@Model.ErrorMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <section class="card h-100" id="password-section">
+            <div class="card-header fw-semibold"><i class="bi bi-key"></i> Password</div>
+            <div class="card-body">
+                @if (Model.PasswordManagedBy is { } provider)
+                {
+                    <p class="small text-body-secondary mb-0" id="password-managed">@SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(provider)</p>
+                }
+                else
+                {
+                    <p class="small text-body-secondary">The password of your SFTP and web logins.</p>
+                    <a class="btn btn-outline-primary" href="/client/changepassword" id="change-password">Change password</a>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-lg-6">
+        <section class="card h-100" id="two-factor-section">
+            <div class="card-header fw-semibold"><i class="bi bi-shield-lock"></i> Two-factor authentication</div>
+            <div class="card-body">
+                @if (Model.RecoveryCodes != null)
+                {
+                    <div class="alert alert-warning small" id="recovery-codes">
+                        <p class="mb-2 fw-semibold">Recovery codes. They are shown only now.</p>
+                        <p class="mb-2">Each code works once instead of a code of the app. Keep them in a safe place.</p>
+                        <ul class="list-unstyled font-monospace mb-0 row row-cols-2 g-1">
+                            @foreach (var code in Model.RecoveryCodes)
+                            {
+                                <li class="col recovery-code">@code</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                @if (Model.Setup != null)
+                {
+                    <p class="small">Scan the QR code with an authenticator app, or enter the key by hand. Then enter the code that the app shows.</p>
+                    <div class="d-flex flex-wrap gap-3 align-items-start mb-3">
+                        <div class="border rounded bg-white p-1 qr-box" id="two-factor-qr">@Html.Raw(Model.Setup.QrCodeSvg)</div>
+                        <div class="small">
+                            <div class="text-body-secondary">Key</div>
+                            <div class="font-monospace text-break mb-2" id="two-factor-secret">@Model.Setup.SecretBase32</div>
+                            <div class="text-body-secondary">Time-based, SHA-1, 6 digits, 30 seconds</div>
+                        </div>
+                    </div>
+                    <form method="post" asp-page-handler="ConfirmTotp" class="d-flex flex-wrap gap-2">
+                        <input type="text" name="Code" class="form-control form-control-sm font-monospace w-auto" placeholder="123456"
+                               autocomplete="one-time-code" inputmode="numeric" maxlength="12" aria-label="Code from the app" required />
+                        <button type="submit" class="btn btn-sm btn-primary" id="two-factor-confirm">Turn on</button>
+                    </form>
+                }
+                else if (Model.TwoFactor.State == TwoFactorState.On)
+                {
+                    <p class="small" id="two-factor-on"><span class="badge text-bg-success me-1">on</span> Every login needs a code of the app. @Model.TwoFactor.RecoveryCodesLeft recovery code(s) left.</p>
+                    <form method="post" class="d-flex flex-wrap gap-2">
+                        <input type="text" name="Code" class="form-control form-control-sm font-monospace w-auto" placeholder="Current code"
+                               autocomplete="one-time-code" maxlength="12" aria-label="Current code" required />
+                        <button type="submit" asp-page-handler="RegenerateCodes" class="btn btn-sm btn-outline-primary">New recovery codes</button>
+                        <button type="submit" asp-page-handler="DisableTotp" class="btn btn-sm btn-outline-danger" id="two-factor-disable">Turn off</button>
+                    </form>
+                    <div class="form-text">Both need a current code of the app or a recovery code.</div>
+                }
+                else
+                {
+                    <p class="small text-body-secondary" id="two-factor-off">
+                        @(Model.TwoFactor.State == TwoFactorState.Pending ? "A setup was started but not confirmed." : "Off.")
+                        With a second factor, every login needs a code of an authenticator app after the password (over SSH: keyboard-interactive).
+                    </p>
+                    <form method="post" asp-page-handler="BeginTotp">
+                        <button type="submit" class="btn btn-sm btn-outline-primary" id="two-factor-setup"><i class="bi bi-shield-lock"></i> Set up an authenticator app</button>
+                    </form>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="card" id="keys-section">
+            <div class="card-header fw-semibold"><i class="bi bi-file-earmark-lock"></i> SSH public keys</div>
+            <div class="card-body">
+                @if (!Model.AllowsPublicKeys)
+                {
+                    <p class="small text-body-secondary">Your account may not log in with a key now; an administrator can allow it.</p>
+                }
+                @if (Model.Keys.Count == 0)
+                {
+                    <p class="small text-body-secondary" id="no-keys">You have no public keys.</p>
+                }
+                else
+                {
+                    <ul class="list-group mb-3" id="key-list">
+                        @foreach (var key in Model.Keys)
+                        {
+                            <li class="list-group-item d-flex flex-wrap gap-2 align-items-center">
+                                <span class="badge text-bg-secondary">@key.KeyType</span>
+                                <span class="font-monospace small text-break">@key.Fingerprint</span>
+                                <span class="small text-body-secondary">@key.Comment</span>
+                                @if (key.ExpiresAt is { } expires)
+                                {
+                                    <span class="small text-body-secondary">expires @expires.ToString("yyyy-MM-dd")</span>
+                                }
+                                <form method="post" asp-page-handler="RemoveKey" class="ms-auto">
+                                    <input type="hidden" name="key" value="@key.KeyBase64" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </li>
+                        }
+                    </ul>
+                }
+                <form method="post" asp-page-handler="AddKeys">
+                    <label for="keys-text" class="form-label small">Add keys: the content of a <code>.pub</code> or <code>authorized_keys</code> file</label>
+                    <textarea id="keys-text" name="KeysText" class="form-control font-monospace small mb-2" rows="3" required>@Model.KeysText</textarea>
+                    <button type="submit" class="btn btn-sm btn-primary" id="add-keys">Add</button>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="card" id="sessions-section">
+            <div class="card-header fw-semibold"><i class="bi bi-plug"></i> Open sessions</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" id="session-list">
+                        <thead><tr><th>Protocol</th><th>Client</th><th>Since (UTC)</th><th>Last activity (UTC)</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var session in Model.Sessions)
+                            {
+                                <tr>
+                                    <td>@session.Protocol</td>
+                                    <td class="text-break">@session.RemoteEndPoint</td>
+                                    <td>@session.ConnectedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>@session.LastActivity.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td class="text-end">
+                                        @if (session.Id == Model.CurrentSession)
+                                        {
+                                            <span class="badge text-bg-primary">this session</span>
+                                        }
+                                        else
+                                        {
+                                            <form method="post" asp-page-handler="EndSession">
+                                                <input type="hidden" name="id" value="@session.Id" />
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">Close</button>
+                                            </form>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>

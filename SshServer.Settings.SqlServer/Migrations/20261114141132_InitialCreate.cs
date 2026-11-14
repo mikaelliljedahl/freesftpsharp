@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SshServer.Settings.SqlServer.Migrations;
 
 /// <inheritdoc />
-public partial class _20261114135345_InitialCreate : Migration
+public partial class _20261114141132_InitialCreate : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -464,6 +464,7 @@ public partial class _20261114135345_InitialCreate : Migration
                 TransferQuota = table.Column<string>(type: "nvarchar(max)", nullable: true),
                 Bandwidth = table.Column<string>(type: "nvarchar(max)", nullable: true),
                 RoleId = table.Column<int>(type: "int", nullable: true),
+                AuthenticationProvider = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                 RsaPublicKey = table.Column<string>(type: "nvarchar(max)", nullable: true)
             },
             constraints: table =>
