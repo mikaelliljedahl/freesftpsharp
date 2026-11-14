@@ -36,7 +36,9 @@ done
 [ "${healthy:-0}" = 1 ] || { echo "/healthz did not answer 200"; exit 1; }
 echo "healthz ok"
 
-docker logs "$name" 2>&1 | grep -q "Generated admin password" || { echo "no generated admin password in the log"; exit 1; }
+# Captured once: with pipefail, "docker logs | grep -q" fails when grep exits early and docker logs gets SIGPIPE.
+log="$(docker logs "$name" 2>&1)"
+grep -q "Generated admin password" <<<"$log" || { echo "no generated admin password in the log"; exit 1; }
 [ "$(docker exec "$name" id -u)" != "0" ] || { echo "the container runs as root"; exit 1; }
 for _ in $(seq 1 30); do
     state="$(docker inspect -f '{{.State.Health.Status}}' "$name")"
