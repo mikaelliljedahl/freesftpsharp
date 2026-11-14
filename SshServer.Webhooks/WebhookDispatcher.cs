@@ -50,7 +50,11 @@ public sealed class WebhookDispatcher : BackgroundService
         if (!_store.IsEnabled)
             return;
 
-        var running = new List<Task>();
+        // The rows this node sends now, by id. The lease runs on the clock of the dispatcher, the request on the wall
+        // clock: an attempt can outlast its lease (a fake clock in the tests, a stalled machine), and the row can then be
+        // claimed again. This node never sends a row a second time while its first attempt runs. A row leaves the map
+        // only here, before a claim, after its attempt has saved: so a claim never returns a stale copy of it.
+        var running = new Dictionary<long, Task>();
         while (!stoppingToken.IsCancellationRequested)
         {
             _signal.Reset();
@@ -58,15 +62,22 @@ public sealed class WebhookDispatcher : BackgroundService
             try
             {
                 await HousekeepingAsync(stoppingToken);
-                running.RemoveAll(t => t.IsCompleted);
+                foreach (var done in running.Where(r => r.Value.IsCompleted).Select(r => r.Key).ToList())
+                    running.Remove(done);
                 var free = _options.MaxConcurrentDeliveries - running.Count;
                 if (free > 0)
                 {
                     var now = _time.GetUtcNow().UtcDateTime;
                     var claimed = await _store.ClaimDueAsync(NodeId, now, now + LeaseDuration, free, stoppingToken);
+                    var started = 0;
                     foreach (var delivery in claimed)
-                        running.Add(DeliverAsync(delivery, stoppingToken));
-                    more = claimed.Count == free;
+                    {
+                        if (running.ContainsKey(delivery.Id))
+                            continue; // in flight here; that attempt saves the result and ends the lease
+                        running.Add(delivery.Id, DeliverAsync(delivery, stoppingToken));
+                        started++;
+                    }
+                    more = claimed.Count == free && started > 0;
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -79,11 +90,11 @@ public sealed class WebhookDispatcher : BackgroundService
             }
 
             if (!more || running.Count >= _options.MaxConcurrentDeliveries)
-                await WaitAsync(running, stoppingToken);
+                await WaitAsync(running.Values, stoppingToken);
         }
 
         // The deliveries in flight end themselves at the cancellation and give their lease back.
-        await Task.WhenAll(running);
+        await Task.WhenAll(running.Values);
     }
 
     private async Task HousekeepingAsync(CancellationToken ct)
@@ -103,7 +114,7 @@ public sealed class WebhookDispatcher : BackgroundService
     }
 
     /// <summary>Until a delivery was added, one in flight ended, or the poll interval passed (deliveries that became due).</summary>
-    private async Task WaitAsync(List<Task> running, CancellationToken stoppingToken)
+    private async Task WaitAsync(IEnumerable<Task> running, CancellationToken stoppingToken)
     {
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var delay = Task.Delay(PollInterval, _time, cancel.Token);
