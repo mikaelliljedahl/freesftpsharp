@@ -32,7 +32,7 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Authentication | `IAuthenticationProvider` | database, external HTTP, LDAP | #64 |
 | Event sink | `IEventSink` / `IEventHook` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
 | Event rule action | `IEventRuleAction` | email, command, move, copy, delete, retention, webhook | #68 |
-| Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
+| Settings store | `ISettingsRepository` on an `ISettingsDatabaseProvider` | SQLite, PostgreSQL, SQL Server | #13, #75 |
 | Protocol | hosted service or web host branch over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
 ## Connections
@@ -41,7 +41,8 @@ Every protocol registers its open connections in the `IConnectionRegistry` singl
 `AddSshServerConnections()`): it registers at accept, sets the user after the login, unregisters on close, and gives a
 callback that closes the connection, so `DisconnectAsync` works for every protocol. The registry gives each connection
 a stable `ConnectionInfo.Id` (a GUID) for the whole connection; later features (session limits, events, metrics) use it.
-The registry is in memory and per node.
+The registry is in memory and per node; with several nodes `IClusterConnections` adds the connections of the other
+nodes (see "Several nodes").
 
 A protocol without connections (WebDAV over HTTP) registers a session instead: one entry per client address and
 credential, from the first successful login until it is idle (`WebDavSessionStore`).
@@ -77,6 +78,25 @@ share (`ClientContext.PermissionMask`, `EffectivePermissions.Restrict`) and the 
 (`ClientContext.Metadata`). The only path rule of the share is the containment in its paths (`SharePaths`); everything
 else comes from the chain. The transfers (download with ranges, zip, chunked upload) are `ClientTransfers`, the same code
 as the web client.
+
+## Several nodes
+
+The settings database is EF Core on an `ISettingsDatabaseProvider` (#75): SQLite in `SshServer.Settings.Sql`, PostgreSQL
+and SQL Server in their own projects with their own migrations (`AddPostgreSqlSettings()`, `AddSqlServerSettings()`).
+`SettingsDatabase.Create` is the one place that selects one by `Settings:Provider`; every store gets its options. The
+model marks the names that compare without case (`SettingsDbContext.CaseInsensitiveAnnotation`); SQLite gives them the
+NOCASE collation, the PostgreSQL model rules (`PostgreSqlModelCustomizer`) make them `citext` and store the times as UTC.
+
+With `Cluster:Enabled` (`AddSshServerCluster`, [CLUSTER.md](CLUSTER.md)) the `ClusterNodeService` of each node writes its
+heartbeat and its connections (`IClusterStore`), takes the disconnect requests for its connections, syncs the bans
+(`IIpBanStore`, through the `LoginBanTracker`) and polls the settings version (`ISettingsVersionStore`, raised by the
+`SettingsVersionSink` for every provider event). `IClusterConnections` is what the admin UI, the REST API and the
+`UserSessionCloser` use to list and close connections: on one node the registry, in a cluster the registry and
+the cached connections of the other nodes. The caches (webhooks, event rules) reload on `ISettingsChangeNotifier`.
+Off, everything is as on one node: no table is written and nothing polls.
+
+The PROXY protocol (`Proxy:AllowedSources`, `ProxyProtocolOptions`) runs in the `ConnectionPreface` step of FxSsh, before
+the SSH session exists, so every rule after it sees the client address of the header.
 
 ## Events
 

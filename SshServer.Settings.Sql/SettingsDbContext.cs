@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Api;
@@ -17,6 +18,7 @@ using SshServer.Interfaces.Webhooks;
 using SshServer.Interfaces.Shares;
 using SshServer.Settings.Sql.Quotas;
 using SshServer.Settings.Sql.TwoFactor;
+using SshServer.Settings.Sql.Cluster;
 
 namespace SshServer.Settings.Sql;
 
@@ -33,7 +35,9 @@ namespace SshServer.Settings.Sql;
 /// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>), the event rules with their runs
 /// (<see cref="EventRule"/>, <see cref="EventRuleRun"/>; conditions and actions as JSON text columns), the REST API keys
 /// (<see cref="ApiKey"/>, removed with their administrator), the signing key of the API tokens (#67) and the share links
-/// (<see cref="Share"/>, removed with their user, #70; <see cref="ServerSettings.Shares"/> is a JSON text column) are in the same database.
+/// (<see cref="Share"/>, removed with their user, #70; <see cref="ServerSettings.Shares"/> is a JSON text column) are in the same database,
+/// and so is the shared state of several nodes (#75): the bans, the nodes with their connections and disconnect requests,
+/// the settings version and the data protection keys.
 /// <para>
 /// A <see cref="StorageConfig"/> (the storage of a user or of a <see cref="VirtualFolder"/>) is a JSON text column
 /// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
@@ -80,6 +84,12 @@ public class SettingsDbContext : DbContext
     public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
     public DbSet<QuotaUsageRow> QuotaUsages => Set<QuotaUsageRow>();
     public DbSet<Share> Shares => Set<Share>();
+    public DbSet<BannedIpRow> BannedIps => Set<BannedIpRow>();
+    public DbSet<NodeRow> Nodes => Set<NodeRow>();
+    public DbSet<ConnectionRow> Connections => Set<ConnectionRow>();
+    public DbSet<DisconnectRequestRow> DisconnectRequests => Set<DisconnectRequestRow>();
+    public DbSet<SettingsVersionRow> SettingsVersions => Set<SettingsVersionRow>();
+    public DbSet<DataProtectionKeyRow> DataProtectionKeys => Set<DataProtectionKeyRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -121,9 +131,7 @@ public class SettingsDbContext : DbContext
             b.HasKey(u => u.Id);
             var username = b.Property(u => u.Username).IsRequired().HasMaxLength(256);
             // LiteDB compares strings case-insensitively by default, so "Bob" and "bob" were the same user.
-            // NOCASE keeps that behaviour on SQLite. Another provider sets its own collation.
-            if (Database.IsSqlite())
-                username.UseCollation("NOCASE");
+            CaseInsensitive(username);
             b.HasIndex(u => u.Username).IsUnique();
             b.Property(u => u.UserRootDirectory).IsRequired(false);
             b.Property(u => u.HashedPassword).IsRequired(false);
@@ -179,8 +187,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("VirtualFolders");
             b.HasKey(f => f.Id);
             var name = b.Property(f => f.Name).IsRequired().HasMaxLength(256);
-            if (Database.IsSqlite())
-                name.UseCollation("NOCASE");
+            CaseInsensitive(name);
             b.HasIndex(f => f.Name).IsUnique();
             b.Property(f => f.Description).IsRequired(false);
             b.Property(f => f.Storage).IsRequired().HasConversion(
@@ -192,8 +199,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("Groups");
             b.HasKey(g => g.Id);
             var name = b.Property(g => g.Name).IsRequired().HasMaxLength(GroupService.MaximumNameLength);
-            if (Database.IsSqlite())
-                name.UseCollation("NOCASE");
+            CaseInsensitive(name);
             b.HasIndex(g => g.Name).IsUnique();
             b.Property(g => g.Description).IsRequired(false).HasMaxLength(1000);
             b.Property(g => g.Permissions).IsRequired(false).HasConversion(
@@ -232,13 +238,70 @@ public class SettingsDbContext : DbContext
             b.Property(q => q.Scope).HasMaxLength(300);
         });
 
+        // The shared state of several nodes (issue #75). No foreign keys: each node writes only its own rows, and the
+        // rows of a node are removed together (at its stop, or when its heartbeat is too old).
+        modelBuilder.Entity<BannedIpRow>(b =>
+        {
+            b.ToTable("BannedIps");
+            b.HasKey(r => r.Address);
+            b.Property(r => r.Address).HasMaxLength(64);
+            b.HasIndex(r => r.ExpiresUtc);
+        });
+
+        modelBuilder.Entity<NodeRow>(b =>
+        {
+            b.ToTable("Nodes");
+            b.HasKey(r => r.NodeId);
+            b.Property(r => r.NodeId).HasMaxLength(128);
+            b.Property(r => r.Hostname).IsRequired().HasMaxLength(256);
+            b.Property(r => r.Version).IsRequired().HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<ConnectionRow>(b =>
+        {
+            b.ToTable("Connections");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Id).ValueGeneratedNever();
+            b.Property(r => r.NodeId).IsRequired().HasMaxLength(128);
+            b.Property(r => r.Protocol).IsRequired().HasMaxLength(32);
+            b.Property(r => r.RemoteEndPoint).IsRequired().HasMaxLength(128);
+            b.Property(r => r.ClientVersion).HasMaxLength(256);
+            b.Property(r => r.Username).HasMaxLength(256);
+            b.Property(r => r.AuthMethod).HasMaxLength(64);
+            b.Property(r => r.Transfers).IsRequired();
+            b.HasIndex(r => r.NodeId);
+        });
+
+        modelBuilder.Entity<DisconnectRequestRow>(b =>
+        {
+            b.ToTable("DisconnectRequests");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.NodeId).IsRequired().HasMaxLength(128);
+            b.Property(r => r.Reason).IsRequired().HasMaxLength(512);
+            b.HasIndex(r => r.NodeId);
+        });
+
+        modelBuilder.Entity<SettingsVersionRow>(b =>
+        {
+            b.ToTable("SettingsVersions");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Id).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<DataProtectionKeyRow>(b =>
+        {
+            b.ToTable("DataProtectionKeys");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.FriendlyName).HasMaxLength(256);
+            b.Property(r => r.Xml).IsRequired();
+        });
+
         modelBuilder.Entity<Role>(b =>
         {
             b.ToTable("Roles");
             b.HasKey(r => r.Id);
             var name = b.Property(r => r.Name).IsRequired().HasMaxLength(AdminAdministrationService.MaximumRoleNameLength);
-            if (Database.IsSqlite())
-                name.UseCollation("NOCASE");
+            CaseInsensitive(name);
             b.HasIndex(r => r.Name).IsUnique();
             b.Property(r => r.Description).HasMaxLength(1000);
         });
@@ -248,8 +311,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("Admins");
             b.HasKey(a => a.Id);
             var username = b.Property(a => a.Username).IsRequired().HasMaxLength(256);
-            if (Database.IsSqlite())
-                username.UseCollation("NOCASE");
+            CaseInsensitive(username);
             b.HasIndex(a => a.Username).IsUnique();
             b.Property(a => a.PasswordHash).IsRequired();
             b.Property(a => a.Status).HasConversion<string>().HasMaxLength(16);
@@ -265,8 +327,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("ApiKeys");
             b.HasKey(k => k.Id);
             var name = b.Property(k => k.Name).IsRequired().HasMaxLength(100);
-            if (Database.IsSqlite())
-                name.UseCollation("NOCASE");
+            CaseInsensitive(name);
             b.Property(k => k.Prefix).IsRequired().HasMaxLength(16);
             b.Property(k => k.KeyHash).IsRequired().HasMaxLength(64);
             b.HasIndex(k => k.KeyHash).IsUnique();
@@ -319,8 +380,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("Webhooks");
             b.HasKey(w => w.Id);
             var name = b.Property(w => w.Name).IsRequired().HasMaxLength(100);
-            if (Database.IsSqlite())
-                name.UseCollation("NOCASE");
+            CaseInsensitive(name);
             b.HasIndex(w => w.Name).IsUnique();
             b.Property(w => w.Url).IsRequired().HasMaxLength(2048);
             b.Property(w => w.Method).IsRequired().HasMaxLength(8);
@@ -337,8 +397,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("EventRules");
             b.HasKey(r => r.Id);
             var name = b.Property(r => r.Name).IsRequired().HasMaxLength(EventRule.MaxNameLength);
-            if (Database.IsSqlite())
-                name.UseCollation("NOCASE");
+            CaseInsensitive(name);
             b.HasIndex(r => r.Name).IsUnique();
             b.Property(r => r.Description).HasMaxLength(1000);
             b.Property(r => r.Trigger).IsRequired().HasConversion<string>().HasMaxLength(16);
@@ -376,6 +435,20 @@ public class SettingsDbContext : DbContext
             b.HasIndex(d => new { d.Status, d.NextAttemptUtc });
             b.HasIndex(d => new { d.WebhookId, d.CreatedUtc });
         });
+    }
+
+    /// <summary>
+    /// Marks a text column that compares without case (user, group, role, folder and webhook names). SQLite gets the
+    /// NOCASE collation here; another provider applies the mark in its own model rules (PostgreSQL: citext; the default
+    /// collation of SQL Server is case-insensitive already).
+    /// </summary>
+    public const string CaseInsensitiveAnnotation = "FreeSftpSharp:CaseInsensitive";
+
+    private void CaseInsensitive(PropertyBuilder<string> property)
+    {
+        property.HasAnnotation(CaseInsensitiveAnnotation, true);
+        if (Database.IsSqlite())
+            property.UseCollation("NOCASE");
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { Converters = { new JsonStringEnumConverter() } };

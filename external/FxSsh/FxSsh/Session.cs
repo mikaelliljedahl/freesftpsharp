@@ -155,16 +155,18 @@ namespace FxSsh
         /// Creates a session over an accepted socket. The algorithm selection
         /// is frozen at construction (a null <paramref name="algorithms"/>
         /// uses the library defaults); later ConfigureHazmat calls on the
-        /// same selection throw.
+        /// same selection throw. A non-null <paramref name="remoteEndPoint"/>
+        /// replaces the address of the socket (the client behind a proxy).
         /// </summary>
-        public Session(Socket socket, Dictionary<string, string> hostKey, string serverBanner, AlgorithmSelection algorithms = null)
+        public Session(Socket socket, Dictionary<string, string> hostKey, string serverBanner, AlgorithmSelection algorithms = null,
+            EndPoint remoteEndPoint = null)
         {
             ArgumentNullException.ThrowIfNull(socket);
             ArgumentNullException.ThrowIfNull(hostKey);
 
             Id = Interlocked.Increment(ref _nextId);
             _socket = socket;
-            RemoteEndPoint = socket.RemoteEndPoint;
+            RemoteEndPoint = remoteEndPoint ?? socket.RemoteEndPoint;
             _hostKey = hostKey.ToDictionary(s => s.Key, s => s.Value);
             ServerVersion = serverBanner;
 

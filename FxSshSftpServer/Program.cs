@@ -11,6 +11,8 @@ using Serilog;
 using FxSsh.SshServerModule;
 
 using SshServer.Settings.Sql;
+using SshServer.Settings.PostgreSql;
+using SshServer.Settings.SqlServer;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.AzureBlob;
 using SshServer.Filesystem.Gcs;
@@ -19,6 +21,7 @@ using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServerModule.Cluster;
 using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
@@ -80,9 +83,12 @@ builder.Services.AddHostedService<HostedServer>();
 builder.Services.AddSshServerSecurity(); // auto-ban state, IIpBanService for the admin UI
 builder.Services.AddSshServerConnections(); // the open connections, shared with the admin UI
 builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:BindToAddress override the stored settings
+builder.Services.AddSshServerCluster(builder.Configuration); // several nodes on one database (#75): off until Cluster:Enabled
 
 Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);
+builder.Services.AddPostgreSqlSettings(); // Settings:Provider=PostgreSQL (#75); the default stays SQLite
+builder.Services.AddSqlServerSettings(); // Settings:Provider=SqlServer (#75)
 Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one

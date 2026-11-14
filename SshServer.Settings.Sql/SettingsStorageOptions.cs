@@ -1,26 +1,18 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
+using SshServer.Settings.Sql.Database;
 
 namespace SshServer.Settings.Sql;
-
-/// <summary>Where the settings and users are stored.</summary>
-public enum SettingsProvider
-{
-    /// <summary>EF Core with SQLite (the default).</summary>
-    Sqlite,
-
-    /// <summary>The old LiteDB file. Obsolete, kept for compatibility.</summary>
-    LiteDb,
-}
 
 /// <summary>
 /// The settings storage configuration:
 /// <list type="bullet">
-/// <item><c>Settings:Provider</c> = <c>Sqlite</c> (default) or <c>LiteDb</c>.</item>
-/// <item><c>ConnectionStrings:Settings</c> = the connection string of the SQL database. Default:
-/// <c>Data Source=&lt;app directory&gt;/freesftpsharp.db</c>. A relative SQLite path is relative to the app directory.</item>
-/// <item><c>Settings:LiteDbPath</c> = the LiteDB file that is used by the LiteDb provider and imported once by the
-/// Sqlite provider. Default: <c>config.db</c> in the current directory (where the old versions put it), else in the
+/// <item><c>Settings:Provider</c> = <c>Sqlite</c> (default), <c>PostgreSQL</c>, <c>SqlServer</c> (an
+/// <see cref="ISettingsDatabaseProvider"/>) or <c>LiteDb</c> (the old file, obsolete).</item>
+/// <item><c>ConnectionStrings:Settings</c> = the connection string of the SQL database. SQLite default:
+/// <c>Data Source=&lt;app directory&gt;/freesftpsharp.db</c>; a relative SQLite path is relative to the app directory.
+/// PostgreSQL and SQL Server need it.</item>
+/// <item><c>Settings:LiteDbPath</c> = the LiteDB file that is used by the LiteDb provider and imported once by a SQL
+/// provider. Default: <c>config.db</c> in the current directory (where the old versions put it), else in the
 /// app directory.</item>
 /// </list>
 /// </summary>
@@ -32,10 +24,17 @@ public sealed class SettingsStorageOptions
     public const string DefaultSqliteFileName = "freesftpsharp.db";
     public const string LegacyLiteDbFileName = "config.db";
 
-    public SettingsProvider Provider { get; init; } = SettingsProvider.Sqlite;
+    /// <summary>The value of <c>Settings:Provider</c> for the old LiteDB file.</summary>
+    public const string LiteDbProviderName = "LiteDb";
 
-    /// <summary>The resolved connection string (SQL providers only).</summary>
-    public string ConnectionString { get; init; } = "";
+    /// <summary>The configured provider name (<c>Settings:Provider</c>); default <c>Sqlite</c>.</summary>
+    public string Provider { get; init; } = SqliteSettingsDatabaseProvider.ProviderName;
+
+    /// <summary>True for the old LiteDB file, which is not an EF Core provider.</summary>
+    public bool IsLiteDb => string.Equals(Provider, LiteDbProviderName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The configured connection string (<c>ConnectionStrings:Settings</c>), or null. The provider resolves it.</summary>
+    public string? ConfiguredConnectionString { get; init; }
 
     /// <summary>The LiteDB file: the store of the LiteDb provider, the import source of the SQL providers.</summary>
     public string LiteDbPath { get; init; } = "";
@@ -45,13 +44,7 @@ public sealed class SettingsStorageOptions
         baseDirectory ??= AppContext.BaseDirectory;
 
         var providerText = configuration[ProviderKey];
-        var provider = SettingsProvider.Sqlite;
-        if (!string.IsNullOrWhiteSpace(providerText)
-            && !Enum.TryParse(providerText.Trim(), ignoreCase: true, out provider))
-        {
-            throw new InvalidOperationException(
-                $"Unknown {ProviderKey} '{providerText}'. Supported values: {string.Join(", ", Enum.GetNames<SettingsProvider>())}.");
-        }
+        var provider = string.IsNullOrWhiteSpace(providerText) ? SqliteSettingsDatabaseProvider.ProviderName : providerText.Trim();
 
         var configuredLiteDbPath = configuration[LiteDbPathKey];
         string liteDbPath;
@@ -68,44 +61,17 @@ public sealed class SettingsStorageOptions
                 : inBaseDirectory;
         }
 
-        var connectionString = provider switch
-        {
-            SettingsProvider.Sqlite => ResolveSqliteConnectionString(configuration.GetConnectionString(ConnectionStringName), baseDirectory),
-            _ => "",
-        };
-
         return new SettingsStorageOptions
         {
             Provider = provider,
-            ConnectionString = connectionString,
+            ConfiguredConnectionString = configuration.GetConnectionString(ConnectionStringName),
             LiteDbPath = liteDbPath,
         };
     }
 
-    /// <summary>
-    /// Uses the default file next to the app when nothing is configured, and makes a relative file path
-    /// absolute against <paramref name="baseDirectory"/> (not the current directory).
-    /// </summary>
-    public static string ResolveSqliteConnectionString(string? configured, string baseDirectory)
-    {
-        var builder = new SqliteConnectionStringBuilder(
-            string.IsNullOrWhiteSpace(configured) ? $"Data Source={DefaultSqliteFileName}" : configured);
-
-        var dataSource = builder.DataSource;
-        var inMemory = builder.Mode == SqliteOpenMode.Memory
-            || string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase);
-
-        if (string.IsNullOrWhiteSpace(dataSource))
-            builder.DataSource = Path.Combine(baseDirectory, DefaultSqliteFileName);
-        else if (!inMemory && !dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-            builder.DataSource = ResolvePath(dataSource, baseDirectory);
-
-        return builder.ToString();
-    }
-
     // A fully qualified path is kept as it is. Path.GetFullPath(path, basePath) throws
     // when basePath is not fully qualified, also when path itself is absolute.
-    private static string ResolvePath(string path, string baseDirectory)
+    internal static string ResolvePath(string path, string baseDirectory)
     {
         return Path.IsPathFullyQualified(path) ? Path.GetFullPath(path) : Path.GetFullPath(path, baseDirectory);
     }

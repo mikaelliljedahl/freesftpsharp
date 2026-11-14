@@ -697,8 +697,8 @@ Configuration (`appsettings.json`, environment variables such as `Settings__Prov
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `Settings:Provider` | `Sqlite` | `Sqlite`, or `LiteDb` for the old LiteDB file (obsolete) |
-| `ConnectionStrings:Settings` | `Data Source=freesftpsharp.db` | The SQLite connection string. A relative path is relative to the application directory (`AppContext.BaseDirectory`), not to the current directory |
+| `Settings:Provider` | `Sqlite` | `Sqlite`, `PostgreSQL` or `SqlServer` (several nodes, see [docs/CLUSTER.md](docs/CLUSTER.md)), or `LiteDb` for the old LiteDB file (obsolete) |
+| `ConnectionStrings:Settings` | `Data Source=freesftpsharp.db` | The connection string of the provider. For SQLite a relative path is relative to the application directory (`AppContext.BaseDirectory`), not to the current directory |
 | `Settings:LiteDbPath` | `config.db` in the current directory, else in the application directory | The LiteDB file: imported once by `Sqlite`, used directly by `LiteDb` |
 
 ```json
@@ -755,12 +755,15 @@ selected with `Settings:Provider` = `LiteDb`, but it will be removed in a later 
 
 ### Another database
 
-The model is provider-neutral (lists are JSON text columns). To add an EF Core provider such as SQL Server, add a
-value to `SettingsProvider`, its `Use...` call in `Startup.CreateDbContextOptions`, and its own migrations.
-To change the model, add a SQLite migration:
+PostgreSQL and SQL Server are built in (`Settings:Provider`, [docs/CLUSTER.md](docs/CLUSTER.md)). The model is
+provider-neutral (lists are JSON text columns). Another EF Core provider is one project with an
+`ISettingsDatabaseProvider`, its `Add...Settings()` registration and its own migrations. To change the model, add a
+migration for each provider:
 
 ```sh
 dotnet ef migrations add <Name> --project SshServer.Settings.Sql --output-dir Migrations/Sqlite
+dotnet ef migrations add <Name> --project SshServer.Settings.PostgreSql --startup-project SshServer.Settings.PostgreSql --output-dir Migrations
+dotnet ef migrations add <Name> --project SshServer.Settings.SqlServer --startup-project SshServer.Settings.SqlServer --output-dir Migrations
 ```
 
 ## Sample
