@@ -114,6 +114,19 @@
           "AngleSharp.Css": "1.0.0-beta.144"
         }
       },
+      "AWSSDK.Core": {
+        "type": "Transitive",
+        "resolved": "4.0.102.14",
+        "contentHash": "pRYOOIyj40UdQ6G9iq8AOU30sFPqWS/umM/sFTmAl4n1S6AVbVa67DJpJTxD+9qJFqweHPcyVW7Qb4BbUBLJdg=="
+      },
+      "AWSSDK.S3": {
+        "type": "Transitive",
+        "resolved": "4.0.104.7",
+        "contentHash": "mmURYvVR/+CM3+9FycHsz+ZZ2I3B1PPch7msARX8fKtiAfkDHYXCzdwQOKA5SvGGvleOKhLGa8YcWlAlbAtu0g==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
+        }
+      },
       "BouncyCastle.Cryptography": {
         "type": "Transitive",
         "resolved": "2.7.0",
@@ -707,6 +720,7 @@
           "Serilog.Sinks.HtmlFile": "[1.0.1, )",
           "SshServer.Filesystem.Encrypted": "[1.0.0, )",
           "SshServer.Filesystem.LocalDisk": "[1.0.0, )",
+          "SshServer.Filesystem.S3": "[1.0.0, )",
           "SshServer.Settings.Sql": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
         }
@@ -721,6 +735,13 @@
       "sshserver.filesystem.localdisk": {
         "type": "Project",
         "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
+      "sshserver.filesystem.s3": {
+        "type": "Project",
+        "dependencies": {
+          "AWSSDK.S3": "[4.0.104.7, )",
           "SshServer.Interfaces": "[1.0.0, )"
         }
       },

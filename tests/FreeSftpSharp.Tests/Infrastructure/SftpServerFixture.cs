@@ -105,7 +105,7 @@ public class SftpServerFixture : IAsyncLifetime
         throw new InvalidOperationException("Could not start the test SFTP server on a free port.", lastError);
     }
 
-    public async ValueTask DisposeAsync()
+    public virtual async ValueTask DisposeAsync()
     {
         if (_server != null)
         {

@@ -326,7 +326,8 @@ namespace SshServerModule.Sftp
         /// <summary>
         /// Replaces an exception of the file system with the exception type that the engine maps to the SSH_FX code of
         /// its <see cref="FileSystemError"/>, with only the virtual path in its message. The original exception is logged
-        /// here: at debug level for a <see cref="FileSystemException"/> (a client can cause it), at error level otherwise.
+        /// here: as a warning for <see cref="FileSystemError.Failure"/> (a failure of the storage), at debug level for the other
+        /// codes of a <see cref="FileSystemException"/> (a client can cause them), at error level otherwise.
         /// An unexpected exception becomes an <see cref="InvalidOperationException"/>, which the engine answers with
         /// SSH_FX_FAILURE and logs as an error.
         /// </summary>
@@ -341,7 +342,12 @@ namespace SshServerModule.Sftp
                 return Own(new InvalidOperationException($"Internal error: {path}"));
             }
 
-            _logger.LogDebug(ex, "SFTP operation of user {Username} on {Path} failed.", _username, path);
+            // A storage failure (an I/O error of the disk, an error of a cloud storage) is not caused by the client,
+            // and the client only gets SSH_FX_FAILURE: log the cause where an operator sees it.
+            if (fileSystemException.Error == FileSystemError.Failure)
+                _logger.LogWarning(ex, "SFTP operation of user {Username} on {Path} failed in the storage.", _username, path);
+            else
+                _logger.LogDebug(ex, "SFTP operation of user {Username} on {Path} failed.", _username, path);
             return Own(fileSystemException.Error switch
             {
                 FileSystemError.NoSuchFile => new FileNotFoundException($"No such file: {path}"),

@@ -57,6 +57,19 @@
           "Serilog": "4.3.1"
         }
       },
+      "AWSSDK.Core": {
+        "type": "Transitive",
+        "resolved": "4.0.102.14",
+        "contentHash": "pRYOOIyj40UdQ6G9iq8AOU30sFPqWS/umM/sFTmAl4n1S6AVbVa67DJpJTxD+9qJFqweHPcyVW7Qb4BbUBLJdg=="
+      },
+      "AWSSDK.S3": {
+        "type": "Transitive",
+        "resolved": "4.0.104.7",
+        "contentHash": "mmURYvVR/+CM3+9FycHsz+ZZ2I3B1PPch7msARX8fKtiAfkDHYXCzdwQOKA5SvGGvleOKhLGa8YcWlAlbAtu0g==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
+        }
+      },
       "IPNetwork2": {
         "type": "Transitive",
         "resolved": "3.0.667",
@@ -228,6 +241,13 @@
       "sshserver.filesystem.localdisk": {
         "type": "Project",
         "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
+      "sshserver.filesystem.s3": {
+        "type": "Project",
+        "dependencies": {
+          "AWSSDK.S3": "[4.0.104.7, )",
           "SshServer.Interfaces": "[1.0.0, )"
         }
       },

@@ -237,6 +237,84 @@ logs the effective port and addresses and whether they come from the configurati
 variables (the `--port` and `--bind` shortcuts exist only in `ServerConsoleApp`); its settings page shows when the
 port is overridden.
 
+## S3 storage backend
+
+`SshServer.Filesystem.S3` stores the files of a user in an S3 bucket, or below a key prefix in it. It works with AWS S3
+and with S3-compatible stores (MinIO, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, ...). Both hosts
+register it with `services.AddS3Storage()` under the provider name `s3`. Nothing changes for a server that does not
+use it: no S3 client is created and no setting is needed.
+
+> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
+> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+
+### Options (`S3StorageOptions`)
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `Bucket` | (required) | The bucket. It must exist; the server never creates or removes a bucket. |
+| `KeyPrefix` | empty | The prefix that is `/` for the user, for example `users/alice`. Empty: the whole bucket. |
+| `Region` | environment | For example `eu-north-1`. Empty: `AWS_REGION` or the profile. With `Endpoint`, the signing region (default `us-east-1`). |
+| `Endpoint` | empty | The URL of an S3-compatible store, for example `http://localhost:9000`. Empty for AWS S3. |
+| `ForcePathStyle` | `false` | Path-style URLs (`endpoint/bucket/key`). MinIO needs it. |
+| `AccessKey`, `SecretKey` | empty | Both or neither. Empty: the credentials of the environment (variables, profile, instance role, IRSA). `SecretKey` is never shown by `ToString()`. |
+| `StorageClass` | bucket default | For example `STANDARD_IA`. |
+| `ServerSideEncryption`, `KmsKeyId` | bucket default | `AES256`, or `aws:kms` with an optional KMS key id. |
+| `UploadPartSize` | 5 MiB | The part size of a multipart upload (5 MiB to 512 MiB), held in memory. The largest file is 10,000 parts (48.8 GiB with 5 MiB). |
+| `UploadConcurrency` | 2 | The parts of one upload that are sent while the next part fills (1 to 64). |
+| `ReadAheadSize` | 4 MiB | The bytes that one ranged GetObject reads ahead (64 KiB to 512 MiB). |
+
+### Behaviour
+
+- **Directories are virtual.** A directory exists when a key starts with its prefix (`dir/`). `mkdir` writes a
+  zero-byte marker object `dir/`, so an empty directory stays. A listing is ListObjectsV2 with the delimiter `/`,
+  page by page. Directories have the time of their marker, or 1970-01-01 in a listing.
+- **Reads** are ranged GetObject requests through a read-ahead buffer: a sequential download is one request per
+  `ReadAheadSize`, not one per 32 KiB SFTP read. The open reads the first block, so a small file stays readable when it
+  is renamed or removed while it is open. A file that another writer replaces while it is open gives a failure
+  (If-Match on the ETag), never mixed content.
+- **Writes** are sequential (no `RandomAccessWrite`). A file smaller than one part is one PutObject; a larger file is a
+  streaming multipart upload, and the object appears when the file is closed. A failed part or a failed completion
+  aborts the multipart upload. A write at the end of an existing file (a resumed upload, `reput`, or `Append`) copies the
+  existing object on the server (UploadPartCopy) or, when it is smaller than one part, reads it into the buffer.
+- **Rename** is CopyObject + DeleteObject (a multipart copy above 5 GiB); a directory rename copies every object below
+  it, then removes the sources. It is not atomic, and its cost grows with the size.
+- **No permissions, no times, no links.** SETSTAT of permissions or times and size changes give `SSH_FX_OP_UNSUPPORTED`;
+  an update that changes nothing (the same size, no fields) works. statvfs (`df`) fails: an object store has no size.
+- **Errors**: 404 is `NoSuchFile`, 403 is `PermissionDenied`, every other S3 error is `Failure`; the log has the status,
+  the S3 error code and the request id, never the bucket or the endpoint.
+- **Known limit**: a lost connection during an upload completes the object with the data received so far (like a
+  partial file on a local disk). An abort on disconnect needs an abort path in the storage interface (follow-up of #53).
+  Add a lifecycle rule `AbortIncompleteMultipartUpload` to the bucket for uploads that the server could not abort.
+
+### IAM permissions
+
+The server needs these actions on the bucket (`arn:aws:s3:::BUCKET`) and its objects (`arn:aws:s3:::BUCKET/PREFIX/*`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::BUCKET",
+      "Condition": { "StringLike": { "s3:prefix": ["PREFIX/*"] } } },
+    { "Effect": "Allow", "Resource": "arn:aws:s3:::BUCKET/PREFIX/*",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"] }
+  ]
+}
+```
+
+`s3:PutObject` also covers the multipart upload and the copy of a rename. With `aws:kms`, the role also needs
+`kms:GenerateDataKey` and `kms:Decrypt` on the key.
+
+### Tests
+
+The conformance suite runs on an in-memory fake S3 client everywhere, and against a real server when
+`FREESFTPSHARP_TEST_S3_ENDPOINT` is set (CI: MinIO on the Ubuntu job). Locally:
+
+```sh
+docker run -d --rm --name minio -p 19000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin bitnamilegacy/minio:2025.4.22
+FREESFTPSHARP_TEST_S3_ENDPOINT=http://127.0.0.1:19000 dotnet test FreeSftpSharp.sln --filter "Category=S3"
+docker stop minio
+```
 ## Encrypted storage
 
 The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
