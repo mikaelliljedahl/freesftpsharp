@@ -12,8 +12,11 @@ public enum UserProtocols
     Sftp = 1,
     WebDav = 2,
 
+    /// <summary>FTP and FTPS (issue #72). Checked after the password, like WebDAV; the client gets 530.</summary>
+    Ftp = 4,
+
     /// <summary>Every protocol. Stored by name, so a user with "All" also gets a protocol that a later version adds.</summary>
-    All = Sftp | WebDav,
+    All = Sftp | WebDav | Ftp,
 }
 
 /// <summary>The rules of <see cref="UserProtocols"/>.</summary>
@@ -21,12 +24,12 @@ public static class UserProtocolRules
 {
     /// <summary>The protocols that the admin UI shows, with their names.</summary>
     public static readonly IReadOnlyList<(UserProtocols Protocol, string Name)> Known =
-        [(UserProtocols.Sftp, "SFTP"), (UserProtocols.WebDav, "WebDAV")];
+        [(UserProtocols.Sftp, "SFTP"), (UserProtocols.WebDav, "WebDAV"), (UserProtocols.Ftp, "FTP")];
 
     /// <summary>True when <paramref name="allowed"/> contains <paramref name="protocol"/>.</summary>
     public static bool Allows(this UserProtocols allowed, UserProtocols protocol) => protocol != UserProtocols.None && (allowed & protocol) == protocol;
 
-    /// <summary>"SFTP, WebDAV" for display; "none" for no protocol.</summary>
+    /// <summary>"SFTP, WebDAV, FTP" for display; "none" for no protocol.</summary>
     public static string Describe(UserProtocols protocols)
     {
         var names = Known.Where(k => (protocols & k.Protocol) != 0).Select(k => k.Name).ToList();

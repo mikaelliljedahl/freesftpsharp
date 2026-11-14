@@ -47,6 +47,7 @@ public static class ConnectionProtocols
 {
     public const string Sftp = "SFTP";
     public const string WebDav = "WebDAV";
+    public const string Ftp = "FTP";
 }
 
 public enum ConnectionEventKind

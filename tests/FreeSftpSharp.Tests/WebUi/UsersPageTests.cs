@@ -174,9 +174,14 @@ public sealed class UsersPageTests : AdminUiComponentContext
 
         page.Find(".edit-user").Click();
         Assert.True(page.Find("#allow-sftp").HasAttribute("checked"));
+        Assert.True(page.Find("#allow-ftp").HasAttribute("checked"));
         page.Find("#allow-webdav").Change(false);
         page.Find("#user-form").Submit();
 
+        page.WaitForAssertion(() => Assert.Equal(UserProtocols.Sftp | UserProtocols.Ftp, Repository.GetUser("paula").AllowedProtocols), SaveTimeout);
+        page.Find(".edit-user").Click();
+        page.Find("#allow-ftp").Change(false);
+        page.Find("#user-form").Submit();
         page.WaitForAssertion(() => Assert.Equal(UserProtocols.Sftp, Repository.GetUser("paula").AllowedProtocols), SaveTimeout);
         page.WaitForAssertion(() => Assert.Contains("SFTP", page.Find("#user-table").TextContent), SaveTimeout);
 

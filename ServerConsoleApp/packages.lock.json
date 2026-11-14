@@ -662,6 +662,13 @@
           "System.Security.Cryptography.Pkcs": "11.0.0"
         }
       },
+      "freesftpsharp.ftp": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServerModule": "[1.0.0, )"
+        }
+      },
       "fxssh": {
         "type": "Project"
       },

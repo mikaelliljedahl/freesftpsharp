@@ -456,8 +456,12 @@
                                 <InputCheckbox id="allow-webdav" class="form-check-input" @bind-Value="form.AllowWebDav" />
                                 <label class="form-check-label" for="allow-webdav">WebDAV</label>
                             </div>
+                            <div class="form-check form-check-inline">
+                                <InputCheckbox id="allow-ftp" class="form-check-input" @bind-Value="form.AllowFtp" />
+                                <label class="form-check-label" for="allow-ftp">FTP/FTPS</label>
+                            </div>
                             <ValidationMessage For="() => form.AllowSftp" />
-                            <div class="form-text">SFTP refuses a protocol that is not allowed like a wrong password; WebDAV answers 403 after a correct password. WebDAV must also be turned on for the server (<code>WebDav:Enabled</code>).</div>
+                            <div class="form-text">SFTP refuses a protocol that is not allowed like a wrong password; WebDAV answers 403 and FTP 530 after a correct password. WebDAV and FTP must also be turned on for the server (<code>WebDav:Enabled</code>, <code>Ftp:Enabled</code>).</div>
                         </fieldset>
 
                         <fieldset class="border rounded p-3 mb-3">
@@ -533,6 +537,10 @@
                                     <div class="form-check form-check-inline mb-0">
                                         <input type="checkbox" id="app-password-sftp" class="form-check-input" @bind="appPasswordSftp" />
                                         <label class="form-check-label small" for="app-password-sftp">SFTP</label>
+                                    </div>
+                                    <div class="form-check form-check-inline mb-0">
+                                        <input type="checkbox" id="app-password-ftp" class="form-check-input" @bind="appPasswordFtp" />
+                                        <label class="form-check-label small" for="app-password-ftp">FTP</label>
                                     </div>
                                     <label class="small" for="app-password-expiry">Expires on (UTC, optional)</label>
                                     <input type="date" id="app-password-expiry" class="form-control form-control-sm w-auto" @bind="appPasswordExpiry" />
@@ -693,6 +701,7 @@
     private string appPasswordName;
     private bool appPasswordWebDav = true;
     private bool appPasswordSftp;
+    private bool appPasswordFtp;
     private DateTime? appPasswordExpiry;
     private string appPasswordError;
     private string newAppPassword;
@@ -833,6 +842,7 @@
         appPasswordName = null;
         appPasswordWebDav = true;
         appPasswordSftp = false;
+        appPasswordFtp = false;
         appPasswordExpiry = null;
         appPasswordError = null;
         newAppPassword = null;
@@ -842,7 +852,8 @@
     {
         appPasswordError = null;
         newAppPassword = null;
-        var protocols = (appPasswordWebDav ? UserProtocols.WebDav : UserProtocols.None) | (appPasswordSftp ? UserProtocols.Sftp : UserProtocols.None);
+        var protocols = (appPasswordWebDav ? UserProtocols.WebDav : UserProtocols.None) | (appPasswordSftp ? UserProtocols.Sftp : UserProtocols.None)
+            | (appPasswordFtp ? UserProtocols.Ftp : UserProtocols.None);
         var expires = appPasswordExpiry is { } date ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc) : (DateTime?)null;
         try
         {
