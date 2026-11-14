@@ -187,7 +187,7 @@ public sealed class EncryptedStorageConfigurationTests : IDisposable
     }
 
     private ValueTask<IFileSystem> CreateUserFileSystemAsync(IServiceProvider services)
-        => services.GetRequiredService<IFileSystemFactory>().CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, Ct);
+        => services.GetRequiredService<IFileSystemFactory>().CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, new ClientContext("SFTP", "127.0.0.1"), Ct);
 
     private string WriteKeyFile(string content, UnixFileMode mode)
     {

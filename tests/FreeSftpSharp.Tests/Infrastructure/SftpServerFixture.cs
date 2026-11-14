@@ -9,6 +9,7 @@ using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
+using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
@@ -33,6 +34,7 @@ public class SftpServerFixture : IAsyncLifetime
 
     private HostedServer? _server;
     private InMemorySettingsRepository? _repository;
+    private IEventBus? _eventBus;
 
     public int Port { get; private set; }
     /// <summary><c>ServerSettings.IdleTimeout</c> in seconds. Override it in a derived fixture.</summary>
@@ -49,6 +51,8 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual SshServerOptions? CreateListenOptions(int port) => null;
     /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
+    /// <summary>The event bus of the server (file, auth and system events). Null: no events. Override it in a derived fixture.</summary>
+    protected virtual IEventBus? CreateEventBus() => null;
     /// <summary>The auto-ban state of the running server.</summary>
     public LoginBanTracker BanTracker { get; private set; } = null!;
     /// <summary>The open connections of the running server.</summary>
@@ -115,6 +119,9 @@ public class SftpServerFixture : IAsyncLifetime
             }
             _server = null;
         }
+
+        if (_eventBus is IAsyncDisposable bus)
+            await bus.DisposeAsync();
 
         try
         {
@@ -200,17 +207,20 @@ public class SftpServerFixture : IAsyncLifetime
         var time = CreateTimeProvider();
         BanTracker = new LoginBanTracker(time);
         Connections = new ConnectionRegistry(time);
-        return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(), repository, BanTracker,
+        _eventBus ??= CreateEventBus(); // one bus for all start attempts
+        return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(Connections, _eventBus), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
-            Connections);
+            Connections, _eventBus);
     }
 
     /// <summary>
     /// The storage of the users. The default is the storage of the hosts: the "local" provider at the user root
-    /// (AddSshServerStorage + AddLocalDiskStorage). Override it in a derived fixture.
+    /// (AddSshServerStorage + AddLocalDiskStorage), with the connection registry and the event bus of the fixture.
+    /// Override it in a derived fixture.
     /// </summary>
-    protected virtual IFileSystemFactory CreateFileSystemFactory()
-        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), new EffectivePermissionsService());
+    protected virtual IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(),
+            new EffectivePermissionsService(), connections, events);
 
     private static int GetFreeTcpPort()
     {

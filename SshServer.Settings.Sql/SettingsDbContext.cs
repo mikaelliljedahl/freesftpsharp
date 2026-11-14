@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Permissions;
 
 namespace SshServer.Settings.Sql;
@@ -12,7 +13,8 @@ namespace SshServer.Settings.Sql;
 /// <see cref="ServerSettings"/> and <see cref="User"/> classes from SshServer.Interfaces, so the stored
 /// fields are the same as in the LiteDB file. Lists of strings are stored as JSON text columns
 /// (EF Core primitive collections), which works on SQLite and on SQL Server. The permissions and path filters of a
-/// user are JSON text columns too, with the permission flags as names (<c>{"/":"All","/in":"Upload"}</c>).
+/// user are JSON text columns too, with the permission flags as names (<c>{"/":"All","/in":"Upload"}</c>). The audit
+/// log (<see cref="AuditEntry"/>) is in the same database.
 /// </summary>
 public class SettingsDbContext : DbContext
 {
@@ -22,6 +24,7 @@ public class SettingsDbContext : DbContext
 
     public DbSet<ServerSettings> ServerSettings => Set<ServerSettings>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,6 +58,22 @@ public class SettingsDbContext : DbContext
                 v => ToJson(v), v => FromJson<Dictionary<string, FilePermissions>>(v), JsonComparer<Dictionary<string, FilePermissions>>());
             b.Property(u => u.PathFilters).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<Dictionary<string, PathFilter>>(v), JsonComparer<Dictionary<string, PathFilter>>());
+        });
+
+        modelBuilder.Entity<AuditEntry>(b =>
+        {
+            b.ToTable("AuditEntries");
+            b.HasKey(a => a.Id);
+            b.Property(a => a.Category).IsRequired().HasMaxLength(32);
+            b.Property(a => a.Type).IsRequired().HasMaxLength(64);
+            b.Property(a => a.Status).IsRequired().HasMaxLength(32);
+            b.Property(a => a.Username).HasMaxLength(256);
+            b.Property(a => a.Actor).HasMaxLength(256);
+            b.Property(a => a.RemoteIp).HasMaxLength(64);
+            b.Property(a => a.Protocol).HasMaxLength(32);
+            b.Property(a => a.SessionId).HasMaxLength(64);
+            b.HasIndex(a => a.TimestampUtc);
+            b.HasIndex(a => a.Username);
         });
     }
 

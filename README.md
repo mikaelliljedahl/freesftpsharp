@@ -65,6 +65,7 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | Server settings (`/general`) | Listen port and bind addresses (with a note when `SshServer:Port` / `SshServer:BindToAddress` override them), server banner, idle timeout, `EnableCommand`, `EnableDirectTcpIp` (with a security warning), the host key fingerprints (never the private keys) and the algorithms the server offers |
 | Connections (`/connections`) | The open client connections (user, client address, protocol and client version, connected since, last activity) with the files they read or write now and the bytes so far, refreshed every 2 seconds; a "Disconnect" action with a confirmation |
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
+| Audit (`/audit`) | The audit log: uploads, downloads, deletes, renames, directories, logins and failed logins, bans, changes of users and settings, with user, client address, path, size, duration and status; filters (user, type, status, date range) and a CSV export |
 
 The UI has a dark mode (the half-circle button in the top bar; it follows the OS by default) and works on phone widths.
 
@@ -262,6 +263,20 @@ Configuration (`appsettings.json`, environment variables such as `Settings__Prov
   "ConnectionStrings": { "Settings": "Data Source=/var/lib/freesftpsharp/freesftpsharp.db" }
 }
 ```
+
+### Audit log
+
+Every file operation, login, ban and change of a user or of the server settings is an event on the internal event
+bus. The audit log writes each event to the table `AuditEntries` of the same SQLite database (nothing to configure)
+and shows it on the Audit page. Entries older than `Audit:RetentionDays` (default `90`; `0` keeps all) are removed
+once a day. Logins, failed logins and bans are also written to the server log as one line each, for log readers such
+as fail2ban, for example:
+
+```
+Auth LoginFailed user bob from 203.0.113.9 method password protocol SSH: wrong password
+```
+
+With `Settings:Provider=LiteDb` there is no audit table and the Audit page says so.
 
 ### Upgrade from LiteDB (config.db)
 

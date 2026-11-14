@@ -14,6 +14,7 @@ using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
+using SshServerModule.Events;
 using SshServerModule.Connections;
 
 using FxSshSftpServer.Security;
@@ -56,6 +57,8 @@ builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:Bind
 
 Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);
+Log.Debug("AddSshServerEvents...");
+builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
