@@ -45,9 +45,6 @@ public sealed class PathRuleResolver
         return FilePermissions.All; // not reached: EffectivePermissions always has "/"
     }
 
-    /// <summary>The path filter in <paramref name="directory"/> (a virtual path), or null when none applies.</summary>
-    public PathFilter? FilterOf(string directory) => FilterOfCanonical(Canonical(directory));
-
     /// <summary>True when <paramref name="path"/>, or a directory on the way to it, matches a hidden pattern.</summary>
     public bool IsHidden(string path)
     {

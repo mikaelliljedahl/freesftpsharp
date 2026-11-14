@@ -78,7 +78,18 @@ Permissions, path filters, quotas, bandwidth limits and events wrap an `IFileSys
 - One decorator handles one rule.
 - The storage factory (`StorageFileSystemFactory`) builds the decorator chain in one place, in a documented order.
 - Protocols never repeat a rule. SFTP, WebDAV, FTP and the web client get it from the chain.
-- Test each decorator alone with `InMemoryFileSystem`.
+- Test each decorator alone with `InMemoryFileSystem`, and run the conformance suite through it.
+
+The chain today, from the backend outwards:
+
+1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
+   `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
+   factory leaves it out for a user who may do everything. It compares paths like the backend does
+   (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
+2. `ConnectionTrackingFileSystem` (#57), added by the protocol on top of the factory chain (see "Connections").
+
+The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
+groups, #61). No protocol and no backend reads `User.Permissions` itself.
 
 ## General rules
 
