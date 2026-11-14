@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
 using Microsoft.AspNetCore.DataProtection;
@@ -191,6 +193,30 @@ public sealed class StorageSettingsRepositoryTests : IDisposable
         var ex = Assert.Throws<ArgumentException>(() => otherKeys.Decode(user.Storage!));
         Assert.Contains("cannot be decrypted", ex.Message);
         Assert.DoesNotContain("very-secret-key-123", ex.ToString());
+    }
+
+    [Fact]
+    public void The_secret_protection_of_the_hosts_creates_its_keys_only_at_the_first_secret()
+    {
+        using var temp = new TempDirectory();
+        var keys = Path.Combine(temp.Path, "keys");
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [SecretProtection.KeysPathKey] = keys })
+            .Build();
+        using var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
+            .AddSshServerSecretProtection(configuration)
+            .BuildServiceProvider();
+
+        var protector = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+            .GetRequiredService<SshServer.Interfaces.Security.ISecretProtector>(services);
+        Assert.IsType<DataProtectionSecretProtector>(protector);
+        Assert.False(Directory.Exists(keys), "No key may be created before a secret needs one (zero-configuration start).");
+
+        var protectedValue = protector.Protect("s3-secret");
+
+        Assert.NotEqual("s3-secret", protectedValue);
+        Assert.Equal("s3-secret", protector.Unprotect(protectedValue));
+        Assert.NotEmpty(Directory.GetFiles(keys, "key-*.xml"));
     }
 
     [Fact]

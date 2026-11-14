@@ -7,11 +7,14 @@ using SshServer.Interfaces.Security;
 namespace SshServer.Settings.Sql;
 
 /// <summary>
-/// The ASP.NET Core data protection of the hosts: it encrypts the secrets of the storage configurations in the settings
-/// database (<see cref="DataProtectionSecretProtector"/>, issue #56) and protects the admin login cookie and the
-/// antiforgery tokens. The keys are stored in <c>DataProtection:KeysPath</c> (default <c>keys</c> next to the program),
-/// so a login and a stored secret survive a restart. Two hosts that share a settings database must share this directory.
-/// No key is created before the first secret or login needs one.
+/// The encryption of the secrets of the storage configurations in the settings database (issue #56), with ASP.NET Core
+/// data protection keys in <c>DataProtection:KeysPath</c> (default <c>keys</c> next to the program). The admin UI keeps
+/// its login cookie keys in the same directory with the same application name, so one key ring serves both. Two hosts
+/// that share a settings database must share this directory.
+/// <para>
+/// Nothing is created at start: the key ring is opened at the first secret, so a server without secrets (the
+/// zero-configuration start) writes no key file.
+/// </para>
 /// </summary>
 public static class SecretProtection
 {
@@ -19,22 +22,32 @@ public static class SecretProtection
     public const string DefaultKeysDirectory = "keys";
     public const string ApplicationName = "FreeSftpSharp.Admin";
 
-    public static IServiceCollection AddSshServerSecretProtection(this IServiceCollection services, IConfiguration configuration)
+    /// <summary>The full path of the data protection keys directory.</summary>
+    public static string KeysPath(IConfiguration configuration)
     {
         var configured = configuration[KeysPathKey];
-        var keysPath = Path.GetFullPath(string.IsNullOrWhiteSpace(configured) ? DefaultKeysDirectory : configured,
-            AppContext.BaseDirectory);
+        return Path.GetFullPath(string.IsNullOrWhiteSpace(configured) ? DefaultKeysDirectory : configured, AppContext.BaseDirectory);
+    }
 
-        var builder = services.AddDataProtection()
-            .SetApplicationName(ApplicationName)
-            .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
-
-        // On Windows the keys are encrypted with DPAPI. On other platforms they are stored unencrypted, and
-        // ASP.NET Core logs a warning about it: protect the directory with file permissions.
+    /// <summary>
+    /// Configures a data protection builder for the keys directory: the application name and, on Windows, DPAPI. On
+    /// other platforms the keys are stored unencrypted (ASP.NET Core logs a warning): protect the directory with file
+    /// permissions.
+    /// </summary>
+    public static IDataProtectionBuilder UseSshServerKeys(this IDataProtectionBuilder builder, string keysPath)
+    {
+        builder.SetApplicationName(ApplicationName).PersistKeysToFileSystem(new DirectoryInfo(keysPath));
         if (OperatingSystem.IsWindows())
             builder.ProtectKeysWithDpapi();
+        return builder;
+    }
 
-        services.Replace(ServiceDescriptor.Singleton<ISecretProtector, DataProtectionSecretProtector>());
+    /// <summary>Registers <see cref="ISecretProtector"/> on the data protection keys of <see cref="KeysPath"/>.</summary>
+    public static IServiceCollection AddSshServerSecretProtection(this IServiceCollection services, IConfiguration configuration)
+    {
+        var keysPath = KeysPath(configuration);
+        services.Replace(ServiceDescriptor.Singleton<ISecretProtector>(_ => new DataProtectionSecretProtector(
+            () => DataProtectionProvider.Create(new DirectoryInfo(keysPath), builder => builder.UseSshServerKeys(keysPath)))));
         return services;
     }
 }
@@ -44,14 +57,20 @@ public sealed class DataProtectionSecretProtector : ISecretProtector
 {
     private const string Purpose = "FreeSftpSharp.StorageSecrets.v1";
 
-    private readonly IDataProtector _protector;
+    private readonly Lazy<IDataProtector> _protector;
 
-    public DataProtectionSecretProtector(IDataProtectionProvider provider)
+    /// <param name="provider">Creates the data protection provider at the first secret.</param>
+    public DataProtectionSecretProtector(Func<IDataProtectionProvider> provider)
     {
-        _protector = provider.CreateProtector(Purpose);
+        _protector = new Lazy<IDataProtector>(() => provider().CreateProtector(Purpose));
     }
 
-    public string Protect(string plaintext) => _protector.Protect(plaintext);
+    public DataProtectionSecretProtector(IDataProtectionProvider provider)
+        : this(() => provider)
+    {
+    }
 
-    public string Unprotect(string protectedValue) => _protector.Unprotect(protectedValue);
+    public string Protect(string plaintext) => _protector.Value.Protect(plaintext);
+
+    public string Unprotect(string protectedValue) => _protector.Value.Unprotect(protectedValue);
 }

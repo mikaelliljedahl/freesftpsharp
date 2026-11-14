@@ -44,7 +44,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
-// The data protection keys (login cookie, stored storage secrets) come with AddSshServerSettings.
+builder.Services.AddAdminDataProtection(builder.Configuration); // the same keys directory as the storage secrets (AddSshServerSettings)
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
