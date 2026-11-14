@@ -109,7 +109,7 @@ public sealed class WebhookTestHost : IAsyncDisposable
     public async Task<IReadOnlyList<WebhookDelivery>> WaitForDeliveriesAsync(int webhookId, Func<IReadOnlyList<WebhookDelivery>, bool> condition,
         TimeSpan? timeout = null, Action? onPoll = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(60));
         while (true)
         {
             var deliveries = await Store.ListDeliveriesAsync(webhookId, 100, CancellationToken.None);

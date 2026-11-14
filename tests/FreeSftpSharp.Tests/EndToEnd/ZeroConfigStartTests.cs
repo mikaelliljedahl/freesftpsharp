@@ -160,6 +160,9 @@ public class ZeroConfigStartTests : IAsyncLifetime
                      || k.StartsWith("ConnectionStrings__", StringComparison.OrdinalIgnoreCase)).ToList())
             info.Environment.Remove(key);
 
+        // The admin UI of the app listens on http://localhost:5000 by default (appsettings.json). Test classes run in
+        // parallel, so every app instance takes a free port of its own.
+        info.Environment["Kestrel__Endpoints__Http__Url"] = "http://127.0.0.1:0";
         _process = new Process { StartInfo = info };
         _process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (_output) _output.AppendLine(e.Data); };
         _process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (_output) _output.AppendLine("[stderr] " + e.Data); };
