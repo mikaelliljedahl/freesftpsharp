@@ -19,12 +19,15 @@ using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServerModule.Cluster;
 using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
 using FxSshSftpServer.Security;
 using SshServerModule.Observability;
 using SshServer.Settings.Sql;
+using SshServer.Settings.PostgreSql;
+using SshServer.Settings.SqlServer;
 using FxSsh.SshServerModule.Cli;
 using FreeSftpSharp.Ftp;
 using SshServer.Interfaces.Users;
@@ -70,6 +73,8 @@ await new HostBuilder()
         configure.AddSerilog(Log.Logger);
     });
     services.AddSshServerSettings(hostContext.Configuration);
+    services.AddPostgreSqlSettings(); // Settings:Provider=PostgreSQL (#75); the default stays SQLite
+    services.AddSqlServerSettings(); // Settings:Provider=SqlServer (#75)
     services.AddSshServerEvents();
     services.AddServerDataProtection(hostContext.Configuration); // encrypts the webhook and TOTP secrets
     services.AddWebhooks(hostContext.Configuration); // webhooks (#66): nothing is sent until one is configured
@@ -89,6 +94,7 @@ await new HostBuilder()
     services.AddSshServerSecurity();
     services.AddSshServerConnections();
     services.AddSshServerListenOptions();
+    services.AddSshServerCluster(hostContext.Configuration); // several nodes on one database (#75): off until Cluster:Enabled
     services.AddFtp(hostContext.Configuration); // FTP and FTPS (#72): off until Ftp:Enabled is true
 })
 .RunConsoleAsync();
@@ -108,7 +114,7 @@ static int RunUserCommand(string[] args)
     try
     {
         // With the event bus, so that the audit log has the changes of the command. Disposing the provider delivers them.
-        using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddSshServerEvents().BuildServiceProvider();
+        using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddPostgreSqlSettings().AddSqlServerSettings().AddSshServerEvents().BuildServiceProvider();
         return UserCommand.Run(args, provider.GetRequiredService<UserAdministrationService>(),
             Console.In, Console.Out, Console.Error,
             interactive: !Console.IsInputRedirected, promptHidden: ReadHidden);

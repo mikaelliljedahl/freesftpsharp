@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <UserSecretsId>fxsshsftpserver-admin-ui</UserSecretsId>
+    <!-- Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.3 pins EF Core rc.3; SshServer.Settings.PostgreSql lifts it to 11.0.0 (NU1608). Remove with the 11.0.0 release. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +26,8 @@
     <ProjectReference Include="..\SshServer.Api\SshServer.Api.csproj" />
     <ProjectReference Include="..\SshServer.Observability\SshServer.Observability.csproj" />
     <ProjectReference Include="..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
+    <ProjectReference Include="..\SshServer.Settings.PostgreSql\SshServer.Settings.PostgreSql.csproj" />
+    <ProjectReference Include="..\SshServer.Settings.SqlServer\SshServer.Settings.SqlServer.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
     <ProjectReference Include="..\FreeSftpSharp.Ftp\FreeSftpSharp.Ftp.csproj" />
     <ProjectReference Include="..\SshServer.Webhooks\SshServer.Webhooks.csproj" />

@@ -21,11 +21,14 @@ namespace SshServerModule.Connections
         {
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IConnectionRegistry, ConnectionRegistry>();
+            // The connections of every node: on one node the registry (AddSshServerCluster replaces it with Cluster:Enabled).
+            services.TryAddSingleton<IClusterConnections, LocalClusterConnections>();
             // The closer is a sink of the event bus and publishes to it, so it asks for the bus only when it needs it.
             if (!services.Any(d => d.ServiceType == typeof(UserSessionCloser)))
             {
                 services.AddSingleton(sp => new UserSessionCloser(sp.GetRequiredService<IConnectionRegistry>(),
-                    () => sp.GetService<IEventBus>(), sp.GetRequiredService<TimeProvider>(), sp.GetService<ILogger<UserSessionCloser>>()));
+                    () => sp.GetService<IEventBus>(), sp.GetRequiredService<TimeProvider>(), sp.GetService<ILogger<UserSessionCloser>>(),
+                    sp.GetService<IClusterConnections>()));
                 services.AddSingleton<IEventSink>(sp => sp.GetRequiredService<UserSessionCloser>());
             }
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, UserLifecycleService>());

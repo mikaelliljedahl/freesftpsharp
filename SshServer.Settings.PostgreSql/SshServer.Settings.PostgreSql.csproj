@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- The release candidate pins EF Core 11.0.0-rc.3 exactly; the direct reference below lifts it to 11.0.0 (NU1608). -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The EF Core 11 provider is a release candidate (no 11.0.0 yet); update it and remove the NoWarn when the release is out. -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="11.0.0-rc.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="11.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
+  </ItemGroup>
+
+</Project>

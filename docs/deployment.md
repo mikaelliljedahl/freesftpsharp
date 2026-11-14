@@ -4,8 +4,8 @@ Three ways to run the server: the container image, a release archive with system
 All of them run the web host (`FxSshSftpServer`: the SFTP server and the admin UI). The server still starts with
 no configuration as a local test server; everything below is optional.
 
-Examples are in [`deploy/`](../deploy). Not covered yet: a multi-node setup with PostgreSQL and HAProxy (needs #75),
-the MinIO example (the S3 backend is not selectable per user until #56), the FTP ports (21 and the passive range,
+Examples are in [`deploy/`](../deploy). Several nodes on PostgreSQL behind HAProxy are in
+[`deploy/cluster/`](../deploy/cluster) and [CLUSTER.md](CLUSTER.md). Not covered yet: the MinIO example (the S3 backend is not selectable per user until #56), the FTP ports (21 and the passive range,
 with the FTP server) and a Helm chart (a follow-up once the image is stable).
 
 ## Container image
@@ -92,8 +92,8 @@ environment (`sudo -u freesftpsharp env ConnectionStrings__Settings="Data Source
 
 [`deploy/kubernetes/freesftpsharp.yaml`](../deploy/kubernetes/freesftpsharp.yaml) is a StatefulSet with one replica and
 a persistent volume, an SFTP `LoadBalancer` Service, a cluster-internal admin Service, probes on `/healthz` and
-`/readyz`, and a restricted security context. Run one replica: the settings database is a SQLite file. A multi-node
-setup needs #75.
+`/readyz`, and a restricted security context. Run one replica: the settings database is a SQLite file. For several
+replicas use PostgreSQL or SQL Server and `Cluster:Enabled` ([CLUSTER.md](CLUSTER.md)).
 
 ## Upgrade
 

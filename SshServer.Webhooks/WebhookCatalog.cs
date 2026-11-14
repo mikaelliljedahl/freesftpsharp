@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Interfaces.Cluster;
 
 namespace SshServer.Webhooks;
 
@@ -93,7 +94,7 @@ public sealed class WebhookCatalogSnapshot
 /// <summary>
 /// The enabled webhooks in memory, so that an event costs no database read: with no webhook, the sink and the hook
 /// return at once. It is loaded at the first use, reloaded after each change in the admin UI and every 30 s by the
-/// dispatcher (for the changes of another node).
+/// dispatcher, and with several nodes (#75) when the settings version changed (<see cref="ISettingsChangeNotifier"/>).
 /// </summary>
 public sealed class WebhookCatalog
 {
@@ -107,13 +108,30 @@ public sealed class WebhookCatalog
     private long _loadedAt;
 
     public WebhookCatalog(IWebhookStore store, WebhookSecretProtector protector, IOptions<WebhookOptions> options, TimeProvider time,
-        ILogger<WebhookCatalog> logger)
+        ILogger<WebhookCatalog> logger, ISettingsChangeNotifier? changes = null)
     {
         _store = store;
         _protector = protector;
         _options = options.Value;
         _time = time;
         _logger = logger;
+        if (changes != null)
+            changes.Changed += () => _ = ReloadAfterChangeAsync();
+    }
+
+    /// <summary>Another node changed the settings: reload, when the webhooks were loaded already.</summary>
+    private async Task ReloadAfterChangeAsync()
+    {
+        if (_current == null)
+            return;
+        try
+        {
+            await ReloadAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not reload the webhooks after a change of the settings.");
+        }
     }
 
     /// <summary>The time since the last load; null before the first load.</summary>
