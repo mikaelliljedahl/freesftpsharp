@@ -10,7 +10,8 @@ namespace FreeSftpSharp.Tests.Infrastructure;
 public static class TestCredentials
 {
     public const string Username = "test_person";
-    public const string Password = "1234";
+    // Must not be a substring of a GUID or a hex string (tests assert that it is never logged or sent), so it has a non-hex letter and punctuation.
+    public const string Password = "pw-Secret!xyz";
 
     private static readonly Lazy<string> SharedHostKey = new(() => CreateRsaHostKey(2048));
 
