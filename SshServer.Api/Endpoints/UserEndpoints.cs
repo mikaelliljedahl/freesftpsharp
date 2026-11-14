@@ -7,7 +7,10 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using SshServer.Administration;
 using SshServer.Interfaces.Authentication;
+using Microsoft.Extensions.Logging;
+using FxSsh.SshServerModule.Security;
 using SshServer.Interfaces.Users;
+using SshServer.TwoFactor;
 using SshServerModule.Quotas;
 
 namespace SshServer.Api.Endpoints;
@@ -56,6 +59,74 @@ internal static class UserEndpoints
 
         MapPublicKeys(users);
         MapQuotas(users);
+        MapAppPasswords(users);
+        MapTwoFactor(users);
+    }
+
+    private static void MapAppPasswords(RouteGroupBuilder users)
+    {
+        users.MapGet("/{username}/app-passwords", Results<Ok<List<AppPasswordView>>, ProblemHttpResult> (UserResource resource, TimeProvider time,
+                string username) =>
+                resource.Get(username) is { } user
+                    ? TypedResults.Ok((user.AppPasswords ?? []).Select(a => AppPasswordView.From(a, time.GetUtcNow().UtcDateTime)).ToList())
+                    : NotFound(username))
+            .WithName("ListUserAppPasswords").WithSummary("The app passwords of the user: the metadata only, never the secret.")
+            .WithErrors().WithNotFound();
+
+        // An app password is allowed for a user of an external provider too (#64), as in the Users page: it is a separate secret of this server.
+        users.MapPost("/{username}/app-passwords", Results<Created<AppPasswordCreated>, ProblemHttpResult> (UserResource resource,
+                UserAdministrationService service, TimeProvider time, ILoggerFactory logs, HttpContext http, string username, AppPasswordCreate request) =>
+            {
+                if (resource.Get(username) is not { } user)
+                    return NotFound(username);
+                var unknown = new List<string>();
+                var protocols = request.Protocols == null ? UserProtocols.WebDav : ProtocolNames.Parse(request.Protocols, unknown);
+                if (unknown.Count > 0)
+                    throw new ApiValidationException("protocols", $"'{string.Join("', '", unknown)}' is not a protocol ({ProtocolNames.Allowed}).");
+                var now = time.GetUtcNow().UtcDateTime;
+                var (entry, secret) = service.CreateAppPassword(user.Username, request.Name, protocols, ApiTime.ToUtc(request.ExpiresAt), now);
+                logs.CreateLogger("SshServer.Api.AppPasswords").LogInformation("REST API: the app password {Name} ({Id}) of the user {Username} was created.",
+                    LogText.Clean(entry.Name), entry.Id, LogText.Clean(user.Username));
+                http.Response.Headers.CacheControl = "no-store"; // the secret is in this response only
+                return TypedResults.Created($"/api/v1/users/{Uri.EscapeDataString(user.Username)}/app-passwords", new AppPasswordCreated(AppPasswordView.From(entry, now), secret));
+            })
+            .WithName("CreateUserAppPassword").WithSummary("Creates an app password and returns its secret once; it is not stored and cannot be read again.")
+            .WithValidationErrors().WithNotFound();
+
+        users.MapDelete("/{username}/app-passwords/{id}", Results<NoContent, ProblemHttpResult> (UserResource resource, UserAdministrationService service,
+                ILoggerFactory logs, string username, string id) =>
+            {
+                if (resource.Get(username) is not { } user || !service.RemoveAppPassword(user.Username, id))
+                    return ApiResults.NotFound($"The user '{username}' has no app password '{id}'.");
+                logs.CreateLogger("SshServer.Api.AppPasswords").LogInformation("REST API: the app password {Id} of the user {Username} was revoked.",
+                    LogText.Clean(id), LogText.Clean(user.Username));
+                return TypedResults.NoContent();
+            })
+            .WithName("RevokeUserAppPassword").WithSummary("Revokes an app password: it stops working at once.").WithErrors().WithNotFound();
+    }
+
+    private static void MapTwoFactor(RouteGroupBuilder users)
+    {
+        users.MapGet("/{username}/two-factor", async Task<Results<Ok<TwoFactorView>, ProblemHttpResult>> (UserResource resource,
+                TwoFactorAdministration twoFactor, string username, CancellationToken ct) =>
+                resource.Get(username) is { } user
+                    ? TypedResults.Ok(TwoFactorView.From(await twoFactor.GetStatusAsync(TwoFactorTarget.User(user.Username), ct)))
+                    : NotFound(username))
+            .WithName("GetUserTwoFactor").WithSummary("Whether the user has a TOTP second factor, and when it was set up. Never the secret.")
+            .WithErrors().WithNotFound();
+
+        users.MapDelete("/{username}/two-factor", async Task<Results<NoContent, ProblemHttpResult>> (UserResource resource,
+                TwoFactorAdministration twoFactor, ILoggerFactory logs, string username, CancellationToken ct) =>
+            {
+                if (resource.Get(username) is not { } user)
+                    return NotFound(username);
+                if (!await twoFactor.ResetAsync(TwoFactorTarget.User(user.Username), "", ct))
+                    return ApiResults.NotFound($"The user '{username}' has no second factor.");
+                logs.CreateLogger("SshServer.Api.TwoFactor").LogInformation("REST API: the second factor of the user {Username} was reset.", LogText.Clean(user.Username));
+                return TypedResults.NoContent();
+            })
+            .WithName("ResetUserTwoFactor").WithSummary("Resets the second factor of the user: the next login needs no code, and the user can set it up again.")
+            .WithErrors().WithNotFound();
     }
 
     private static void MapPublicKeys(RouteGroupBuilder users)

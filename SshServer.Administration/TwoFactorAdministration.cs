@@ -8,7 +8,7 @@ using SshServer.Interfaces.Events;
 using SshServer.Interfaces.TwoFactor;
 using SshServer.TwoFactor;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>Whose second factor a page shows: an SFTP user or an administrator, by name.</summary>
     public sealed record TwoFactorTarget(TwoFactorSubjectKind Kind, string Name)

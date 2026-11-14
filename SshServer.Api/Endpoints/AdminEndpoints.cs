@@ -5,7 +5,10 @@ using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using SshServer.Administration;
+using Microsoft.Extensions.Logging;
+using FxSsh.SshServerModule.Security;
 using SshServer.Interfaces.Admins;
+using SshServer.TwoFactor;
 
 namespace SshServer.Api.Endpoints;
 
@@ -122,6 +125,31 @@ internal static class AdminEndpoints
                 return TypedResults.NoContent();
             })
             .WithName("DeleteAdmin").WithErrors().WithNotFound();
+
+        admins.MapGet("/{username}/two-factor", async Task<Results<Ok<TwoFactorView>, ProblemHttpResult>> (AdminAdministrationService service, CurrentAdmin current,
+                TwoFactorAdministration twoFactor, string username, CancellationToken ct) =>
+                await FindAsync(service, current, username, ct) is { } admin
+                    ? TypedResults.Ok(TwoFactorView.From(await twoFactor.GetStatusAsync(TwoFactorTarget.Admin(admin.Username), ct)))
+                    : NotFound(username))
+            .WithName("GetAdminTwoFactor").WithSummary("Whether the administrator has a TOTP second factor, and when it was set up. Never the secret.")
+            .WithErrors().WithNotFound();
+
+        admins.MapDelete("/{username}/two-factor", async Task<Results<NoContent, ProblemHttpResult>> (AdminAdministrationService service, CurrentAdmin current,
+                TwoFactorAdministration twoFactor, ILoggerFactory logs, string username, CancellationToken ct) =>
+            {
+                if (await FindAsync(service, current, username, ct) is not { } admin)
+                    return NotFound(username);
+                var target = TwoFactorTarget.Admin(admin.Username);
+                // Like the Admins page: the own second factor is turned off with a current code, so a taken-over token cannot remove it.
+                if (twoFactor.IsSelf(target) && (await twoFactor.GetStatusAsync(target, ct)).State == TwoFactorState.On)
+                    return ApiResults.Forbidden("Turn off your own second factor in the admin UI: it needs a current code of your authenticator app.");
+                if (!await twoFactor.ResetAsync(target, "", ct))
+                    return ApiResults.NotFound($"The administrator '{username}' has no second factor.");
+                logs.CreateLogger("SshServer.Api.TwoFactor").LogInformation("REST API: the second factor of the administrator {Username} was reset.", LogText.Clean(admin.Username));
+                return TypedResults.NoContent();
+            })
+            .WithName("ResetAdminTwoFactor").WithSummary("Resets the second factor of another administrator (not its own: use the admin UI with a current code).")
+            .WithErrors().WithNotFound();
 
         var roles = api.MapGroup("/roles").WithTags("Roles").RequireAuthorization(AdminPolicies.ManageAdmins);
 
