@@ -23,6 +23,7 @@ using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
 using SshServer.Observability;
+using FreeSftpSharp.Ftp;
 using SshServerModule.Authentication;
 using SshServer.Authentication.Http;
 using SshServer.Authentication.Ldap;
@@ -100,6 +101,7 @@ builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (us
 builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a user or virtual folder selects it)
 builder.Services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
 builder.Services.AddWebDav(builder.Configuration); // WebDAV (#71): off until WebDav:Enabled is true
+builder.Services.AddFtp(builder.Configuration); // FTP and FTPS (#72): off until Ftp:Enabled is true
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();

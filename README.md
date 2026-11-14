@@ -261,6 +261,8 @@ OpenSSH connects with its default settings.
 - Share links (issue #70, opt-in): a user of the web client shares files or folders with people without an account, as a
   download link or an upload folder ("inbox"), with an optional password, expiry, use limit and client networks. See
   [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md#share-links).
+- FTP and FTPS (issue #72, opt-in): the same users and storage over FTP with explicit TLS (required by default),
+  passive ports in a configured range, MLSD and resume, for FileZilla, WinSCP, lftp and curl. See [docs/FTP.md](docs/FTP.md).
 
 
 ### Features planned for the future
