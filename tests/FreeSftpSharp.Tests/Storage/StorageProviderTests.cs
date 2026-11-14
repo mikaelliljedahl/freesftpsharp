@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Storage;
 
@@ -104,7 +105,7 @@ public sealed class StorageProviderTests : IDisposable
     [Fact]
     public async Task Factory_with_an_unknown_provider_throws()
     {
-        var factory = new StorageFileSystemFactory(new StorageProviderRegistry([]), new FixedResolver(new StorageSelection("s3", new object())));
+        var factory = new StorageFileSystemFactory(new StorageProviderRegistry([]), new FixedResolver(new StorageSelection("s3", new object())), new EffectivePermissionsService());
 
         await Assert.ThrowsAsync<KeyNotFoundException>(async () => await factory.CreateAsync(new User(), Ct));
     }

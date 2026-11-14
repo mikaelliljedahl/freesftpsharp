@@ -846,6 +846,21 @@ public abstract class FileSystemConformanceTests<TFixture> : IDisposable
         Assert.Equal("x", await ReadTextAsync("/my dir/räksmörgås ✓.txt"));
     }
 
+    [Fact]
+    public async Task Case_of_paths_follows_the_declared_capability()
+    {
+        await Fs.CreateDirectoryAsync("/dir", Ct);
+        await WriteFileAsync("/dir/a.txt", "a");
+
+        var other = await Fs.StatAsync("/DIR/A.TXT", true, Ct);
+
+        // The permission decorator compares paths the same way, so this must be true for the backend.
+        if (Has(StorageCapabilities.CaseInsensitivePaths))
+            Assert.NotNull(other);
+        else
+            Assert.Null(other);
+    }
+
     // ---- Cancellation ----
 
     [Fact]

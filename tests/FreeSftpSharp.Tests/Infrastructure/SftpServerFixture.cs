@@ -8,6 +8,7 @@ using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -192,7 +193,7 @@ public class SftpServerFixture : IAsyncLifetime
 
     /// <summary>The storage of the hosts: the "local" provider at the user root (AddSshServerStorage + AddLocalDiskStorage).</summary>
     private static StorageFileSystemFactory LocalDiskFileSystemFactory()
-        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
+        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), new EffectivePermissionsService());
 
     private static int GetFreeTcpPort()
     {
