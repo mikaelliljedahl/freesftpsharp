@@ -5,22 +5,31 @@ Sftp Server implementation based on SSHServer library based heavily on [FxSsh](h
 
 ## Current status
 
-The M1 Foundation milestone of the [technical roadmap](docs/ROADMAP.md) is done:
+All six milestones of the [technical roadmap](docs/ROADMAP.md) (M1 to M6) are done. The server still starts with
+no configuration, as a simple local test server, and every feature below is opt-in.
 
-- SFTP version 3 with all file and directory operations, and the common OpenSSH extensions. Symbolic links are
-  not supported.
-- Each user is locked to a root directory. Path traversal and links that point outside the root are refused.
-- Password (salted PBKDF2) and public key login (several ed25519, ECDSA and RSA keys per user), allowed login methods
-  and multi-step login (key and password) per user, IP filters and auto-ban.
-- A Blazor admin UI and a `user` command line for users and settings, stored in SQLite.
-- A storage abstraction (`IFileSystem`) with the local disk as the first backend. Other backends are plug-ins,
-  see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-- An automated test suite: unit tests, and end-to-end tests with SSH.NET and OpenSSH `sftp`. CI runs it on
-  Ubuntu and Windows.
+- **SFTP** version 3 with all file and directory operations and the common OpenSSH extensions. Each user is locked
+  to a root directory. Symbolic links that point outside the root are refused. A throttled transfer does not hold
+  the other requests of the session.
+- **More protocols:** WebDAV ([docs/WEBDAV.md](docs/WEBDAV.md)), FTP and FTPS ([docs/FTP.md](docs/FTP.md)), an
+  end-user web client with share links ([docs/WEB-CLIENT.md](docs/WEB-CLIENT.md)).
+- **Storage backends:** local disk, encrypted local disk, S3, Azure Blob and Google Cloud Storage, per-user storage
+  and virtual folders ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md)).
+- **Authentication and access control:** passwords (PBKDF2), several public keys per user, multi-step login, TOTP,
+  app passwords, LDAP and an HTTP hook ([docs/AUTHENTICATION.md](docs/AUTHENTICATION.md)), OpenID Connect for
+  administrators and users ([docs/OIDC.md](docs/OIDC.md)), per-path permissions, groups and the user lifecycle,
+  quotas and bandwidth limits, IP filters and auto-ban, administrator roles.
+- **Events and API:** an audit log with the acting administrator, webhooks ([docs/WEBHOOKS.md](docs/WEBHOOKS.md)),
+  event rules ([docs/EVENT-RULES.md](docs/EVENT-RULES.md)) and a REST API with OpenAPI, JWT and API keys
+  ([docs/REST-API.md](docs/REST-API.md)).
+- **Operations:** metrics, tracing and health endpoints, a container image and release workflow
+  ([docs/deployment.md](docs/deployment.md)), and several nodes on PostgreSQL or SQL Server behind a load balancer
+  with the PROXY protocol ([docs/CLUSTER.md](docs/CLUSTER.md)).
+- **Tests:** unit tests and end-to-end tests with SSH.NET, OpenSSH `sftp`, FluentFTP, curl and lftp. CI runs them on
+  Ubuntu and Windows, and the settings tests also on PostgreSQL and SQL Server.
 
-The next milestones (M2 to M6) add storage backends, access control, events and an API, more protocols, and
-operations support. The server still starts with no configuration, as a simple local test server, and each new
-feature is opt-in. You are welcome to create pull requests.
+The "Later and not planned" section of the roadmap lists the candidates for the next work. You are welcome to
+create issues and pull requests.
 
 ## Quick start (local test server)
 
@@ -272,9 +281,8 @@ OpenSSH connects with its default settings.
 
 ### Features planned for the future
 
-The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub issue for each feature. For
-example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, groups, quotas,
-an audit log, webhooks, WebDAV and FTP, and more settings databases.
+The milestones of the [technical roadmap](docs/ROADMAP.md) are done. Its "Later and not planned" section lists the
+next candidates, for example SSH user certificates, SCP, key management services and ACME certificates.
 
 ## Log files
 
