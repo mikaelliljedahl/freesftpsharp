@@ -1,0 +1,103 @@
+@* The quota and bandwidth fields (issue #62) of a user or a group. The page shows the problems; ChildContent comes under the fields (the usage of a user). *@
+@using System.Globalization
+
+<fieldset class="border rounded p-3 mb-3" id="quota-fieldset">
+    <legend class="float-none w-auto px-2 fs-6 mb-0">Quotas and bandwidth</legend>
+    <div class="small text-body-secondary mb-2">
+        0 is @NotSetText. The disk quota counts the own storage (<code>/</code> without the virtual folders); each virtual
+        folder has its own quota in the mount table. The transfer quota counts until the counters are reset. The bandwidth
+        applies to each session.
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-sm-6">
+            <label class="form-label" for="quota-size">Disk quota (MiB)</label>
+            <input type="number" min="0" step="any" class="form-control" id="quota-size" value="@Text(Model.SizeMiB)" @onchange="e => Model.SizeMiB = Number(e.Value)" />
+        </div>
+        <div class="col-sm-6">
+            <label class="form-label" for="quota-files">Maximum number of files</label>
+            <input type="number" min="0" class="form-control" id="quota-files" value="@Model.Files" @onchange="e => Model.Files = (long)Number(e.Value)" />
+        </div>
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-sm-4">
+            <label class="form-label" for="quota-upload">Upload quota (MiB)</label>
+            <input type="number" min="0" step="any" class="form-control" id="quota-upload" value="@Text(Model.UploadMiB)" @onchange="e => Model.UploadMiB = Number(e.Value)" />
+        </div>
+        <div class="col-sm-4">
+            <label class="form-label" for="quota-download">Download quota (MiB)</label>
+            <input type="number" min="0" step="any" class="form-control" id="quota-download" value="@Text(Model.DownloadMiB)" @onchange="e => Model.DownloadMiB = Number(e.Value)" />
+        </div>
+        <div class="col-sm-4">
+            <label class="form-label" for="quota-total">Total transfer quota (MiB)</label>
+            <input type="number" min="0" step="any" class="form-control" id="quota-total" value="@Text(Model.TotalMiB)" @onchange="e => Model.TotalMiB = Number(e.Value)" />
+        </div>
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-sm-6">
+            <label class="form-label" for="bandwidth-upload">Upload bandwidth (KiB/s)</label>
+            <input type="number" min="0" class="form-control" id="bandwidth-upload" value="@Model.UploadKiBPerSecond" @onchange="e => Model.UploadKiBPerSecond = (int)Number(e.Value)" />
+        </div>
+        <div class="col-sm-6">
+            <label class="form-label" for="bandwidth-download">Download bandwidth (KiB/s)</label>
+            <input type="number" min="0" class="form-control" id="bandwidth-download" value="@Model.DownloadKiBPerSecond" @onchange="e => Model.DownloadKiBPerSecond = (int)Number(e.Value)" />
+        </div>
+    </div>
+    @if (Model.Overrides.Count > 0)
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-2" id="bandwidth-override-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Client networks</th>
+                        <th scope="col">Upload (KiB/s)</th>
+                        <th scope="col">Download (KiB/s)</th>
+                        <th scope="col"><span class="visually-hidden">Remove</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Model.Overrides.Count; i++)
+                    {
+                        var row = Model.Overrides[i];
+                        var index = i;
+                        <tr class="bandwidth-override-row">
+                            <td style="min-width: 10rem">
+                                <input type="text" class="form-control form-control-sm font-monospace" id="override-sources-@index" aria-label="Client networks"
+                                       placeholder="10.0.0.0/8, 192.168.0.0/16" value="@row.Sources" @onchange="e => row.Sources = e.Value?.ToString() ?? string.Empty" />
+                            </td>
+                            <td style="min-width: 6rem">
+                                <input type="number" min="0" class="form-control form-control-sm" id="override-upload-@index" aria-label="Upload in KiB/s"
+                                       value="@row.UploadKiBPerSecond" @onchange="e => row.UploadKiBPerSecond = (int)Number(e.Value)" />
+                            </td>
+                            <td style="min-width: 6rem">
+                                <input type="number" min="0" class="form-control form-control-sm" id="override-download-@index" aria-label="Download in KiB/s"
+                                       value="@row.DownloadKiBPerSecond" @onchange="e => row.DownloadKiBPerSecond = (int)Number(e.Value)" />
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-override" title="Remove" aria-label="Remove the override"
+                                        @onclick="() => Model.Overrides.RemoveAt(index)"><i class="bi bi-x"></i></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    <button type="button" class="btn btn-sm btn-outline-primary" id="add-bandwidth-override"
+            @onclick="() => Model.Overrides.Add(new BandwidthOverrideRow())"><i class="bi bi-plus"></i> Other bandwidth for some networks</button>
+    @ChildContent
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public QuotaForm Model { get; set; }
+
+    /// <summary>What 0 means: "unlimited" for a user, "not set" for a group.</summary>
+    [Parameter] public string NotSetText { get; set; } = "unlimited (or the value of a group)";
+
+    [Parameter] public RenderFragment ChildContent { get; set; }
+
+    /// <summary>A number of an input; 0 when it is empty or not a number.</summary>
+    public static decimal Number(object value) =>
+        decimal.TryParse(value?.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var number) ? number : 0;
+
+    private static string Text(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+}

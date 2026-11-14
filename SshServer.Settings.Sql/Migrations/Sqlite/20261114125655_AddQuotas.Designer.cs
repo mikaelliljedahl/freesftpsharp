@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114130305_AddUserAuthenticationProvider")]
-partial class _20261114130305_AddUserAuthenticationProvider
+[Migration("20261114125655_AddQuotas")]
+partial class _20261114125655_AddQuotas
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -276,8 +276,14 @@ partial class _20261114130305_AddUserAuthenticationProvider
                 b.PrimitiveCollection<string>("AllowedIps")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Bandwidth")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("Description")
                     .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiskQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Name")
@@ -296,6 +302,9 @@ partial class _20261114130305_AddUserAuthenticationProvider
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
@@ -405,12 +414,14 @@ partial class _20261114130305_AddUserAuthenticationProvider
                     .HasMaxLength(128)
                     .HasColumnType("TEXT");
 
-                b.Property<string>("AuthenticationProvider")
-                    .HasMaxLength(64)
+                b.Property<string>("Bandwidth")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Description")
                     .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiskQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<DateTime?>("ExpiresAt")
@@ -462,6 +473,9 @@ partial class _20261114130305_AddUserAuthenticationProvider
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("UserRootDirectory")
@@ -624,6 +638,35 @@ partial class _20261114130305_AddUserAuthenticationProvider
                 b.ToTable("WebhookDeliveries");
             });
 
+        modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>
+            {
+                b.Property<string>("Scope")
+                    .HasMaxLength(300)
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("DownloadedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("ScannedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("UpdatedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("UploadedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("UsedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("UsedFiles")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Scope");
+
+                b.ToTable("QuotaUsages");
+            });
+
         modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
             {
                 b.Property<int>("Id")
@@ -713,6 +756,9 @@ partial class _20261114130305_AddUserAuthenticationProvider
                             .HasMaxLength(1024)
                             .HasColumnType("TEXT");
 
+                        b1.Property<string>("Quota")
+                            .HasColumnType("TEXT");
+
                         b1.Property<int>("VirtualFolderId")
                             .HasColumnType("INTEGER");
 
@@ -759,6 +805,9 @@ partial class _20261114130305_AddUserAuthenticationProvider
                         b1.Property<string>("MountPath")
                             .IsRequired()
                             .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<string>("Quota")
                             .HasColumnType("TEXT");
 
                         b1.Property<int>("UserId")

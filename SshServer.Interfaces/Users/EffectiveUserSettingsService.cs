@@ -2,6 +2,7 @@ using System.Text.Json;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Interfaces.Users;
@@ -18,6 +19,8 @@ namespace SshServer.Interfaces.Users;
 /// is still free.</description></item>
 /// <item><term>Login methods</term><description>all methods (the default of a user); null for a group.</description></item>
 /// <item><term>Allowed networks</term><description>the IP whitelist of the user is off or empty; null or empty for a group.</description></item>
+/// <item><term>Disk quota, transfer quota, bandwidth (#62)</term><description>null or unlimited (all values 0). The quota of a
+/// mount comes with the mount.</description></item>
 /// </list>
 /// A group that does not exist (any more) is skipped. Without a repository there are no groups.
 /// </summary>
@@ -65,6 +68,10 @@ public sealed class EffectiveUserSettingsService : IEffectiveUserSettingsService
             u => u.OnlyWhitelistedIps && u.WhitelistedIps is { Count: > 0 } w ? w : null,
             g => g.AllowedIps is { Count: > 0 } a ? a : null);
 
+        var (diskQuota, diskQuotaOrigin) = First(user, groups, u => DiskQuota.OrNull(u.DiskQuota), g => DiskQuota.OrNull(g.DiskQuota));
+        var (transferQuota, transferQuotaOrigin) = First(user, groups, u => TransferQuota.OrNull(u.TransferQuota), g => TransferQuota.OrNull(g.TransferQuota));
+        var (bandwidth, bandwidthOrigin) = First(user, groups, u => BandwidthLimit.OrNull(u.Bandwidth), g => BandwidthLimit.OrNull(g.Bandwidth));
+
         return new EffectiveUserSettings
         {
             User = user,
@@ -80,6 +87,12 @@ public sealed class EffectiveUserSettingsService : IEffectiveUserSettingsService
             AllowedAuthMethodsOrigin = methodsOrigin,
             AllowedIps = ips?.ToList() ?? [],
             AllowedIpsOrigin = ipsOrigin,
+            DiskQuota = diskQuota,
+            DiskQuotaOrigin = diskQuotaOrigin,
+            TransferQuota = transferQuota,
+            TransferQuotaOrigin = transferQuotaOrigin,
+            Bandwidth = bandwidth,
+            BandwidthOrigin = bandwidthOrigin,
         };
     }
 
@@ -164,7 +177,7 @@ public sealed class EffectiveUserSettingsService : IEffectiveUserSettingsService
             {
                 var path = VirtualPath.Normalize(mount.MountPath);
                 if (path != VirtualPath.Root && paths.Add(path))
-                    result.Add(new EffectiveMount(mount.VirtualFolderId, path, origin));
+                    result.Add(new EffectiveMount(mount.VirtualFolderId, path, origin, DiskQuota.OrNull(mount.Quota)));
             }
         }
 

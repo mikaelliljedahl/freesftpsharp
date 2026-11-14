@@ -4,7 +4,7 @@
     <legend class="float-none w-auto px-2 fs-6 mb-0">Virtual folders</legend>
     <div class="small text-body-secondary mb-2">
         Other storage locations that the @Subject sees as directories, for example a shared S3 prefix at <code>/incoming</code>.
-        A file cannot be renamed between two storages. Manage the folders on the <a href="virtual-folders">Virtual folders</a> page.
+        A file cannot be renamed between two storages. The quota of a folder is counted per folder, for every user that mounts it. Manage the folders on the <a href="virtual-folders">Virtual folders</a> page.
     </div>
     @if (Mounts.Count > 0)
     {
@@ -14,6 +14,8 @@
                     <tr>
                         <th scope="col">Virtual folder</th>
                         <th scope="col">Mount path</th>
+                        <th scope="col" title="The disk quota of the folder for this mount (#62); 0 is unlimited">Quota (MiB)</th>
+                        <th scope="col" title="The maximum number of files in the folder; 0 is unlimited">Max files</th>
                         <th scope="col"><span class="visually-hidden">Remove</span></th>
                     </tr>
                 </thead>
@@ -36,6 +38,14 @@
                             <td style="min-width: 10rem">
                                 <input type="text" class="form-control form-control-sm font-monospace" id="mount-path-@index" aria-label="Mount path"
                                        placeholder="/shared" value="@row.MountPath" @onchange="e => row.MountPath = e.Value?.ToString() ?? string.Empty" />
+                            </td>
+                            <td style="min-width: 6rem">
+                                <input type="number" min="0" step="any" class="form-control form-control-sm" id="mount-quota-@index" aria-label="Quota in MiB"
+                                       value="@row.QuotaSizeMiB.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="e => row.QuotaSizeMiB = QuotaEditor.Number(e.Value)" />
+                            </td>
+                            <td style="min-width: 5rem">
+                                <input type="number" min="0" step="1" class="form-control form-control-sm" id="mount-files-@index" aria-label="Maximum number of files"
+                                       value="@row.QuotaFiles" @onchange="e => row.QuotaFiles = (long)QuotaEditor.Number(e.Value)" />
                             </td>
                             <td class="text-end">
                                 <button type="button" class="btn btn-sm btn-outline-danger remove-mount" title="Remove" aria-label="Remove the mount @row.MountPath"

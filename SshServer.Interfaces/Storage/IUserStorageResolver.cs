@@ -4,7 +4,8 @@ namespace SshServer.Interfaces.Storage;
 /// <param name="Path">The normalized virtual path, for example "/shared".</param>
 /// <param name="Name">The name of the virtual folder, for the messages.</param>
 /// <param name="Storage">The storage of the folder.</param>
-public sealed record StorageMount(string Path, string Name, StorageConfig Storage);
+/// <param name="FolderId">The <see cref="VirtualFolder.Id"/>, for example for its quota usage.</param>
+public sealed record StorageMount(string Path, string Name, StorageConfig Storage, int FolderId);
 
 /// <summary>The storage of a user: the storage of "/" and the virtual folders mounted below it.</summary>
 public sealed record UserStorage(StorageConfig Root, IReadOnlyList<StorageMount> Mounts);

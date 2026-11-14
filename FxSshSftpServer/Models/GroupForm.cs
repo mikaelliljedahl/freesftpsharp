@@ -38,6 +38,9 @@ namespace FxSshSftpServer.Models
         /// <summary>The networks the members may log in from, one per line. Empty: not set.</summary>
         public string AllowedIps { get; set; } = "";
 
+        /// <summary>The quotas and the bandwidth of the members without their own (issue #62); 0: not set.</summary>
+        public QuotaForm Quotas { get; set; } = new();
+
         /// <summary>The scope role; kept as stored (the scoped repository sets it for a new group).</summary>
         public int? RoleId { get; init; }
 
@@ -58,8 +61,9 @@ namespace FxSshSftpServer.Models
             Storage = storage.Edit(group.Storage),
             Mounts = group.VirtualFolders
                 .OrderBy(m => m.MountPath, StringComparer.Ordinal)
-                .Select(m => new MountRow { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath })
+                .Select(MountRow.From)
                 .ToList(),
+            Quotas = QuotaForm.From(group.DiskQuota, group.TransferQuota, group.Bandwidth),
             SetPermissions = group.Permissions is { Count: > 0 } || (group.PathFilters ?? new()).Values.Any(f => !f.IsEmpty),
             Permissions = PermissionTables.RowsOf(group.Permissions),
             PathFilters = PermissionTables.FilterRowsOf(group.PathFilters),
@@ -75,9 +79,7 @@ namespace FxSshSftpServer.Models
         private AuthMethods AllowedMethods =>
             (AllowPassword ? AuthMethods.Password : AuthMethods.None) | (AllowPublicKey ? AuthMethods.PublicKey : AuthMethods.None) | OtherAllowedMethods;
 
-        public List<VirtualFolderMount> MountList() => Mounts
-            .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = PermissionTables.NormalizedOrRaw(m.MountPath) })
-            .ToList();
+        public List<VirtualFolderMount> MountList() => Mounts.Select(m => m.ToMount()).ToList();
 
         /// <summary>The group of the form, with the built storage template (null: not set).</summary>
         public Group ToGroup(StorageConfig storage)
@@ -94,6 +96,9 @@ namespace FxSshSftpServer.Models
                 PathFilters = SetPermissions ? PermissionTables.NonEmptyFilters(PathFilters) : null,
                 AllowedAuthMethods = RestrictMethods ? AllowedMethods : null,
                 AllowedIps = ips.Count == 0 ? null : ips,
+                DiskQuota = Quotas.Disk,
+                TransferQuota = Quotas.Transfer,
+                Bandwidth = Quotas.Bandwidth,
                 RoleId = RoleId,
             };
         }
@@ -113,6 +118,7 @@ namespace FxSshSftpServer.Models
             var invalid = SshServer.Interfaces.Net.CidrNotation.FindInvalid(EntryList.Parse(AllowedIps));
             if (invalid.Count > 0)
                 problems.Add($"Not a valid network: {string.Join(", ", invalid)}.");
+            problems.AddRange(Quotas.Problems(Mounts));
             return problems;
         }
     }

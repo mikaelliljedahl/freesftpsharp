@@ -114,14 +114,22 @@ public sealed class AuditLogTests : IDisposable
         await sink.HandleAsync(Upload("ages-tomorrow", Now.AddDays(-90).AddHours(12)), Ct);
         var job = new AuditRetentionService(_log, Options.Create(new AuditOptions { RetentionDays = 90 }), _time, NullLogger<AuditRetentionService>.Instance, _bus);
 
+        // The job and the test share one in-memory SQLite connection, which does not allow two users at the same time.
+        // The test therefore never polls the log while the job works: it waits for the signal of the end of a run, and
+        // reads the log only between the runs, when the job waits for its timer. No wait depends on real time.
+        var runs = new SemaphoreSlim(0);
+        job.RunEnded = () => runs.Release();
+
         await job.StartAsync(Ct);
         try
         {
-            await WaitUntilAsync(async () => (await _log.QueryAsync(new AuditQuery(), Ct)).TotalCount == 1);
+            await runs.WaitAsync(TimeSpan.FromMinutes(2), Ct); // a hang guard only, not a time condition
+            Assert.Equal(["ages-tomorrow"], (await _log.QueryAsync(new AuditQuery(), Ct)).Entries.Select(e => e.Username));
 
             _time.Advance(AuditRetentionService.Interval);
 
-            await WaitUntilAsync(async () => (await _log.QueryAsync(new AuditQuery(), Ct)).TotalCount == 0);
+            await runs.WaitAsync(TimeSpan.FromMinutes(2), Ct); // a hang guard only, not a time condition
+            Assert.Equal(0, (await _log.QueryAsync(new AuditQuery(), Ct)).TotalCount);
         }
         finally
         {
@@ -244,16 +252,5 @@ public sealed class AuditLogTests : IDisposable
         var change = Assert.Single(_bus.Published.OfType<ProviderEvent>(), e => e.ObjectType == ProviderObjectType.ServerSettings);
         Assert.Equal(["ServerBanner", "HostKey"], change.ChangedFields);
         Assert.DoesNotContain("new-key-material", AuditEntryMapper.From(change).Details);
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!await condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("The condition did not become true.");
-            await Task.Delay(10);
-        }
     }
 }

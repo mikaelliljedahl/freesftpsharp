@@ -1,3 +1,5 @@
+using SshServer.Interfaces.Quotas;
+
 namespace SshServer.Interfaces.Storage;
 
 /// <summary>
@@ -25,4 +27,10 @@ public sealed class VirtualFolderMount
 
     /// <summary>The normalized virtual path in the user's file system, for example "/shared"; never "/".</summary>
     public string MountPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The disk quota of the folder for this user (issue #62). The usage is counted per folder, for every user that mounts
+    /// it; the limit is checked per mount. Null: unlimited, and the files in the folder do not count for the user's own quota.
+    /// </summary>
+    public DiskQuota? Quota { get; set; }
 }
