@@ -109,5 +109,17 @@ namespace FxSsh.Services
         /// authentication attempt. Defaults to false (reject).
         /// </summary>
         public bool Result { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the accepted attempt is
+        /// only one step of a multi-step authentication (RFC 4252 section
+        /// 5.1). Used together with <see cref="Result"/> = true: once the
+        /// credentials are verified (for "publickey": the signature), the
+        /// service raises <see cref="UserAuthService.PartialSucceed"/> and
+        /// answers SSH_MSG_USERAUTH_FAILURE with partial success = true
+        /// instead of SSH_MSG_USERAUTH_SUCCESS; no service is started.
+        /// Defaults to false.
+        /// </summary>
+        public bool PartialSuccess { get; set; }
     }
 }
