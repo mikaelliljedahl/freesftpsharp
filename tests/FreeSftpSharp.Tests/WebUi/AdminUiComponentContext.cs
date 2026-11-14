@@ -92,6 +92,8 @@ public class AdminUiComponentContext : BunitContext
         Services.AddScoped<AdminScopedSettingsRepository>();
         Services.AddScoped<ScopedAuditLog>();
         Services.AddScoped<ScopedConnections>();
+        Services.AddSingleton<SshServer.Interfaces.Shares.IShareStore>(Shares);
+        Services.AddScoped<ScopedShares>();
         Services.AddSingleton(TwoFactor);
         Services.AddSingleton<IEventBus>(Events);
         Services.AddScoped<TwoFactorAdministration>();
@@ -106,6 +108,9 @@ public class AdminUiComponentContext : BunitContext
         _authorization = AddAuthorization();
         SignInAs(AdminPermissions.SuperAdmin);
     }
+
+    /// <summary>The share links (#70) of the Shares page.</summary>
+    public SshServer.Interfaces.Shares.InMemoryShareStore Shares { get; } = new();
 
     public ToastService Toasts => Services.GetRequiredService<ToastService>();
 
