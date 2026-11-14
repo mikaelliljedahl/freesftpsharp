@@ -119,9 +119,11 @@ namespace SshServerModule.Connections
             var info = entry.Snapshot();
             _logger.LogInformation("Disconnecting {Protocol} connection {ConnectionId} of {Username} from {RemoteEndPoint}: {Reason}",
                 info.Protocol, id, LogText.Clean(info.Username), info.RemoteEndPoint, LogText.Clean(reason));
-            await entry.DisconnectAsync(reason);
-            // The protocol normally unregisters from its own close event; this covers a protocol that does not.
+            // Removed first: the connection leaves the registry at once, also while the protocol still says goodbye to
+            // the client (an SSH session waits for its send queue and its channels). The protocol's own close event
+            // then finds nothing to remove.
             Unregister(id);
+            await entry.DisconnectAsync(reason);
             return true;
         }
 

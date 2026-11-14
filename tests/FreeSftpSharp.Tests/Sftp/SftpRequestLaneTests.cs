@@ -78,8 +78,12 @@ public sealed class SftpRequestLaneTests
             w.WriteBinary((ReadOnlySpan<byte>)[1]);
         }));
 
-        service.OnClose(); // returns when the cancelled write has stopped
+        var closed = new ManualResetEventSlim();
+        service.CloseReceived += (_, _) => closed.Set();
 
+        service.OnClose(); // does not wait; the handles are released when the cancelled write has stopped
+
+        Assert.True(closed.Wait(Timeout, TestContext.Current.CancellationToken), "CloseReceived must follow when the write stopped.");
         Assert.True(fileSystem.File.Cancelled);
         Assert.True(fileSystem.File.Aborted);
         Assert.Empty(fileSystem.File.Written);

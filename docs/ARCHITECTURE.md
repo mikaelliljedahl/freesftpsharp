@@ -273,6 +273,10 @@ without a limit gets no quota decorator and no counter at all.
   STAT, rename, ...) in one more lane, and it uses the asynchronous READ and WRITE of the adapter (`ISftpAsyncFileHandle`,
   see [external/README.md](../external/README.md)). The other storage calls of SFTP are still synchronous: a slow call of a
   remote storage (for example a STAT on S3) holds the path lane of its session, not the transfers of the open files.
+  The SSH window gives the flow control: the window of a request goes back to the client only when it is answered, and
+  the engine stops taking requests while more than 4 MiB of replies wait for the client's window. Known limit: a path
+  request (SETSTAT, RENAME, REMOVE) that a client pipelines behind queued writes of an open file can run before them;
+  SFTP clients wait for the replies of their writes before they send such a request.
 
 ## Administrators and authorization
 
