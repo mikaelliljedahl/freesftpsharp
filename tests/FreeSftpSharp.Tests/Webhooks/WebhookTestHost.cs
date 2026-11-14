@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Admins;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
 using FreeSftpSharp.Tests.Settings;
@@ -99,7 +100,7 @@ public sealed class WebhookTestHost : IAsyncDisposable
     /// <summary>Adds a webhook and fails the test when it is not valid.</summary>
     public async Task<int> AddWebhookAsync(WebhookInput input)
     {
-        var result = await Admin.SaveAsync(input, CancellationToken.None);
+        var result = await Admin.SaveAsync(AdminActor.System, input, CancellationToken.None);
         Assert.True(result.Succeeded, string.Join(" ", result.Errors));
         return result.Id!.Value;
     }

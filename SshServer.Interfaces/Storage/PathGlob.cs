@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace SshServer.Webhooks;
+namespace SshServer.Interfaces.Storage;
 
 /// <summary>
 /// A glob over virtual paths: <c>*</c> is any text within one directory, <c>**</c> any text over directories, <c>?</c>

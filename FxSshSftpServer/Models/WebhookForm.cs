@@ -44,6 +44,8 @@ namespace FxSshSftpServer.Models
 
         public bool Enabled { get; set; } = true;
 
+        public bool OnlyForEventRules { get; set; }
+
         public static WebhookForm New() => new() { NewSecret = WebhookSecretProtector.GenerateSecret() };
 
         public static WebhookForm From(Webhook webhook)
@@ -62,6 +64,7 @@ namespace FxSshSftpServer.Models
                 FailOpen = webhook.FailOpen,
                 TimeoutSeconds = webhook.TimeoutSeconds,
                 Enabled = webhook.Enabled,
+                OnlyForEventRules = webhook.OnlyForEventRules,
             };
             form.EventTypes.UnionWith(webhook.EventTypes);
             return form;
@@ -99,6 +102,7 @@ namespace FxSshSftpServer.Models
                 FailOpen = Sync && FailOpen,
                 TimeoutSeconds = TimeoutSeconds,
                 Enabled = Enabled,
+                OnlyForEventRules = OnlyForEventRules,
             };
             return (input, errors);
         }
