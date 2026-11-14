@@ -15,6 +15,12 @@ public sealed record AdminActor(string Username, AdminPermissions Permissions, i
     /// <summary>No login, or a login that is not valid any more: may do nothing.</summary>
     public static AdminActor Anonymous { get; } = new("", AdminPermissions.None, null);
 
+    /// <summary>The name of the REST API key (#67) of this login, or null for a login with a password.</summary>
+    public string? ApiKeyName { get; init; }
+
+    /// <summary>The actor in the audit log (<c>ProviderEvent.Actor</c>): the name, and the API key when it used one.</summary>
+    public string AuditName => ApiKeyName == null ? Username : $"{Username} (API key {ApiKeyName})";
+
     public bool IsSystem => ReferenceEquals(this, System);
 
     public bool IsSuperAdmin => Permissions.HasFlag(AdminPermissions.SuperAdmin);

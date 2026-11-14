@@ -21,6 +21,7 @@ using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
 using SshServer.Observability;
+using SshServer.Api;
 
 using FxSshSftpServer.Security;
 
@@ -77,6 +78,7 @@ Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
+builder.Services.AddRestApi(builder.Configuration); // the REST API under /api/v1 (#67), only with Api:Enabled
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
@@ -116,6 +118,7 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorPages(); // Login, Logout, Error
 app.MapRazorComponents<FxSshSftpServer.Components.App>()
     .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
+app.MapRestApi(); // bearer token or API key, never the login cookie
 
 
 try

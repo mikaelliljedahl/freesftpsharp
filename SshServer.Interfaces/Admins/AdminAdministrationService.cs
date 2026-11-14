@@ -178,6 +178,47 @@ public sealed class AdminAdministrationService
         return true;
     }
 
+    /// <summary>
+    /// Adds or replaces an administrator with a stored password hash, for the load of a dump (REST API, #67). Only a super
+    /// admin may do it, because it sets the password of another administrator. The actor itself cannot be replaced.
+    /// Returns true when it replaced an administrator.
+    /// </summary>
+    public async Task<bool> LoadAdminAsync(AdminActor actor, AdminInput input, string passwordHash, CancellationToken ct)
+    {
+        actor.Demand(AdminPermissions.SuperAdmin);
+        var name = input.Username?.Trim() ?? "";
+        Throw(UserAdministrationService.ValidateUserName(name));
+        if (!PasswordHasher.IsWellFormed(passwordHash))
+            throw new AdminAdministrationException($"The password hash of the administrator '{name}' is not valid.");
+        await ValidateAsync(input, ct);
+
+        var stored = await _store.GetAdminAsync(name, ct);
+        if (stored == null)
+        {
+            var admin = new Admin { Username = name, PasswordHash = passwordHash };
+            Apply(input, admin);
+            if (!await _store.AddAdminAsync(admin, ct))
+                throw new AdminAdministrationException($"The administrator '{name}' already exists.");
+            await PublishAsync(ProviderAction.Add, actor, admin, []);
+            return false;
+        }
+
+        if (IsSelf(actor, stored))
+            throw new AdminAccessDeniedException("You cannot replace yourself.");
+        var before = AdminSnapshot.From(stored);
+        var hashChanged = stored.PasswordHash != passwordHash;
+        Apply(input, stored);
+        stored.PasswordHash = passwordHash;
+        if (!await _store.UpdateAdminAsync(stored, ct))
+            throw new AdminAdministrationException($"The administrator '{stored.Username}' does not exist any more.");
+        var changed = ChangedFields(before, AdminSnapshot.From(stored));
+        if (hashChanged)
+            changed.Add("Password");
+        if (changed.Count > 0)
+            await PublishAsync(ProviderAction.Update, actor, stored, changed);
+        return true;
+    }
+
     /// <summary>Saves the time of a successful login. No event: the login itself is an auth event.</summary>
     public async Task RecordLoginAsync(Admin admin, CancellationToken ct)
     {
@@ -328,7 +369,7 @@ public sealed class AdminAdministrationService
     private Task PublishAsync(ProviderAction action, AdminActor actor, Admin admin, IReadOnlyList<string> changed) =>
         PublishEventAsync(new ProviderEvent(action, ProviderObjectType.Admin, admin.Username)
         {
-            Actor = actor.Username,
+            Actor = actor.AuditName,
             Object = AdminSnapshot.From(admin),
             ChangedFields = changed,
         });
@@ -336,7 +377,7 @@ public sealed class AdminAdministrationService
     private Task PublishRoleAsync(ProviderAction action, AdminActor actor, Role role, IReadOnlyList<string> changed) =>
         PublishEventAsync(new ProviderEvent(action, ProviderObjectType.Role, role.Name)
         {
-            Actor = actor.Username,
+            Actor = actor.AuditName,
             Object = RoleSnapshot.From(role),
             ChangedFields = changed,
         });

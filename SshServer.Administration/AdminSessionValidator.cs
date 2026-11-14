@@ -4,13 +4,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using SshServer.Interfaces.Admins;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// Checks a login cookie against the stored administrator: it must still exist, be enabled, have the same
     /// security stamp (<see cref="AdminClaims.Stamp"/>) and, for an HTTP request, come from an allowed address. The
     /// cookie handler calls it on every request and the Blazor circuit periodically
-    /// (<see cref="AdminRevalidatingAuthenticationStateProvider"/>).
+    /// (<c>AdminRevalidatingAuthenticationStateProvider</c> of the admin UI). The REST API checks its bearer tokens with it too.
     /// </summary>
     public sealed class AdminSessionValidator
     {

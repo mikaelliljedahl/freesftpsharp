@@ -10,6 +10,8 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Events;
 using SshServer.Settings.Sql.Admins;
+using SshServer.Settings.Sql.Api;
+using SshServer.Interfaces.Api;
 using SshServer.Settings.Sql.Audit;
 using SshServer.Settings.Sql.Webhooks;
 using SshServer.Interfaces.Webhooks;
@@ -27,7 +29,8 @@ namespace SshServer.Settings.Sql
         /// and the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it).
         /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
-        /// provider keeps them in memory only.
+        /// provider keeps them in memory only. The same for the REST API keys and token signing key (<see cref="IApiKeyStore"/>,
+        /// <see cref="IApiSigningKeyStore"/>, #67).
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -55,6 +58,13 @@ namespace SshServer.Settings.Sql
                         sp.GetRequiredService<ISettingsRepository>();
                         return new SqlAdminStore(dbOptions);
                     });
+                    services.TryAddSingleton(sp =>
+                    {
+                        sp.GetRequiredService<ISettingsRepository>();
+                        return new SqlApiKeyStore(dbOptions);
+                    });
+                    services.TryAddSingleton<IApiKeyStore>(sp => sp.GetRequiredService<SqlApiKeyStore>());
+                    services.TryAddSingleton<IApiSigningKeyStore>(sp => sp.GetRequiredService<SqlApiKeyStore>());
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -67,6 +77,9 @@ namespace SshServer.Settings.Sql
                     services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
                     services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
                     services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
+                    services.TryAddSingleton<InMemoryApiKeyStore>();
+                    services.TryAddSingleton<IApiKeyStore>(sp => sp.GetRequiredService<InMemoryApiKeyStore>());
+                    services.TryAddSingleton<IApiSigningKeyStore>(sp => sp.GetRequiredService<InMemoryApiKeyStore>());
                     break;
 
                 default:

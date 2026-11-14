@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Security;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>Checks an admin login against the stored administrators (<see cref="IAdminStore"/>).</summary>
     public sealed class AdminCredentialValidator

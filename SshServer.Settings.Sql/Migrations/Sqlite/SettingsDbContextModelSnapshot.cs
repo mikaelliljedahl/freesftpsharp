@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114115734_AddUserStorageAndVirtualFolders";
+    public override string LastMigrationId => "20261114121513_AddApiKeys";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -96,6 +96,55 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Roles");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Api.ApiKey", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("AdminId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("ExpiresAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("KeyHash")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastUsedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("Prefix")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Scopes")
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("KeyHash")
+                    .IsUnique();
+
+                b.HasIndex("AdminId", "Name")
+                    .IsUnique();
+
+                b.ToTable("ApiKeys");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Audit.AuditEntry", b =>
@@ -448,12 +497,38 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("WebhookDeliveries");
             });
 
+        modelBuilder.Entity("SshServer.Settings.Sql.Api.ApiSigningKey", b =>
+            {
+                b.Property<int>("Id")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("ProtectedKey")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.ToTable("ApiSigningKeys");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
             {
                 b.HasOne("SshServer.Interfaces.Admins.Role", null)
                     .WithMany()
                     .HasForeignKey("ScopeRoleId")
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Api.ApiKey", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Admin", null)
+                    .WithMany()
+                    .HasForeignKey("AdminId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("SshServer.Interfaces.User", b =>

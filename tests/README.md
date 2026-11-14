@@ -118,6 +118,11 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `WebUi/AdminUiPagesTests` | in-memory web host | after a login every page renders (prerendered) with the stored users, settings and bans; `/access` needs a login; the local Bootstrap, icon and script files are served without a login; `blazor.web.js` is served; Radzen is not referenced; with `SshServer:Port` / `SshServer:BindToAddress` configured, the settings page and the dashboard show the override |
 | `EndToEnd/ZeroConfigStartTests` | end-to-end (process, SSH.NET) | the built `ServerConsoleApp` starts from a copy of its build output in an empty temp directory with only `--port`: it creates `freesftpsharp.db` with the RSA and ECDSA host keys and the log file itself, there is no default user, a user added with `SqlSettingsRepository.AddUser` can connect with SSH.NET, upload and list a file, and the start logs no Error or Fatal (console and log file). The comment of the class says what a new local user has to do |
 | `WebUi/AdminUiAuthenticationTests` | in-memory web host (`WebApplicationFactory<Program>`) | anonymous `/`, `/users`, `/general` redirect to `/Login`; anonymous `/_blazor` negotiate/connect get 401; login with antiforgery token, wrong credentials, missing token (400), open redirect, logout, cookie flags; without a credential everything answers 503 |
+| `Api/ApiAuthenticationTests` | in-memory web host with the REST API (`ApiFactory`) | `/api/v1/health` without login, every other route 401; a token from the admin credentials; a wrong password (401, audit log); an expired or changed token, a disabled administrator ends its token; the UI login cookie is not accepted; an API key acts as its owner and is shown once (only the hash stored); a ManageUsers key cannot change the settings (403); key scopes narrow the permissions; a key cannot make keys; revoked, expired and unknown keys are refused; changes with a key are in the audit log with the key name; without `Api:Enabled` there is no API |
+| `Api/ApiUsersTests` | in-memory web host with the REST API | users: create (hashed password), read, merge patch keeps the password, search, delete; validation problems by field; public keys add, list, generate, remove; a scoped administrator sees, changes and creates only users of its role; 403 without ManageUsers |
+| `Api/ApiResourcesTests` | in-memory web host with the REST API | virtual folders with write-only storage secrets (a patch keeps them); administrators and roles without privilege escalation; connections, audit and IP bans; webhooks with a write-only secret; settings read by everyone, changed with ManageSettings, validation |
+| `Api/OpenApiDocumentTests` | in-memory web host with the REST API | the OpenAPI document has every resource and both security schemes; the committed `docs/openapi.json` is the generated document (`FREESFTPSHARP_UPDATE_OPENAPI=1` writes it) |
+| `Api/ApiDumpTests` | two in-memory web hosts with the REST API | a dump with a passphrase loaded into an empty server gives the same roles, administrators, folders, users (hashes, keys, mounts, roles) and webhooks, the secrets encrypted again; a wrong passphrase is refused; add and skip modes; only a super admin dumps or loads |
 
 Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the `Skip` when the bug is fixed.
 
@@ -157,6 +162,9 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
   replaces the LiteDB repository with `InMemorySettingsRepository`, so no port is opened and no `config.db` is
   written. It sets the admin credential `admin` / `AdminUiFactory.AdminPassword` through configuration.
   The web UI test classes share one xUnit collection, because `Program` sets the static Serilog logger.
+- `Api/ApiFactory` is an `AdminUiFactory` with `Api:Enabled` and every store in a SQLite file of its own (users,
+  administrators, API keys, audit log, webhooks). It has helpers for tokens, API keys and test administrators. The API
+  test classes are in the same collection as the web UI tests.
 
 ## Add a test
 

@@ -5,7 +5,7 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Storage;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
     /// The settings repository as the signed-in administrator may use it (scoped per circuit). The admin pages use it

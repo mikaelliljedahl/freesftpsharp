@@ -38,6 +38,8 @@
     <ProjectReference Include="..\..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
     <ProjectReference Include="..\..\FxSshSftpServer\FxSshSftpServer.csproj" />
+    <ProjectReference Include="..\..\SshServer.Administration\SshServer.Administration.csproj" />
+    <ProjectReference Include="..\..\SshServer.Api\SshServer.Api.csproj" />
     <!-- Built for ZeroConfigStartTests, which starts the real ServerConsoleApp as a process. Not referenced as an assembly. -->
     <ProjectReference Include="..\..\ServerConsoleApp\ServerConsoleApp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
@@ -51,6 +53,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="SshServer.Administration" />
   </ItemGroup>
 
   <ItemGroup>
