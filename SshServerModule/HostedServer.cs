@@ -170,9 +170,10 @@ namespace FxSsh.SshServerModule
                 throw new SshConnectionException($"Connection refused: {filter}.", DisconnectReason.HostNotAllowedToConnect);
             }
 
+            var connectionId = Guid.Empty; // set right after the registration; the callback runs only later
             var connection = _connections.Register(new ConnectionRegistration(ConnectionProtocols.Sftp,
-                DisplayEndPoint(e.RemoteEndPoint), reason => e.DisconnectAsync(DisconnectReason.ByApplication, reason)));
-            var connectionId = connection.Id;
+                DisplayEndPoint(e.RemoteEndPoint), reason => DisconnectByServer(e, connectionId, reason)));
+            connectionId = connection.Id;
             // Subscribed before the session starts, so a session always leaves the registry (also when the handshake fails).
             e.Disconnected += (s, args) => _connections.Unregister(connectionId);
             e.KeysExchanged += (s, args) =>
@@ -188,6 +189,18 @@ namespace FxSsh.SshServerModule
                 e.ConfigureKeepalive(keepalive);
 
             e.ServiceRegistered += (s, service) => OnServiceRegistered(e, service, connectionId);
+        }
+
+        /// <summary>
+        /// A disconnect by the server (admin kick, #132 user closer): the session leaves the registry as soon as its close
+        /// has started, not when the SSH teardown (send queue, channels, socket) has finished, so a kicked session is never
+        /// listed or counted for the session limit. If the close cannot start, the entry stays.
+        /// </summary>
+        private Task DisconnectByServer(Session session, Guid connectionId, string reason)
+        {
+            var closing = session.DisconnectAsync(DisconnectReason.ByApplication, reason);
+            _connections.Unregister(connectionId);
+            return closing;
         }
 
         /// <summary>The client address for the registry: an IPv4 client of the dual-stack listener as "127.0.0.1:50000", not "[::ffff:127.0.0.1]:50000".</summary>

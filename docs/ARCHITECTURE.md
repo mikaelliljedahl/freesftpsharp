@@ -298,7 +298,15 @@ without a limit gets no quota decorator and no counter at all.
   The admin UI ("Reset transfer counters") and the event rule action "QuotaResetTransfer" set the counters to 0.
 - **Bandwidth.** A `TokenBucket` per session and direction (capacity a quarter of a second, debt for larger requests, on a
   `TimeProvider`): a write waits before it reaches the storage, a read waits before it returns, so the protocol answers
-  later and SFTP clients slow down to the rate.
+  later and SFTP clients slow down to the rate. The wait is asynchronous and holds no other request of the session (#133):
+  the SFTP engine handles the requests of each handle in order in a lane of their own, and the path requests (list,
+  STAT, rename, ...) in one more lane, and it uses the asynchronous READ and WRITE of the adapter (`ISftpAsyncFileHandle`,
+  see [external/README.md](../external/README.md)). The other storage calls of SFTP are still synchronous: a slow call of a
+  remote storage (for example a STAT on S3) holds the path lane of its session, not the transfers of the open files.
+  The SSH window gives the flow control: the window of a request goes back to the client only when it is answered, and
+  the engine stops taking requests while more than 4 MiB of replies wait for the client's window. Known limit: a path
+  request (SETSTAT, RENAME, REMOVE) that a client pipelines behind queued writes of an open file can run before them;
+  SFTP clients wait for the replies of their writes before they send such a request.
 
 ## Administrators and authorization
 

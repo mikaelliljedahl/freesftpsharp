@@ -7,9 +7,10 @@ namespace SshServerModule.Sftp
     /// Waits for the asynchronous storage from the synchronous upstream SFTP engine (FxSsh <c>ISftpFileSystem</c>) and
     /// from the synchronous SSH events.
     /// <para>
-    /// Why this does not deadlock: the engine handles the requests of a session one after the other, inline in the
-    /// receive loop of that session (an async loop on the thread pool, no <see cref="System.Threading.SynchronizationContext"/>
-    /// in the hosts). The storage never needs that loop to complete: its continuations run on the thread pool, not on
+    /// Why this does not deadlock: the engine handles the requests of a session in lanes (one per handle, one for the
+    /// paths), inline in the receive loop of that session until a READ or WRITE goes asynchronous, then on the thread pool
+    /// (no <see cref="System.Threading.SynchronizationContext"/> in the hosts). READ and WRITE of a file do not use this
+    /// bridge (<c>ISftpAsyncFileHandle</c>, #133). The storage never needs that loop to complete: its continuations run on the thread pool, not on
     /// the blocked thread. Blocking the receive loop for one request is what the synchronous engine does with a
     /// synchronous file system too; the SSH window and keepalive wait for the same request.
     /// </para>
