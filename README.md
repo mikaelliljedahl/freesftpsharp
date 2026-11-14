@@ -201,7 +201,7 @@ The per-user whitelist (`User.OnlyWhitelistedIps` / `User.WhitelistedIps`) is ch
   fingerprint. A key with an expiry date (`ExpiresAt`, UTC) is refused from that time on. A removed key is refused at
   the next connection. SSH certificates, DSA and security keys (`sk-...`) are not supported. The server checks ed25519
   signatures with BouncyCastle (FxSsh and .NET have no ed25519); it has no ed25519 host key. It registers ssh-ed25519
-  as a custom algorithm, so the start log has the line "Imported custom algorithms: hostkey=[ssh-ed25519]".
+  as a custom algorithm; the start log has the Info line "Imported custom algorithms: hostkey=[ssh-ed25519]".
 - **Allowed methods.** `User.AllowedAuthMethods` (default: all) can limit a user to `PublicKey` or `Password`. A
   refused method fails like a wrong credential (a refused password takes the time of a password check).
 - **Multi-step login.** `User.RequireAllOf`, for example `[PublicKey, Password]`, needs every method in this order. The
