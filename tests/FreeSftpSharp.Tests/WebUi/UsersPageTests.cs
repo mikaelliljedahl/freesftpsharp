@@ -175,6 +175,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         page.Find(".edit-user").Click();
         Assert.True(page.Find("#allow-sftp").HasAttribute("checked"));
         page.Find("#allow-webdav").Change(false);
+        page.Find("#allow-web").Change(false);
         page.Find("#user-form").Submit();
 
         page.WaitForAssertion(() => Assert.Equal(UserProtocols.Sftp, Repository.GetUser("paula").AllowedProtocols), SaveTimeout);

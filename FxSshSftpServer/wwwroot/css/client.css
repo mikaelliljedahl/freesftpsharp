@@ -1,0 +1,11 @@
+/* The web client of the SFTP users (#69). No inline styles: the pages have a strict Content-Security-Policy. */
+.client-body { min-height: 100vh; }
+.client-narrow { max-width: 26rem; margin: 3rem auto; }
+.col-check { width: 2.5rem; }
+.drop-zone { border: 2px dashed var(--bs-border-color); border-radius: .5rem; padding: 1rem; text-align: center; }
+.drop-zone.drag-over { border-color: var(--bs-primary); background: var(--bs-primary-bg-subtle); }
+.client-dialog { border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; min-width: 20rem;
+    background: var(--bs-body-bg); color: var(--bs-body-color); }
+.client-dialog::backdrop { background: rgba(0, 0, 0, .4); }
+.qr-box { width: 11rem; }
+.upload-item progress { width: 100%; height: .75rem; }
