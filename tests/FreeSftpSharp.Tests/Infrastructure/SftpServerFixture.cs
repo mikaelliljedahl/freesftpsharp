@@ -38,6 +38,10 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual void ConfigureSettings(ServerSettings settings)
     {
     }
+    /// <summary>Changes the default test user before the server starts (for example its permissions). Override it in a derived fixture.</summary>
+    protected virtual void ConfigureUser(User user)
+    {
+    }
     /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
     protected virtual SshServerOptions? CreateListenOptions(int port) => null;
     /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
@@ -177,14 +181,16 @@ public class SftpServerFixture : IAsyncLifetime
         ConfigureSettings(settings);
 
         var repository = new InMemorySettingsRepository(settings);
-        repository.AddUser(new User
+        var user = new User
         {
             Username = TestCredentials.Username,
             HashedPassword = TestCredentials.HashPassword(TestCredentials.Password),
             UserRootDirectory = UserRoot,
             OnlyWhitelistedIps = false,
             WhitelistedIps = new List<string>(),
-        });
+        };
+        ConfigureUser(user);
+        repository.AddUser(user);
 
         BanTracker = new LoginBanTracker(CreateTimeProvider());
         return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(), repository, BanTracker,

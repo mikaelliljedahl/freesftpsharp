@@ -18,7 +18,9 @@ namespace SshServerModule.Storage
     /// "/incoming" itself is visible with the permissions of "/".
     /// </para>
     /// <list type="table">
-    /// <item><term>Stat, storage space, empty set-attributes</term><description><see cref="FilePermissions.List"/></description></item>
+    /// <item><term>Stat, storage space, empty set-attributes</term><description>any permission: a client must see the
+    /// file that it may download or overwrite (OpenSSH <c>get</c> stats first), but with <see cref="FilePermissions.None"/>
+    /// nothing is visible</description></item>
     /// <item><term>List</term><description><see cref="FilePermissions.List"/> in the directory itself</description></item>
     /// <item><term>Open for reading</term><description><see cref="FilePermissions.Download"/></description></item>
     /// <item><term>Open for writing</term><description><see cref="FilePermissions.Upload"/> for a new file, <see cref="FilePermissions.Overwrite"/> for an existing one</description></item>
@@ -55,7 +57,7 @@ namespace SshServerModule.Storage
             var normalized = VirtualPath.Normalize(path);
             if (_rules.IsHidden(normalized))
                 return ValueTask.FromResult<FileSystemEntry?>(null);
-            Require(FilePermissions.List, ParentOf(normalized), normalized);
+            RequireAny(ParentOf(normalized), normalized);
             return _inner.StatAsync(normalized, followLinks, ct);
         }
 
@@ -183,7 +185,7 @@ namespace SshServerModule.Storage
         {
             var normalized = VirtualPath.Normalize(path);
             ThrowIfHidden(normalized);
-            Require(FilePermissions.List, ParentOf(normalized), normalized);
+            RequireAny(ParentOf(normalized), normalized);
             return _inner.GetStorageSpaceAsync(normalized, ct);
         }
 
@@ -196,7 +198,10 @@ namespace SshServerModule.Storage
                 needed |= FilePermissions.ChangeMode;
             if (update.HasTimes)
                 needed |= FilePermissions.ChangeTimes;
-            Require(needed == FilePermissions.None ? FilePermissions.List : needed, directory, path);
+            if (needed == FilePermissions.None)
+                RequireAny(directory, path);
+            else
+                Require(needed, directory, path);
         }
 
         /// <summary>The directory whose permissions apply to an entry; for the root, the root.</summary>
@@ -208,6 +213,13 @@ namespace SshServerModule.Storage
         private static void Require(FilePermissions needed, FilePermissions granted, string path)
         {
             if ((granted & needed) != needed)
+                throw Denied(path);
+        }
+
+        /// <summary>Some permission in <paramref name="directory"/>: enough to see the attributes of an entry in it.</summary>
+        private void RequireAny(string directory, string path)
+        {
+            if (_rules.PermissionsOf(directory) == FilePermissions.None)
                 throw Denied(path);
         }
 

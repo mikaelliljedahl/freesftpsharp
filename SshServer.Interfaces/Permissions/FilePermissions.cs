@@ -10,7 +10,10 @@ public enum FilePermissions
     /// <summary>Nothing is allowed.</summary>
     None = 0,
 
-    /// <summary>List the directory and read the attributes (stat) of its entries.</summary>
+    /// <summary>
+    /// List the directory. Reading the attributes (stat) of an entry needs any permission in its directory, so a
+    /// client can check the file that it downloads or overwrites.
+    /// </summary>
     List = 1 << 0,
 
     /// <summary>Open a file for reading.</summary>

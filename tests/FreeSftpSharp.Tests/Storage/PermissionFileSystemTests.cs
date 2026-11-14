@@ -49,7 +49,7 @@ public sealed class PermissionFileSystemTests
     }
 
     [Fact]
-    public async Task Upload_only_cannot_list_download_overwrite_delete_rename_or_stat()
+    public async Task Upload_only_cannot_list_download_overwrite_delete_rename_or_create_a_directory()
     {
         await SeedAsync();
         var fs = Incoming();
@@ -60,10 +60,22 @@ public sealed class PermissionFileSystemTests
         await AssertDeniedAsync(() => fs.OpenAsync("/incoming/old.txt", FileOpenFlags.Write | FileOpenFlags.Append, null, Ct).AsTask());
         await AssertDeniedAsync(() => fs.DeleteFileAsync("/incoming/old.txt", Ct).AsTask());
         await AssertDeniedAsync(() => fs.RenameAsync("/incoming/old.txt", "/incoming/other.txt", RenameFlags.None, Ct).AsTask());
-        await AssertDeniedAsync(() => fs.StatAsync("/incoming/old.txt", true, Ct).AsTask());
         await AssertDeniedAsync(() => fs.CreateDirectoryAsync("/incoming/dir", Ct).AsTask());
         await AssertDeniedAsync(() => fs.SetAttributesAsync("/incoming/old.txt", new FileAttributesUpdate { Size = 0 }, Ct).AsTask());
         Assert.Equal("old", await ReadAsync(_backend, "/incoming/old.txt"));
+    }
+
+    [Fact]
+    public async Task Stat_needs_some_permission_in_the_directory()
+    {
+        await SeedAsync();
+        var fs = Create(new() { ["/"] = FilePermissions.All, ["/incoming"] = FilePermissions.Upload, ["/outgoing"] = FilePermissions.None });
+
+        // OpenSSH "get" and "reput" stat the file first: the client must see it to get "permission denied" on the open.
+        Assert.Equal(3, (await fs.StatAsync("/incoming/old.txt", true, Ct))!.Size);
+        await AssertDeniedAsync(() => fs.StatAsync("/outgoing/report.txt", true, Ct).AsTask());
+        await AssertDeniedAsync(() => fs.GetStorageSpaceAsync("/outgoing/report.txt", Ct).AsTask());
+        Assert.NotNull(await fs.StatAsync("/outgoing", true, Ct));
     }
 
     [Fact]
