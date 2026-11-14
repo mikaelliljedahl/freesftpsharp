@@ -1,0 +1,9 @@
+# CodeQL model: LogText.Clean escapes CR, LF and every other control character,
+# so its return value no longer carries log-forging taint (cs/log-forging, CWE-117).
+extensions:
+  - addsTo:
+      pack: codeql/csharp-all
+      extensible: barrierModel
+    data:
+      # namespace, type, subtypes, name, signature, ext, output, kind, provenance
+      - ["FxSsh.SshServerModule.Security", "LogText", false, "Clean", "(System.String)", "", "ReturnValue", "log-injection", "manual"]
