@@ -30,8 +30,9 @@ namespace SshServerModule.Storage
     /// operation of the server itself (<see cref="ClientContext.SkipPermissions"/>). Inside the
     /// permissions, so a refused operation is not counted.</item>
     /// <item><see cref="PermissionFileSystem"/>: the effective per-path permissions and path filters (#59, with the
-    /// groups #61); left out for a user who may do everything, and for an operation of the server itself
-    /// (<see cref="ClientContext.SkipPermissions"/>, the actions of the event rules).</item>
+    /// groups #61), limited to <see cref="ClientContext.PermissionMask"/> (the scope of a share link, #70); left out for a
+    /// user who may do everything, and for an operation of the server itself (<see cref="ClientContext.SkipPermissions"/>,
+    /// the actions of the event rules).</item>
     /// <item><see cref="EventingFileSystem"/>: the events of every operation of the client (#65). Outside the
     /// permissions, so an operation that the permissions refuse still gives an event (status Error) in the audit log;
     /// a hook can refuse an upload, download or delete before the permissions are checked.</item>
@@ -99,7 +100,8 @@ namespace SshServerModule.Storage
             if (_quotas != null && !client.SkipPermissions)
                 fileSystem = await _quotas.WrapSessionAsync(fileSystem, user, quotas, client, ct);
             if (!client.SkipPermissions)
-                fileSystem = PermissionFileSystem.Wrap(fileSystem, settings.Permissions);
+                fileSystem = PermissionFileSystem.Wrap(fileSystem,
+                    client.PermissionMask is { } mask ? settings.Permissions.Restrict(mask) : settings.Permissions);
             if (_events != null)
                 fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Root.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)
