@@ -1,0 +1,119 @@
+# One FreeSftpSharp node: a StatefulSet with one replica and a persistent volume (SQLite database, host keys, user files).
+# More than one replica needs the shared settings database of issue #75 and is not supported yet.
+#
+#   kubectl apply -f deploy/kubernetes/freesftpsharp.yaml
+#   kubectl -n freesftpsharp logs statefulset/freesftpsharp      # the generated admin password, once
+#
+# Pick your own admin password instead: create the secret before the first start,
+#   kubectl -n freesftpsharp create secret generic freesftpsharp-admin --from-literal=password='...'
+# and uncomment the FREESFTPSHARP_ADMIN_PASSWORD variable below.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: freesftpsharp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: freesftpsharp
+  namespace: freesftpsharp
+spec:
+  type: LoadBalancer            # or NodePort; the SFTP port is TCP, not HTTP
+  selector:
+    app: freesftpsharp
+  ports:
+    - name: sftp
+      port: 22
+      targetPort: sftp
+---
+# The admin UI is plain HTTP: keep it ClusterIP and reach it with an Ingress that terminates TLS, or kubectl port-forward.
+apiVersion: v1
+kind: Service
+metadata:
+  name: freesftpsharp-admin
+  namespace: freesftpsharp
+spec:
+  type: ClusterIP
+  selector:
+    app: freesftpsharp
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: freesftpsharp
+  namespace: freesftpsharp
+spec:
+  serviceName: freesftpsharp
+  replicas: 1
+  selector:
+    matchLabels:
+      app: freesftpsharp
+  template:
+    metadata:
+      labels:
+        app: freesftpsharp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: freesftpsharp
+          image: ghcr.io/mikaelliljedahl/freesftpsharp:latest   # pin a version tag in production
+          ports:
+            - name: sftp
+              containerPort: 2222
+            - name: http
+              containerPort: 8080
+          env:
+            # Unprivileged ports inside the pod; the Services map them to 22 and 80.
+            - name: SshServer__Port
+              value: "2222"
+            - name: Kestrel__Endpoints__Http__Url
+              value: http://0.0.0.0:8080
+            - name: HEALTHCHECK_PORT
+              value: "8080"
+            # - name: FREESFTPSHARP_ADMIN_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef: { name: freesftpsharp-admin, key: password }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
