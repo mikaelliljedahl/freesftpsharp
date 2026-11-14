@@ -26,7 +26,15 @@ public sealed class EncryptedLocalStorageProvider : StorageProvider<EncryptedLoc
     protected override async ValueTask<IFileSystem> CreateFileSystemAsync(EncryptedLocalStorageOptions options, CancellationToken ct)
     {
         // Fails here, before a session uses the storage, when the active key is missing or wrong.
-        await _keys.GetActiveKeyAsync(ct);
+        try
+        {
+            await _keys.GetActiveKeyAsync(ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // For example "local-encrypted" selected for a user while Storage:Encryption has no key.
+            throw new ArgumentException($"The encrypted storage needs a key ({EncryptedStorageOptions.SectionName}): {ex.Message}", nameof(options), ex);
+        }
         return new EncryptedFileSystem(new LocalFileSystem(options.RootDirectory), _keys);
     }
 }

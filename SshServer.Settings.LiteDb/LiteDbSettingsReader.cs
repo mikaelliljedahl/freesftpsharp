@@ -77,6 +77,9 @@ public static class LiteDbSettingsReader
                     // Not in files of older versions: then the default of User ("/" = All).
                     Permissions = stored.Permissions,
                     PathFilters = stored.PathFilters,
+                    // The storage of the user (#56). The virtual folders of a LiteDB file are not imported: their ids
+                    // are not those of the SQL database.
+                    Storage = stored.Storage,
                 });
             }
         }

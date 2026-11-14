@@ -150,9 +150,12 @@ public sealed class EncryptedStorageConfigurationTests : IDisposable
     {
         var provider = new EncryptedLocalStorageProvider(TestKeys.Provider("missing", ("a", TestKeys.KeyA)));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () => await provider.CreateAsync(new EncryptedLocalStorageOptions(_tempDirectory), Ct));
+        // ArgumentException, the error of IStorageProvider.CreateAsync for options that cannot work: a session then gets
+        // no storage instead of an unhandled error, also for a user that selects "local-encrypted" without a key (#56).
+        var ex = await Assert.ThrowsAsync<ArgumentException>(async () => await provider.CreateAsync(new EncryptedLocalStorageOptions(_tempDirectory), Ct));
 
         Assert.Contains("'missing'", ex.Message);
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
     }
 
     [Fact]

@@ -12,7 +12,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="11.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ASP.NET Core data protection encrypts the secrets of the storage configurations at rest (SecretProtection). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

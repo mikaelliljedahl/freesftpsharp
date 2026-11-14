@@ -14,6 +14,13 @@
             </NavLink>
         </li>
     </AuthorizeView>
+    <AuthorizeView Policy="@AdminPolicies.ManageFolders">
+        <li class="nav-item">
+            <NavLink class="nav-link" href="virtual-folders" @onclick="OnNavigate">
+                <i class="bi bi-folder-symlink"></i> Virtual folders
+            </NavLink>
+        </li>
+    </AuthorizeView>
     <AuthorizeView Policy="@AdminPolicies.ViewConnections">
         <li class="nav-item">
             <NavLink class="nav-link" href="connections" @onclick="OnNavigate">

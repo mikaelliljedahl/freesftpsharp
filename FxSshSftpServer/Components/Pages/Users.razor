@@ -7,6 +7,8 @@
 @using SshServer.Interfaces.Users
 @inject AdminScopedSettingsRepository SettingsRepository
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
+@inject SshServerModule.Storage.StorageConfigService StorageService
+@inject SshServerModule.Storage.VirtualFolderService FolderService
 @inject IJSRuntime JS
 @inject ToastService Toasts
 
@@ -15,7 +17,7 @@
 <div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
     <div>
         <h1 class="h3 mb-0">Users</h1>
-        <p class="text-body-secondary mb-0">The SFTP accounts. Each user sees only its root directory, with the permissions set per path.</p>
+        <p class="text-body-secondary mb-0">The SFTP accounts. Each user sees only its own storage and virtual folders, with the permissions set per path.</p>
     </div>
     <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-user"><i class="bi bi-person-plus"></i> Add user</button>
 </div>
@@ -59,8 +61,19 @@
                         </TemplateColumn>
                         @if (form is null)
                         {
-                            <TemplateColumn Title="Root directory" SortBy="@(GridSort<User>.ByAscending(u => u.UserRootDirectory))" Class="d-none d-md-table-cell">
-                                <span class="font-monospace-sm">@context.UserRootDirectory</span>
+                            <TemplateColumn Title="Storage" SortBy="@(GridSort<User>.ByAscending(u => u.Storage == null ? u.UserRootDirectory : u.Storage.Provider))" Class="d-none d-md-table-cell">
+                                @if (context.Storage is null)
+                                {
+                                    <span class="font-monospace-sm">@context.UserRootDirectory</span>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-light border">@StorageService.DisplayName(context.Storage)</span>
+                                }
+                                @if (context.VirtualFolders is { Count: > 0 } mounts)
+                                {
+                                    <span class="badge text-bg-secondary ms-1" title="Virtual folders">+@mounts.Count @(mounts.Count == 1 ? "folder" : "folders")</span>
+                                }
                             </TemplateColumn>
                             <TemplateColumn Title="Last login (UTC)" SortBy="@(GridSort<User>.ByAscending(u => u.LastSuccessfulLogin))" Class="d-none d-md-table-cell">
                                 @LastLogin(context.LastSuccessfulLogin)
@@ -100,7 +113,13 @@
                             }
                         </div>
 
-                        <div class="mb-3">
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Storage</legend>
+                            <StorageEditor Settings="form.Storage" IdPrefix="user-storage" Problems="storageProblems"
+                                           DefaultLabel="Default: a directory on the server" OnProviderChanged="() => storageProblems = null" />
+                        @if (form.UsesDefaultStorage)
+                        {
+                        <div class="mb-0">
                             <label class="form-label" for="root-directory">Root directory</label>
                             <InputText id="root-directory" class="form-control font-monospace" @bind-Value="form.UserRootDirectory" placeholder="/srv/sftp/user" />
                             <ValidationMessage For="() => form.UserRootDirectory" />
@@ -113,6 +132,75 @@
                                 <div class="form-text">A directory on the server. The user sees it as <code>/</code> and cannot leave it.</div>
                             }
                         </div>
+                        }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Virtual folders</legend>
+                            <div class="small text-body-secondary mb-2">
+                                Other storage locations that the user sees as directories, for example a shared S3 prefix at <code>/incoming</code>.
+                                A file cannot be renamed between two storages. Manage the folders on the <a href="virtual-folders">Virtual folders</a> page.
+                            </div>
+                            @if (form.Mounts.Count > 0)
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-2" id="mount-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Virtual folder</th>
+                                                <th scope="col">Mount path</th>
+                                                <th scope="col"><span class="visually-hidden">Remove</span></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @for (var i = 0; i < form.Mounts.Count; i++)
+                                            {
+                                                var row = form.Mounts[i];
+                                                var index = i;
+                                                <tr class="mount-row">
+                                                    <td style="min-width: 10rem">
+                                                        <select class="form-select form-select-sm" id="mount-folder-@index" aria-label="Virtual folder"
+                                                                value="@row.VirtualFolderId" @onchange="e => row.VirtualFolderId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0">
+                                                            <option value="0">Select a folder</option>
+                                                            @foreach (var folder in folders)
+                                                            {
+                                                                <option value="@folder.Id">@folder.Name</option>
+                                                            }
+                                                        </select>
+                                                    </td>
+                                                    <td style="min-width: 10rem">
+                                                        <input type="text" class="form-control form-control-sm font-monospace" id="mount-path-@index" aria-label="Mount path"
+                                                               placeholder="/shared" value="@row.MountPath" @onchange="e => row.MountPath = e.Value?.ToString() ?? string.Empty" />
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-danger remove-mount" title="Remove" aria-label="Remove the mount @row.MountPath"
+                                                                @onclick="() => form.Mounts.RemoveAt(index)"><i class="bi bi-x"></i></button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            @if (mountProblems is { Count: > 0 })
+                            {
+                                <ul class="text-danger small mb-2 ps-3" id="mount-problems">
+                                    @foreach (var problem in mountProblems)
+                                    {
+                                        <li>@problem</li>
+                                    }
+                                </ul>
+                            }
+                            @if (folders.Count == 0)
+                            {
+                                <div class="small text-body-secondary" id="no-folders">There are no virtual folders yet.</div>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="add-mount"
+                                        @onclick="AddMount"><i class="bi bi-plus"></i> Mount a folder</button>
+                            }
+                        </fieldset>
 
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
@@ -396,7 +484,7 @@
 </div>
 
 <ConfirmDialog @ref="deleteDialog" Title="Delete user" ConfirmText="Delete" OnConfirm="DeleteAsync">
-    Delete the user <strong>@pendingDelete</strong>? The user can no longer log in. The files in the root directory are not deleted.
+    Delete the user <strong>@pendingDelete</strong>? The user can no longer log in. The files in its storage are not deleted.
 </ConfirmDialog>
 
 <ConfirmDialog @ref="removeKeyDialog" Title="Remove the public key" ConfirmText="Remove" OnConfirm="RemoveKey">
@@ -405,6 +493,9 @@
 
 @code {
     private List<User> users = new();
+    private IReadOnlyList<SshServer.Interfaces.Storage.VirtualFolder> folders = [];
+    private IReadOnlyList<string> storageProblems;
+    private IReadOnlyList<string> mountProblems;
     private string search = "";
     private UserForm form;
     private string pendingDelete;
@@ -424,22 +515,58 @@
 
     protected override void OnInitialized() => LoadUsers();
 
-    private void LoadUsers() => users = SettingsRepository.GetAllUsers();
+    private void LoadUsers()
+    {
+        users = SettingsRepository.GetAllUsers();
+        folders = FolderService.List();
+    }
 
     private void StartNew()
     {
         ResetKeyInput();
         form = UserForm.New();
+        ClearProblems();
     }
 
     private void Edit(User user)
     {
         ResetKeyInput();
         var stored = SettingsRepository.GetUser(user.Username);
-        form = stored is null ? null : UserForm.From(stored);
+        form = stored is null ? null : UserForm.From(stored, StorageService);
+        ClearProblems();
     }
 
     private void CloseForm() => form = null;
+
+    private void ClearProblems()
+    {
+        storageProblems = null;
+        mountProblems = null;
+    }
+
+    private void AddMount()
+    {
+        var first = folders.FirstOrDefault(f => !form.Mounts.Any(m => m.VirtualFolderId == f.Id)) ?? folders[0];
+        form.Mounts.Add(new MountRow { VirtualFolderId = first.Id, MountPath = "/" + first.Name });
+    }
+
+    /// <summary>The storage of "/" from the form, or false with the problems shown in the form.</summary>
+    private bool TryBuildStorage(out SshServer.Interfaces.Storage.StorageConfig storage)
+    {
+        storage = null;
+        ClearProblems();
+        var mounts = FolderService.ValidateMounts(form.MountList());
+        if (mounts.Count > 0)
+            mountProblems = mounts;
+        if (!form.UsesDefaultStorage)
+        {
+            var result = StorageService.Build(form.Storage);
+            if (!result.IsValid)
+                storageProblems = result.Problems;
+            storage = result.Config;
+        }
+        return storageProblems is null && mountProblems is null;
+    }
 
     private void ResetKeyInput()
     {
@@ -458,11 +585,17 @@
     private async Task SaveAsync()
     {
         var username = form.Username.Trim();
+        if (!TryBuildStorage(out var storage))
+        {
+            Toasts.ShowError($"The user {username} was not saved: check the storage and the virtual folders.");
+            return;
+        }
         if (form.IsNew)
         {
             var user = new User();
             // Hash off the circuit's synchronization context: PBKDF2 with 600,000 iterations takes a moment.
             await Task.Run(() => form.ApplyTo(user));
+            user.Storage = storage;
             if (!UserService.TryAdd(user))
             {
                 Toasts.ShowError($"The user {username} could not be created. Is the name already used?");
@@ -481,6 +614,7 @@
                 return;
             }
             await Task.Run(() => form.ApplyTo(user));
+            user.Storage = storage;
             if (!SettingsRepository.UpdateUser(user))
             {
                 Toasts.ShowError($"The user {username} could not be saved.");
@@ -490,7 +624,7 @@
         }
 
         LoadUsers();
-        form = UserForm.From(SettingsRepository.GetUser(username));
+        form = UserForm.From(SettingsRepository.GetUser(username), StorageService);
     }
 
     private void AskDelete(string username)

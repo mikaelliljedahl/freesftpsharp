@@ -17,21 +17,20 @@ namespace FreeSftpSharp.Tests.EndToEnd;
 
 /// <summary>
 /// The server with the Azure Blob backend as the storage of every user, against Azurite; skipped unless
-/// FREESFTPSHARP_TEST_AZURITE is set. Until the per-user storage configuration (#56), the fixture selects
-/// "azure-blob" with its own <see cref="IUserStorageResolver"/>.
+/// FREESFTPSHARP_TEST_AZURITE is set. The fixture gives every user "azure-blob" with a fixed
+/// <see cref="IUserStorageResolver"/>.
 /// </summary>
 public sealed class AzureBlobSftpServerFixture : SftpServerFixture
 {
     public string KeyPrefix { get; } = "e2e/" + Guid.NewGuid().ToString("N");
 
-    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
     {
         if (AzuriteTestServer.Endpoint != null)
             AzuriteTestServer.EnsureContainer(); // on a new Azurite the container is missing
-        return new StorageFileSystemFactory(
-            new StorageProviderRegistry([new AzureBlobStorageProvider(new AzureBlobClientCache())]),
-            new AzureResolver(AzuriteTestServer.Endpoint == null ? new AzureBlobStorageOptions() : AzuriteTestServer.Options(KeyPrefix)),
-            new EffectivePermissionsService(), connections, events);
+        var options = AzuriteTestServer.Endpoint == null ? new AzureBlobStorageOptions() : AzuriteTestServer.Options(KeyPrefix);
+        return TestStorage.Factory([new AzureBlobStorageProvider(new AzureBlobClientCache())],
+            codec => TestStorage.Fixed(codec, AzureBlobStorageProvider.ProviderName, options), connections, events);
     }
 
     /// <summary>The blob name of a virtual path such as "/dir/a.txt".</summary>
@@ -49,11 +48,6 @@ public sealed class AzureBlobSftpServerFixture : SftpServerFixture
         await base.DisposeAsync();
         if (AzuriteTestServer.Endpoint != null)
             AzuriteTestServer.DeletePrefix(KeyPrefix);
-    }
-
-    private sealed class AzureResolver(AzureBlobStorageOptions options) : IUserStorageResolver
-    {
-        public StorageSelection Resolve(User user) => new(AzureBlobStorageProvider.ProviderName, options);
     }
 }
 

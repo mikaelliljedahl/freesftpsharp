@@ -25,6 +25,7 @@ namespace SshServer.Settings.Sql
         /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>),
         /// and the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it).
+        /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
         /// provider keeps them in memory only.
         /// </summary>
@@ -32,6 +33,7 @@ namespace SshServer.Settings.Sql
         {
             var options = SettingsStorageOptions.FromConfiguration(configuration);
             services.AddSingleton(options);
+            services.AddSshServerSecretProtection();
 
             switch (options.Provider)
             {

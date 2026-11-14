@@ -8,6 +8,7 @@ using SshServer.Interfaces.Security;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using SshServerModule.Storage;
 
 namespace FxSshSftpServer.Models
 {
@@ -24,8 +25,16 @@ namespace FxSshSftpServer.Models
         [RegularExpression(UserAdministrationService.UserNamePattern, ErrorMessage = "The user name cannot have spaces, ':', '/' or '\\'.")]
         public string Username { get; set; } = "";
 
-        [Required(ErrorMessage = "Enter the root directory of the user on the server.")]
+        /// <summary>The local root directory of the default storage; required only while <see cref="Storage"/> has no provider.</summary>
         public string UserRootDirectory { get; set; } = "";
+
+        /// <summary>The storage of "/" (issue #56). No provider: the default storage, the local disk at <see cref="UserRootDirectory"/>.</summary>
+        public StorageSettings Storage { get; set; } = new();
+
+        /// <summary>The virtual folders mounted for the user (issue #56).</summary>
+        public List<MountRow> Mounts { get; set; } = new();
+
+        public bool UsesDefaultStorage => string.IsNullOrEmpty(Storage.Provider);
 
         /// <summary>A new password. Empty: keep the stored password.</summary>
         public string NewPassword { get; set; } = "";
@@ -71,8 +80,13 @@ namespace FxSshSftpServer.Models
 
         public static UserForm New() => new() { IsNew = true };
 
-        public static UserForm From(User user) => new()
+        public static UserForm From(User user, StorageConfigService storage) => new()
         {
+            Storage = storage.Edit(user.Storage),
+            Mounts = (user.VirtualFolders ?? new List<VirtualFolderMount>())
+                .OrderBy(m => m.MountPath, StringComparer.Ordinal)
+                .Select(m => new MountRow { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath })
+                .ToList(),
             IsNew = false,
             Username = user.Username ?? "",
             UserRootDirectory = user.UserRootDirectory ?? "",
@@ -143,11 +157,13 @@ namespace FxSshSftpServer.Models
         /// Writes the form to <paramref name="user"/> (a new user, or the stored copy of an existing one). A new
         /// password is hashed with <see cref="PasswordHasher"/>; the plain text never leaves the form.
         /// </summary>
+        /// <remarks>The storage configuration is built and validated by <see cref="StorageConfigService"/>; the caller sets <see cref="User.Storage"/>.</remarks>
         public void ApplyTo(User user, int passwordIterations = PasswordHasher.DefaultIterations)
         {
             if (IsNew)
                 user.Username = Username.Trim();
             user.UserRootDirectory = UserRootDirectory.Trim();
+            user.VirtualFolders = MountList();
             user.OnlyWhitelistedIps = OnlyWhitelistedIps;
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
             user.AllowedAuthMethods = AllowedMethods;
@@ -161,8 +177,16 @@ namespace FxSshSftpServer.Models
                 user.HashedPassword = null;
         }
 
+        /// <summary>The mounts of the form, with normalized paths.</summary>
+        public List<VirtualFolderMount> MountList() => Mounts
+            .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = NormalizedOrRaw(m.MountPath) })
+            .ToList();
+
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
+            if (UsesDefaultStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
+                yield return new ValidationResult("Enter the root directory of the user on the server.", new[] { nameof(UserRootDirectory) });
+
             if (!string.IsNullOrEmpty(NewPassword))
             {
                 if (NewPassword.Length < MinimumPasswordLength)
@@ -187,5 +211,12 @@ namespace FxSshSftpServer.Models
             foreach (var problem in PermissionRulesValidator.Validate(null, FilterDictionary()))
                 yield return new ValidationResult(problem, new[] { nameof(PathFilters) });
         }
+    }
+
+    /// <summary>One virtual folder mounted for a user, in the form.</summary>
+    public sealed class MountRow
+    {
+        public int VirtualFolderId { get; set; }
+        public string MountPath { get; set; } = "";
     }
 }

@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using SshServer.Interfaces;
@@ -13,10 +14,13 @@ using SshServerModule.Events;
 namespace SshServerModule.Storage
 {
     /// <summary>
-    /// The file system of a user: the storage of the user (<see cref="IUserStorageResolver"/>), created by the provider
-    /// with that name (<see cref="IStorageProviderRegistry"/>), wrapped in the storage decorators. The decorator chain is
-    /// built here and only here, innermost first:
+    /// The file system of a user: the storage of the user (<see cref="IUserStorageResolver"/>: <see cref="User.Storage"/> or
+    /// the default local disk, and the mounted virtual folders), each created by the provider with its name
+    /// (<see cref="IStorageProviderRegistry"/>) from its decoded options (<see cref="StorageOptionsCodec"/>), wrapped in the
+    /// storage decorators. The decorator chain is built here and only here, innermost first:
     /// <list type="number">
+    /// <item><see cref="MountedFileSystem"/>: routes the paths of the virtual folders to their storage (#56); left out
+    /// for a user without virtual folders. Every rule below sees the virtual paths of the user.</item>
     /// <item><see cref="PermissionFileSystem"/>: per-path permissions and path filters (#59); left out for a user who
     /// may do everything.</item>
     /// <item><see cref="EventingFileSystem"/>: the events of every operation of the client (#65). Outside the
@@ -30,6 +34,7 @@ namespace SshServerModule.Storage
     {
         private readonly IStorageProviderRegistry _registry;
         private readonly IUserStorageResolver _resolver;
+        private readonly StorageOptionsCodec _codec;
         private readonly IEffectivePermissionsService _permissions;
         private readonly IConnectionRegistry? _connections;
         private readonly IEventBus? _events;
@@ -38,11 +43,12 @@ namespace SshServerModule.Storage
         /// <param name="connections">The open connections (AddSshServerConnections). Null: no connection tracking.</param>
         /// <param name="events">The event bus (AddSshServerEvents). Null: no events.</param>
         /// <param name="time">The clock of the events. Null: the system clock.</param>
-        public StorageFileSystemFactory(IStorageProviderRegistry registry, IUserStorageResolver resolver, IEffectivePermissionsService permissions,
-            IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null)
+        public StorageFileSystemFactory(IStorageProviderRegistry registry, IUserStorageResolver resolver, StorageOptionsCodec codec,
+            IEffectivePermissionsService permissions, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null)
         {
             _registry = registry;
             _resolver = resolver;
+            _codec = codec;
             _permissions = permissions;
             _connections = connections;
             _events = events;
@@ -52,13 +58,35 @@ namespace SshServerModule.Storage
         public async ValueTask<IFileSystem> CreateAsync(User user, ClientContext client, CancellationToken ct)
         {
             var storage = _resolver.Resolve(user);
-            var fileSystem = await _registry.Get(storage.Provider).CreateAsync(storage.Options, ct);
+            var fileSystem = await CreateStorageAsync(storage.Root, ct);
+            if (storage.Mounts.Count > 0)
+            {
+                var mounts = new List<MountedFileSystem.Mount>();
+                foreach (var mount in storage.Mounts)
+                {
+                    try
+                    {
+                        mounts.Add(new MountedFileSystem.Mount(mount.Path, await CreateStorageAsync(mount.Storage, ct)));
+                    }
+                    catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or FileSystemException)
+                    {
+                        throw new ArgumentException($"The virtual folder '{mount.Name}' at {mount.Path}: {ex.Message}", ex);
+                    }
+                }
+                fileSystem = new MountedFileSystem(fileSystem, mounts);
+            }
             fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
             if (_events != null)
-                fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Provider, _time);
+                fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Root.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)
                 fileSystem = new ConnectionTrackingFileSystem(fileSystem, _connections, connectionId);
             return fileSystem;
+        }
+
+        private async ValueTask<IFileSystem> CreateStorageAsync(StorageConfig config, CancellationToken ct)
+        {
+            var provider = _registry.Get(config.Provider);
+            return await provider.CreateAsync(_codec.Decode(config), ct);
         }
     }
 }

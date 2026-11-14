@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.S3;
@@ -123,10 +124,8 @@ public sealed class S3StorageProviderTests
     {
         var s3 = new FakeS3Client();
         s3.Seed("users/r/a.txt", "a"u8.ToArray());
-        var factory = new StorageFileSystemFactory(
-            new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache(_ => s3))]),
-            new FixedResolver(new StorageSelection(S3StorageProvider.ProviderName, Valid with { KeyPrefix = "users/r" })),
-            new EffectivePermissionsService());
+        var factory = TestStorage.Factory([new S3StorageProvider(new S3ClientCache(_ => s3))],
+            codec => TestStorage.Fixed(codec, S3StorageProvider.ProviderName, Valid with { KeyPrefix = "users/r" }));
 
         var unrestricted = await factory.CreateAsync(new User { Username = "u" }, Client, Ct);
         var readOnly = await factory.CreateAsync(new User
@@ -143,10 +142,5 @@ public sealed class S3StorageProviderTests
         Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
         Assert.Equal(["users/r/a.txt"], s3.Keys);
         Assert.Equal(0, s3.CallCount("PutObject"));
-    }
-
-    private sealed class FixedResolver(StorageSelection selection) : IUserStorageResolver
-    {
-        public StorageSelection Resolve(User user) => selection;
     }
 }

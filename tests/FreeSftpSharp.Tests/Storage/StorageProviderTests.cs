@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Infrastructure;
 using SshServerModule.Connections;
 using SshServerModule.Events;
 using FreeSftpSharp.Tests.Storage.Encrypted;
@@ -143,7 +144,7 @@ public sealed class StorageProviderTests : IDisposable
     [Fact]
     public async Task Factory_with_an_unknown_provider_throws()
     {
-        var factory = new StorageFileSystemFactory(new StorageProviderRegistry([]), new FixedResolver(new StorageSelection("s3", new object())), new EffectivePermissionsService());
+        var factory = TestStorage.Factory([], _ => TestStorage.Fixed(new UserStorage(new StorageConfig { Provider = "s3" }, [])));
 
         await Assert.ThrowsAsync<KeyNotFoundException>(async () => await factory.CreateAsync(new User(), Client, Ct));
     }
@@ -152,10 +153,9 @@ public sealed class StorageProviderTests : IDisposable
     public async Task The_factory_wraps_every_provider_in_the_permission_decorator_also_the_encrypted_one()
     {
         Directory.CreateDirectory(_tempDirectory);
-        var factory = new StorageFileSystemFactory(
-            new StorageProviderRegistry([new LocalDiskStorageProvider(), new EncryptedLocalStorageProvider(TestKeys.Provider("a", ("a", TestKeys.KeyA)))]),
-            new EncryptedUserRootStorageResolver(Options.Create(new EncryptedStorageOptions { Enabled = true })),
-            new EffectivePermissionsService());
+        var factory = TestStorage.Factory(
+            [new LocalDiskStorageProvider(), new EncryptedLocalStorageProvider(TestKeys.Provider("a", ("a", TestKeys.KeyA)))],
+            _ => new UserStorageResolver(new EncryptedUserRootDefaultStorage(Options.Create(new EncryptedStorageOptions { Enabled = true }))));
 
         var unrestricted = await factory.CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, Client, Ct);
         var readOnly = await factory.CreateAsync(new User
@@ -171,10 +171,5 @@ public sealed class StorageProviderTests : IDisposable
             readOnly.OpenAsync("/new.txt", FileOpenFlags.Write | FileOpenFlags.Create, null, Ct).AsTask());
         Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
         Assert.Empty(Directory.GetFiles(_tempDirectory));
-    }
-
-    private sealed class FixedResolver(StorageSelection selection) : IUserStorageResolver
-    {
-        public StorageSelection Resolve(User user) => selection;
     }
 }

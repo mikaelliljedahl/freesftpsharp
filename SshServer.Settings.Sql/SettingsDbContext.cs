@@ -7,6 +7,7 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
 
 namespace SshServer.Settings.Sql;
@@ -22,6 +23,12 @@ namespace SshServer.Settings.Sql;
 /// log (<see cref="AuditEntry"/>), the webhooks with their outbox (<see cref="Webhook"/>, <see cref="WebhookDelivery"/>),
 /// the administrators (<see cref="Admin"/>) and the scope roles (<see cref="Role"/>, referenced by
 /// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>) are in the same database.
+/// <para>
+/// A <see cref="StorageConfig"/> (the storage of a user or of a <see cref="VirtualFolder"/>) is a JSON text column
+/// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
+/// (<see cref="User.VirtualFolders"/>) are the table UserVirtualFolders, owned by the user, with a foreign key to the
+/// folder: removing a user or a folder removes its mounts.
+/// </para>
 /// </summary>
 public class SettingsDbContext : DbContext
 {
@@ -39,6 +46,7 @@ public class SettingsDbContext : DbContext
     public DbSet<ServerSettings> ServerSettings => Set<ServerSettings>();
     public DbSet<User> Users => Set<User>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<VirtualFolder> VirtualFolders => Set<VirtualFolder>();
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
     public DbSet<Admin> Admins => Set<Admin>();
@@ -81,8 +89,33 @@ public class SettingsDbContext : DbContext
                 v => ToJson(v), v => FromJson<Dictionary<string, FilePermissions>>(v), JsonComparer<Dictionary<string, FilePermissions>>());
             b.Property(u => u.PathFilters).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<Dictionary<string, PathFilter>>(v), JsonComparer<Dictionary<string, PathFilter>>());
+            b.Property(u => u.Storage).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
             // A role in use cannot be removed (AdminAdministrationService checks it first, with a clear message).
             b.HasOne<Role>().WithMany().HasForeignKey(u => u.RoleId).OnDelete(DeleteBehavior.Restrict);
+            b.OwnsMany(u => u.VirtualFolders, m =>
+            {
+                m.ToTable("UserVirtualFolders");
+                m.WithOwner().HasForeignKey("UserId");
+                m.Property<int>("Id");
+                m.HasKey("Id");
+                m.Property(x => x.MountPath).IsRequired().HasMaxLength(1024);
+                m.HasOne<VirtualFolder>().WithMany().HasForeignKey(x => x.VirtualFolderId).OnDelete(DeleteBehavior.Cascade);
+                m.HasIndex("UserId", nameof(VirtualFolderMount.MountPath)).IsUnique();
+            });
+        });
+
+        modelBuilder.Entity<VirtualFolder>(b =>
+        {
+            b.ToTable("VirtualFolders");
+            b.HasKey(f => f.Id);
+            var name = b.Property(f => f.Name).IsRequired().HasMaxLength(256);
+            if (Database.IsSqlite())
+                name.UseCollation("NOCASE");
+            b.HasIndex(f => f.Name).IsUnique();
+            b.Property(f => f.Description).IsRequired(false);
+            b.Property(f => f.Storage).IsRequired().HasConversion(
+                v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
         });
 
         modelBuilder.Entity<Role>(b =>
