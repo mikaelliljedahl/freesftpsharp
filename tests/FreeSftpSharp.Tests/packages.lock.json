@@ -287,6 +287,26 @@
           "Microsoft.AspNetCore.Components.Web": "11.0.0"
         }
       },
+      "Microsoft.AspNetCore.Cryptography.Internal": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "Rv1aSRRqCOcpN5SGs7wnyF1tOZ6I/H6ccCc55qGnD8pKKTHdyTYR+56Ge/o8Lkw1PfC9rZDvrD9ud4VnXBXhEA=="
+      },
+      "Microsoft.AspNetCore.DataProtection": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "3mhCghDVwqGrUV3TmjKRS5FwgZuuCSqTwQR/4Hfae4PkyBvZBwy87cgBx2ws7hoRaSrDnLEIpWo+mlLGMaaezw==",
+        "dependencies": {
+          "Microsoft.AspNetCore.Cryptography.Internal": "11.0.0",
+          "Microsoft.AspNetCore.DataProtection.Abstractions": "11.0.0",
+          "System.Security.Cryptography.Xml": "11.0.0"
+        }
+      },
+      "Microsoft.AspNetCore.DataProtection.Abstractions": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "FfqcYp1Y76iSwDxNik8ihG5qFEz6upOjmwE5XS86isTBSDSLQWSqTTfjwhFvDbGCw5BFItOGicBub1I86kl8zQ=="
+      },
       "Microsoft.AspNetCore.Metadata": {
         "type": "Transitive",
         "resolved": "11.0.0",
@@ -486,6 +506,15 @@
           "Microsoft.Extensions.Logging.Debug": "11.0.0",
           "Microsoft.Extensions.Logging.EventLog": "11.0.0",
           "Microsoft.Extensions.Logging.EventSource": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Http": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "Pa5xJYtE5weFzv8sRwei1yvqCc05PareJABDtUSigzyj0xmrnG7ZU5VBy0hf5tgh7HN3/psGiOQouw5PLaQD8w==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics": "11.0.0",
+          "Microsoft.Extensions.Logging": "11.0.0"
         }
       },
       "Microsoft.Extensions.Localization.Abstractions": {
@@ -796,6 +825,19 @@
         "resolved": "6.0.1",
         "contentHash": "IQ4NXP/B3Ayzvw0rDQzVTYsCKyy0Jp9KI6aYcK7UnGVlR9+Awz++TIPCQtPYfLJfOpm8ajowMR09V7quD3sEHw=="
       },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "G8mTjSWrwaPJ2bJRbKuI4ZqdKUYcANK0KtNH3s8/va3nXiF/Pk/yhv2R17rv5PBKJO5+ZXDyhTnZXh0W9v0J8w=="
+      },
+      "System.Security.Cryptography.Xml": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "RfXWeKcljjYZx5l/4i+6V4G8jP690jbHDhg4Wa/tNdNWvXn/c0WyyQySbpYLTuXB0fqzfttPoBCWMc8DFJNQzA==",
+        "dependencies": {
+          "System.Security.Cryptography.Pkcs": "11.0.0"
+        }
+      },
       "xunit.analyzers": {
         "type": "Transitive",
         "resolved": "2.3.0",
@@ -867,6 +909,7 @@
           "SshServer.Filesystem.S3": "[1.0.0, )",
           "SshServer.Observability": "[1.0.0, )",
           "SshServer.Settings.Sql": "[1.0.0, )",
+          "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
         }
       },
@@ -926,6 +969,15 @@
           "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )",
           "SshServer.Settings.LiteDb": "[1.0.0, )"
+        }
+      },
+      "sshserver.webhooks": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.DataProtection": "[11.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "Microsoft.Extensions.Http": "[11.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )"
         }
       },
       "sshservermodule": {
