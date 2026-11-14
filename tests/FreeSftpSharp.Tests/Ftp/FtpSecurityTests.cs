@@ -272,6 +272,43 @@ public sealed partial class FtpSecurityTests
     }
 
     [Fact]
+    public async Task A_protected_upload_is_complete_when_the_client_closes_without_reading_from_the_data_connection()
+    {
+        // lftp (GnuTLS) writes the file and closes the data socket without ever reading from it. Anything the server
+        // sent after the handshake (TLS 1.3 session tickets) is then unread at the client, so its kernel answers with a
+        // reset instead of a FIN, and the reset drops the data the server has not read yet: the file was truncated.
+        await using var host = await FtpTestHost.StartAsync();
+        host.AddUser("alice");
+        await using var raw = await host.RawAsync();
+        await raw.ReadAsync();
+        await raw.StartTlsAsync();
+        await LoginAsync(raw, "alice");
+        Assert.Equal(200, (await raw.CommandAsync("PBSZ 0")).Code);
+        Assert.Equal(200, (await raw.CommandAsync("PROT P")).Code);
+        var data = new byte[2 * 1024 * 1024];
+        new Random(3).NextBytes(data);
+
+        for (var round = 0; round < 3; round++)
+        {
+            var (code, text) = await raw.CommandAsync("EPSV");
+            Assert.Equal(229, code);
+            var port = int.Parse(text.Split('|')[3], System.Globalization.CultureInfo.InvariantCulture);
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            await socket.ConnectAsync(IPAddress.Loopback, port, TestContext.Current.CancellationToken);
+            await raw.SendAsync($"STOR /up{round}.bin");
+            Assert.Equal(150, (await raw.ReadAsync()).Code);
+            var ssl = new System.Net.Security.SslStream(new NetworkStream(socket, ownsSocket: false), false, (_, _, _, _) => true);
+            await ssl.AuthenticateAsClientAsync("localhost");
+            await ssl.WriteAsync(data, TestContext.Current.CancellationToken);
+            await ssl.FlushAsync(TestContext.Current.CancellationToken);
+            socket.Close(); // no TLS close_notify and no read, like lftp
+
+            Assert.Equal(226, (await raw.ReadAsync()).Code);
+            Assert.Equal(data, await host.StorageOf("alice").ReadAllAsync($"/up{round}.bin"));
+        }
+    }
+
+    [Fact]
     public async Task An_administrator_disconnect_closes_the_connection_with_421()
     {
         await using var host = await FtpTestHost.StartAsync(new Dictionary<string, string?> { ["Ftp:Tls:Mode"] = "Optional" });

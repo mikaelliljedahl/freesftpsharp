@@ -151,7 +151,7 @@ internal sealed partial class FtpSession
                 stream = ssl;
                 using var handshake = CancellationTokenSource.CreateLinkedTokenSource(Ct);
                 handshake.CancelAfter(DataTimeout);
-                await ssl.AuthenticateAsServerAsync(_services.Certificate.ServerOptions!, handshake.Token);
+                await ssl.AuthenticateAsServerAsync(_services.Certificate.DataOptions!, handshake.Token);
             }
             return stream;
         }

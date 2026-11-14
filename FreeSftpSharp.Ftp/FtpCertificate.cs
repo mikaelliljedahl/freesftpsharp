@@ -1,4 +1,5 @@
 using System.Net.Security;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
@@ -13,25 +14,35 @@ namespace FreeSftpSharp.Ftp;
 internal sealed class FtpCertificate : IDisposable
 {
     private readonly Lazy<X509Certificate2?> _certificate;
-    private readonly Lazy<SslServerAuthenticationOptions?> _options;
+    private readonly Lazy<SslStreamCertificateContext?> _context;
 
     public FtpCertificate(IOptions<FtpOptions> options, ILogger<FtpCertificate> logger)
     {
         var tls = options.Value.Tls;
         _certificate = new Lazy<X509Certificate2?>(() => tls.Mode == FtpTlsMode.Disabled ? null : Load(tls, logger));
-        _options = new Lazy<SslServerAuthenticationOptions?>(() => _certificate.Value is { } certificate
-            ? new SslServerAuthenticationOptions
-            {
-                // One context for the control and data connections, so that a client can resume the TLS session.
-                ServerCertificateContext = SslStreamCertificateContext.Create(certificate, null),
-                ClientCertificateRequired = false,
-                AllowTlsResume = true,
-            }
-            : null);
+        // One context for all connections, so that a client can resume a TLS session.
+        _context = new Lazy<SslStreamCertificateContext?>(() =>
+            _certificate.Value is { } certificate ? SslStreamCertificateContext.Create(certificate, null) : null);
     }
 
-    /// <summary>The TLS options of the server side, or null when TLS is off.</summary>
-    public SslServerAuthenticationOptions? ServerOptions => _options.Value;
+    /// <summary>The TLS options of the control connection (TLS 1.2 or 1.3), or null when TLS is off.</summary>
+    public SslServerAuthenticationOptions? ServerOptions => _context.Value is { } context
+        ? new SslServerAuthenticationOptions { ServerCertificateContext = context, ClientCertificateRequired = false, AllowTlsResume = true }
+        : null;
+
+    /// <summary>
+    /// The TLS options of a data connection (PROT P): TLS 1.2. In TLS 1.3 the server sends its session tickets after the
+    /// handshake. A client that only writes (an upload with lftp/GnuTLS) never reads them and closes the socket with
+    /// unread data, so its kernel sends a reset instead of a FIN, and the reset drops the end of the upload that the
+    /// server has not read yet. TLS 1.2 sends the ticket inside the handshake, so nothing is left unread.
+    /// </summary>
+    public SslServerAuthenticationOptions? DataOptions => _context.Value is { } context
+        ? new SslServerAuthenticationOptions
+        {
+            ServerCertificateContext = context, ClientCertificateRequired = false, AllowTlsResume = true,
+            EnabledSslProtocols = SslProtocols.Tls12,
+        }
+        : null;
 
     internal static X509Certificate2 Load(FtpTlsOptions tls, ILogger logger)
     {

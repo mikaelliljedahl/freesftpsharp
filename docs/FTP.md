@@ -62,8 +62,10 @@ multi-step login or a TOTP second factor cannot log in with the password, becaus
 - **Optional.** Plain FTP and FTPS are both accepted. Use it only in a closed network.
 - **Disabled.** Plain FTP only (`AUTH TLS` gets `502`). The server logs a warning at the start.
 
-Implicit TLS (port 990) is not supported; every client listed below can use explicit TLS. The control and data
-connections use one TLS context, so a client can resume the TLS session on the data connections.
+Implicit TLS (port 990) is not supported; every client listed below can use explicit TLS. The control connection uses
+TLS 1.2 or 1.3; the data connections use TLS 1.2, because the session tickets that a TLS 1.3 server sends after the
+handshake are never read by a client that only uploads (lftp), and its close then resets the connection and cuts off
+the end of the file. All connections share one TLS context, so a client can resume a TLS session.
 
 ## Firewall and NAT
 
