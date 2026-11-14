@@ -52,7 +52,7 @@ public sealed class WebhookEventHook : IEventHook
 
     private async Task<HookDecision> DecideSlowAsync(FileEvent file, WebhookCatalogSnapshot snapshot, CancellationToken ct)
     {
-        var name = WebhookEventNames.Of(file);
+        var name = EventNames.Of(file);
         string? payload = null;
         var eventId = Guid.NewGuid();
         foreach (var webhook in snapshot.Sync)

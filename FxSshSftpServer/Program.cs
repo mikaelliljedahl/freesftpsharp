@@ -20,6 +20,7 @@ using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
+using SshServer.EventRules;
 using SshServer.Observability;
 
 using FxSshSftpServer.Security;
@@ -70,6 +71,7 @@ builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
+builder.Services.AddEventRules(builder.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();

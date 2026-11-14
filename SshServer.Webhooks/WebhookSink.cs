@@ -29,7 +29,7 @@ public sealed class WebhookSink : IEventSink
         if (snapshot.Async.Count == 0)
             return;
 
-        var name = WebhookEventNames.Of(@event);
+        var name = EventNames.Of(@event);
         var matching = snapshot.Async.Where(w => w.Matches(@event, name)).ToArray();
         if (matching.Length == 0)
             return;

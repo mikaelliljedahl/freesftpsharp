@@ -176,6 +176,11 @@
         "resolved": "2.7.0",
         "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
       },
+      "Cronos": {
+        "type": "Transitive",
+        "resolved": "0.11.0",
+        "contentHash": "ovNrFIuKTbeNYx+1Tne8DkY/nJ+bRoS0/bTrCBzeAuMvLbX2nJprwcdRqZIwwLRsaghqBU932QvJ6mryTycc/A=="
+      },
       "Google.Api.Gax": {
         "type": "Transitive",
         "resolved": "4.13.1",
@@ -247,6 +252,14 @@
         "type": "Transitive",
         "resolved": "5.0.21",
         "contentHash": "ykJ7ffFl7P9YQKR/PLci6zupiLrsSCNkOTiw6OtzntH7d2kCYp5L1+3a/pksKgTEHcJBoPXFtg7VZSGVBseN9w=="
+      },
+      "MailKit": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "PG6hnsklTzd/iK9A6j03OxDOas9mh8zOBkbPzcsLmFOODE8Hw3HTy7HAKiJvVHXNpKc3/KMVG/4QvOAKCBbGhA==",
+        "dependencies": {
+          "MimeKit.Core": "5.0.0"
+        }
       },
       "Microsoft.AspNetCore.Authorization": {
         "type": "Transitive",
@@ -689,6 +702,11 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
+      "MimeKit.Core": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "0RLaVyex/BjUGqiw9xtGwzyCMaBcsu33Rth61bDCeVeQaaQK7tjcy4TA+nHKTqwUdp4OGd+gnhuq2fuR+c20qA=="
+      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.4",
@@ -992,6 +1010,7 @@
           "Serilog.Settings.Configuration": "[10.0.1, )",
           "Serilog.Sinks.File": "[7.0.0, )",
           "Serilog.Sinks.HtmlFile": "[1.0.1, )",
+          "SshServer.EventRules": "[1.0.0, )",
           "SshServer.Filesystem.AzureBlob": "[1.0.0, )",
           "SshServer.Filesystem.Encrypted": "[1.0.0, )",
           "SshServer.Filesystem.Gcs": "[1.0.0, )",
@@ -1001,6 +1020,15 @@
           "SshServer.Settings.Sql": "[1.0.0, )",
           "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
+        }
+      },
+      "sshserver.eventrules": {
+        "type": "Project",
+        "dependencies": {
+          "Cronos": "[0.11.0, )",
+          "MailKit": "[5.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )"
         }
       },
       "sshserver.filesystem.azureblob": {

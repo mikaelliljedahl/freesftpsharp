@@ -2,9 +2,11 @@
 @attribute [Authorize(Policy = AdminPolicies.ManageEvents)]
 @using System.Globalization
 @using System.Threading
+@using SshServer.Interfaces.Events
 @using SshServer.Interfaces.Webhooks
 @using SshServer.Webhooks
 @inject WebhookAdministrationService WebhookService
+@inject CurrentAdmin Current
 @inject ToastService Toasts
 
 <PageTitle>Webhooks - FreeSftpSharp admin</PageTitle>
@@ -73,7 +75,7 @@ else if (!WebhookService.AllowInsecureWebhooks)
                                     {
                                         <td class="d-none d-md-table-cell"><span class="font-monospace-sm">@webhook.Method @webhook.Url</span></td>
                                         <td class="d-none d-lg-table-cell small">
-                                            @(webhook.EventTypes.Count == 0 ? "all events (not Pre*)" : string.Join(", ", webhook.EventTypes))
+                                            @(webhook.OnlyForEventRules ? "event rules only" : webhook.EventTypes.Count == 0 ? "all events (not Pre*)" : string.Join(", ", webhook.EventTypes))
                                             @if (webhook.Users.Count > 0)
                                             {
                                                 <span class="text-body-secondary"> · users @string.Join(", ", webhook.Users)</span>
@@ -85,7 +87,11 @@ else if (!WebhookService.AllowInsecureWebhooks)
                                         </td>
                                     }
                                     <td>
-                                        @if (webhook.Sync)
+                                        @if (webhook.OnlyForEventRules)
+                                        {
+                                            <span class="badge text-bg-secondary" title="Sent only by the Webhook action of event rules">event rules</span>
+                                        }
+                                        else if (webhook.Sync)
                                         {
                                             <span class="badge text-bg-warning" title="Decides before the operation runs">sync</span>
                                             <span class="badge text-bg-light border">@(webhook.FailOpen ? "fail open" : "fail closed")</span>
@@ -181,6 +187,13 @@ else if (!WebhookService.AllowInsecureWebhooks)
                             }
                         </fieldset>
 
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox id="webhook-only-rules" class="form-check-input" @bind-Value="form.OnlyForEventRules" />
+                            <label class="form-check-label" for="webhook-only-rules">Only for event rules: no events of its own; the "Webhook" action of an event rule sends to it</label>
+                        </div>
+
+                        @if (!form.OnlyForEventRules)
+                        {
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Events</legend>
                             <div class="form-check form-switch mb-2">
@@ -200,14 +213,14 @@ else if (!WebhookService.AllowInsecureWebhooks)
                                     : "No event selected: every event except the Pre* events.")
                             </div>
                             <div class="row g-2">
-                                @foreach (var group in WebhookEventNames.Groups)
+                                @foreach (var group in EventNames.Groups)
                                 {
                                     <div class="col-sm-6 col-lg-3">
                                         <div class="fw-semibold small mb-1">@group.Category</div>
                                         @foreach (var name in group.Names)
                                         {
                                             var id = "event-" + name.Replace('.', '-');
-                                            var disabled = form.Sync && !WebhookEventNames.PreEvents.Contains(name);
+                                            var disabled = form.Sync && !EventNames.PreEvents.Contains(name);
                                             <div class="form-check">
                                                 <input class="form-check-input" type="checkbox" id="@id" checked="@form.EventTypes.Contains(name)" disabled="@disabled"
                                                        @onchange="e => ToggleEvent(name, (bool)e.Value)" />
@@ -234,6 +247,7 @@ else if (!WebhookService.AllowInsecureWebhooks)
                                 </div>
                             </div>
                         </fieldset>
+                        }
 
                         <div class="mb-3">
                             <label class="form-label" for="webhook-headers">Headers</label>
@@ -349,7 +363,7 @@ else if (!WebhookService.AllowInsecureWebhooks)
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
-    private async Task LoadAsync() => webhooks = (await WebhookService.ListAsync(CancellationToken.None)).ToList();
+    private async Task LoadAsync() => webhooks = (await WebhookService.ListAsync(Current.Actor, CancellationToken.None)).ToList();
 
     private void StartNew()
     {
@@ -385,15 +399,17 @@ else if (!WebhookService.AllowInsecureWebhooks)
 
     private async Task SaveAsync()
     {
+        if (form.OnlyForEventRules)
+            form.Sync = false;
         if (form.Sync)
-            form.EventTypes.RemoveWhere(e => !WebhookEventNames.PreEvents.Contains(e));
+            form.EventTypes.RemoveWhere(e => !EventNames.PreEvents.Contains(e));
         var (input, formErrors) = form.ToInput();
         if (formErrors.Count > 0)
         {
             errors = formErrors.ToList();
             return;
         }
-        var result = await WebhookService.SaveAsync(input, CancellationToken.None);
+        var result = await WebhookService.SaveAsync(Current.Actor, input, CancellationToken.None);
         if (!result.Succeeded)
         {
             errors = result.Errors.ToList();
@@ -414,7 +430,7 @@ else if (!WebhookService.AllowInsecureWebhooks)
 
     private async Task DeleteAsync()
     {
-        if (await WebhookService.RemoveAsync(pendingDelete.Id, CancellationToken.None))
+        if (await WebhookService.RemoveAsync(Current.Actor, pendingDelete.Id, CancellationToken.None))
         {
             Toasts.ShowSuccess($"The webhook {pendingDelete.Name} was deleted.");
             if (form?.Id == pendingDelete.Id)
@@ -431,7 +447,7 @@ else if (!WebhookService.AllowInsecureWebhooks)
 
     private async Task SendTestAsync(Webhook webhook)
     {
-        if (!await WebhookService.SendTestAsync(webhook.Id, CancellationToken.None))
+        if (!await WebhookService.SendTestAsync(Current.Actor, webhook.Id, CancellationToken.None))
         {
             Toasts.ShowError($"The webhook {webhook.Name} does not exist any more.");
             await LoadAsync();
@@ -446,12 +462,12 @@ else if (!WebhookService.AllowInsecureWebhooks)
     private async Task ShowDeliveriesAsync(Webhook webhook)
     {
         selected = webhook;
-        deliveries = (await WebhookService.ListDeliveriesAsync(webhook.Id, CancellationToken.None)).ToList();
+        deliveries = (await WebhookService.ListDeliveriesAsync(Current.Actor, webhook.Id, CancellationToken.None)).ToList();
     }
 
     private async Task RedeliverAsync(WebhookDelivery delivery)
     {
-        if (await WebhookService.RedeliverAsync(delivery.Id, CancellationToken.None))
+        if (await WebhookService.RedeliverAsync(Current.Actor, delivery.Id, CancellationToken.None))
             Toasts.ShowSuccess("The delivery is sent again.");
         else
             Toasts.ShowError("The delivery cannot be sent again now (it is being sent).");

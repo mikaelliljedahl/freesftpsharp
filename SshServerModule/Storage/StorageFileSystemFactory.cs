@@ -18,7 +18,8 @@ namespace SshServerModule.Storage
     /// built here and only here, innermost first:
     /// <list type="number">
     /// <item><see cref="PermissionFileSystem"/>: per-path permissions and path filters (#59); left out for a user who
-    /// may do everything.</item>
+    /// may do everything, and for an operation of the server itself (<see cref="ClientContext.SkipPermissions"/>, the
+    /// actions of the event rules).</item>
     /// <item><see cref="EventingFileSystem"/>: the events of every operation of the client (#65). Outside the
     /// permissions, so an operation that the permissions refuse still gives an event (status Error) in the audit log;
     /// a hook can refuse an upload, download or delete before the permissions are checked.</item>
@@ -53,7 +54,8 @@ namespace SshServerModule.Storage
         {
             var storage = _resolver.Resolve(user);
             var fileSystem = await _registry.Get(storage.Provider).CreateAsync(storage.Options, ct);
-            fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
+            if (!client.SkipPermissions)
+                fileSystem = PermissionFileSystem.Wrap(fileSystem, _permissions.Resolve(user));
             if (_events != null)
                 fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)

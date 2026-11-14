@@ -20,6 +20,7 @@ using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
+using SshServer.EventRules;
 using FxSshSftpServer.Security;
 using SshServerModule.Observability;
 using SshServer.Settings.Sql;
@@ -61,6 +62,7 @@ await new HostBuilder()
     services.AddSshServerEvents();
     services.AddServerDataProtection(hostContext.Configuration); // encrypts the webhook secrets
     services.AddWebhooks(hostContext.Configuration); // webhooks (#66): nothing is sent until one is configured
+    services.AddEventRules(hostContext.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
     services.AddSshServerMetrics(); // meter and activities only; no exporter and no port
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
