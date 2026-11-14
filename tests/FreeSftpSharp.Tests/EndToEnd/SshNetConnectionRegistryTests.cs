@@ -83,9 +83,10 @@ public sealed class SshNetConnectionRegistryTests : IClassFixture<SftpServerFixt
 
         Assert.Null(_server.Connections.Get(id));
         var error = await busy.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        // SSH.NET reports the closed session with SshException ("Connection was closed by the server."), the base class of
-        // SshConnectionException.
-        Assert.IsAssignableFrom<SshException>(error);
+        // If the disconnect comes while a request is in flight, SSH.NET reports it with SshException ("Connection was closed
+        // by the server."), the base class of SshConnectionException. If it comes between two requests, the next request
+        // fails before it is sent, with InvalidOperationException (seen on the Ubuntu CI runner). Both are correct.
+        Assert.True(error is SshException or InvalidOperationException, $"Unexpected exception: {error}");
         Assert.True(await WaitUntilAsync(() => !client.IsConnected, TimeSpan.FromSeconds(5)), "The client is still connected.");
         Assert.False(await _server.Connections.DisconnectAsync(id, "again"));
     }
