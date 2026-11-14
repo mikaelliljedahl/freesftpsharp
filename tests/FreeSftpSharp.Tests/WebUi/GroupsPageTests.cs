@@ -78,6 +78,27 @@ public sealed class GroupsPageTests : AdminUiComponentContext
     }
 
     [Fact]
+    public void A_group_saves_its_quota_and_bandwidth_defaults()
+    {
+        var page = Render<Groups>();
+
+        page.Find("#add-group").Click();
+        page.Find("#group-name").Change("limited");
+        page.Find("#quota-size").Change("2");
+        page.Find("#quota-total").Change("100");
+        page.Find("#bandwidth-upload").Change("128");
+        page.Find("#group-form").Submit();
+
+        var group = Assert.Single(Repository.GetGroups());
+        Assert.Equal(2L * 1024 * 1024, group.DiskQuota!.MaxSizeBytes);
+        Assert.Equal(100L * 1024 * 1024, group.TransferQuota!.MaxTotalBytes);
+        Assert.Equal(128, group.Bandwidth!.UploadKiBPerSecond);
+
+        page.Find(".edit-group").Click();
+        Assert.Equal("2", page.Find("#quota-size").GetAttribute("value"));
+    }
+
+    [Fact]
     public void A_new_group_sets_nothing_and_a_bad_network_is_refused()
     {
         var page = Render<Groups>();

@@ -91,7 +91,8 @@ operations, and one `storage.<operation>` activity under the session). Protocols
 Meter and activity source are both named `FreeSftpSharp`. Instruments: `freesftpsharp.connections.active` and `.connections`
 {protocol}, `freesftpsharp.auth.attempts` {method,result}, `freesftpsharp.transfers` {protocol,direction,status},
 `freesftpsharp.transfer.bytes`, `freesftpsharp.transfer.duration`, `freesftpsharp.storage.operation.duration`
-{provider,operation} and `freesftpsharp.storage.errors` {provider,error}. Prometheus shows them as `freesftpsharp_transfers_total` etc.
+{provider,operation}, `freesftpsharp.storage.errors` {provider,error}, and `freesftpsharp.quota.usage` (bytes) and `freesftpsharp.quota.files`
+{scope} for the scopes with a disk quota (at most 1000 series). Prometheus shows them as `freesftpsharp_transfers_total` etc.
 
 `SshServer.Observability` is the opt-in exporter project (`AddSshServerObservability(configuration)` and
 `UseSshServerObservability()`, called by the web host). Everything is off until the `Observability` section says otherwise:
@@ -150,18 +151,23 @@ options record (`[Display]`, `[Secret]`, `[AllowedValues]`), so a backend needs 
 
 The chain today, from the backend outwards:
 
-0. `MountedFileSystem` (#56), added by the factory for a user with virtual folders: routes each path to the storage
+0. `DiskQuotaFileSystem` (#62), around each storage with a disk quota (the own storage of the user, and each virtual
+   folder): one storage is one quota scope (see "Quotas and bandwidth"). Left out for a storage without a quota.
+1. `MountedFileSystem` (#56), added by the factory for a user with virtual folders: routes each path to the storage
    with the longest mount path. A mount point is the root of its storage (it cannot be removed or renamed), and a rename
-   between two storages throws `OpNotSupported`. It is innermost, so every rule below sees the virtual paths.
-1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
+   between two storages throws `OpNotSupported`. Every rule above it sees the virtual paths.
+2. `TransferQuotaFileSystem` and `BandwidthFileSystem` (#62), around the whole session: the transfer quota and the
+   bandwidth of the user for this client. Each is left out without its limit, and both for a server operation
+   (`ClientContext.SkipPermissions`). Inside the permissions, so a refused operation is not counted.
+3. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
    `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
    factory leaves it out for a user who may do everything, and for a server operation (`ClientContext.SkipPermissions`,
    the actions of the event rules; a protocol never sets it). It compares paths like the backend does
    (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
-2. `EventingFileSystem` (#65): the file events of the client (see "Events"). It is outside the permissions, so an
+4. `EventingFileSystem` (#65): the file events of the client (see "Events"). It is outside the permissions, so an
    operation that the permissions refuse still gives an event (status `Error`) in the audit log, and the `Pre*`
    hooks are asked before the permissions. A hook deny never reaches the permissions or the backend.
-3. `ConnectionTrackingFileSystem` (#57): the activity and open files of the connection (see "Connections"), for a
+5. `ConnectionTrackingFileSystem` (#57): the activity and open files of the connection (see "Connections"), for a
    client with a connection id in its `ClientContext`. Outermost, so every request is activity, also a refused one.
 
 All of them are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
@@ -179,6 +185,35 @@ it before the credential check and refuses like a wrong credential; the session 
 recorded (`IConnectionRegistry.TrySetAuthenticated`, one step with the count), so two logins at the same time cannot
 both take the last session. The `DisabledUserDisconnector` sink (registered by `AddSshServerConnections()`) closes the
 connections of a user that is disabled or removed, from the provider events, through the registry.
+
+## Quotas and bandwidth
+
+The limits of a user (#62) are `User.DiskQuota` (bytes and files of the own storage, "/" without the virtual folders),
+`VirtualFolderMount.Quota` (the same per mounted folder), `User.TransferQuota` (uploaded, downloaded and total bytes until a
+reset) and `User.Bandwidth` (KiB/s per session and direction, with overrides per client network). `IEffectiveQuotaService`
+takes them from `IEffectiveUserSettingsService` (the user, else its primary group, else its secondary groups, #61; a mount brings its own quota). 0 or null is unlimited, and a user
+without a limit gets no quota decorator and no counter at all.
+
+- **Counters.** `QuotaUsageTracker` keeps the counters of each `QuotaScope` ("user:name" or "folder:id"; a folder is one
+  scope for every user that mounts it) in memory. The decorators check and change them without a database call; every
+  few seconds (`QuotaUsageFlushService`) the changes are written to the shared `IQuotaUsageStore` as increments (table
+  `QuotaUsages`; in memory with the LiteDB settings), and the write gives back the stored value with the changes of other
+  nodes. The storage is never scanned for a write.
+- **Disk quota.** A new file reserves a file, a full quota refuses to create one, and every write that makes a file larger
+  reserves the growth first, so one large write cannot go over the limit. A refused write gives `QuotaExceeded` (SFTP:
+  `SSH_FX_FAILURE` "Quota exceeded: path"); the handle is aborted in the storage at once and the partial file is removed, so
+  the counters do not drift. Delete, a replacing rename and a SETSTAT size change are counted; a lost session counts what
+  the storage kept. `statvfs` reports the quota as the size of the storage.
+- **Scan.** `QuotaScanService` (a hosted service, `QuotaScanQueue`) recomputes the disk usage of a scope from its storage
+  (`ListAsync` recursion, without the mount paths for the own storage), one request after the other: for a scope that was
+  never scanned at its first session, after a change of the quota or storage of a user (`QuotaProviderEventSink`, from the
+  provider events), from the "Rescan quota" button, the event rule action "QuotaScan", and every `Quota:ScanIntervalHours`
+  (default 24, 0 off) for every scope with a quota. A removed user or folder loses its counters.
+- **Transfer quota.** A write over the upload or total limit fails with `QuotaExceeded`; a read gets at most what is left.
+  The admin UI ("Reset transfer counters") and the event rule action "QuotaResetTransfer" set the counters to 0.
+- **Bandwidth.** A `TokenBucket` per session and direction (capacity a quarter of a second, debt for larger requests, on a
+  `TimeProvider`): a write waits before it reaches the storage, a read waits before it returns, so the protocol answers
+  later and SFTP clients slow down to the rate.
 
 ## Administrators and authorization
 

@@ -6,6 +6,7 @@ using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Storage;
+using SshServerModule.Quotas;
 using SshServerModule.Storage;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
@@ -18,11 +19,11 @@ public static class TestStorage
 
     /// <summary>The factory of the hosts over <paramref name="providers"/>; <paramref name="resolver"/> gets the codec of the factory.</summary>
     public static StorageFileSystemFactory Factory(IEnumerable<IStorageProvider> providers, Func<StorageOptionsCodec, IUserStorageResolver> resolver,
-        IConnectionRegistry? connections = null, IEventBus? events = null, ISettingsRepository? repository = null)
+        IConnectionRegistry? connections = null, IEventBus? events = null, ISettingsRepository? repository = null, QuotaDecorators? quotas = null)
     {
         var registry = new StorageProviderRegistry(providers);
         var codec = new StorageOptionsCodec(registry, new TestSecretProtector());
-        return new StorageFileSystemFactory(registry, resolver(codec), codec, new EffectiveUserSettingsService(repository), connections, events);
+        return new StorageFileSystemFactory(registry, resolver(codec), codec, new EffectiveUserSettingsService(repository), connections, events, quotas: quotas);
     }
 
     /// <summary>A resolver that gives every user the same storage of "/" and no virtual folders.</summary>

@@ -49,6 +49,8 @@ line per action.
 | Email | Sends an email with placeholders in the subject and the text; it can attach the file of the event (at most `EventRules:Smtp:MaxAttachmentBytes`). Without a mail server it is skipped, not failed. |
 | Command | Starts an executable of the operator. Off unless the operator allows it (see below). |
 | Webhook | Puts the event in the outbox of a webhook of the Webhooks page (signature, retries and delivery history as in [WEBHOOKS.md](WEBHOOKS.md)), with the field `rule`. A scheduled run sends a `System.ScheduledJobRan` event. Set **Only for event rules** on a webhook that should get only these events. |
+| Rescan quota | Queues a scan of the disk usage of the user (its storage and the folders with a disk quota), see the quotas in [ARCHITECTURE.md](ARCHITECTURE.md#quotas-and-bandwidth). |
+| Reset transfer quota | Sets the uploaded and downloaded bytes of the user to 0, for example on a monthly schedule. |
 
 The file actions work on the storage of the user (`IFileSystemFactory`), so they work for every storage backend. They
 are server operations: the per-path permissions and path filters of the user are not applied (the user root still
