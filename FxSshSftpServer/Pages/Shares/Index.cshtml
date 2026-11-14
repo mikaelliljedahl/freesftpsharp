@@ -1,0 +1,130 @@
+@page "/shares/{share}"
+@model IndexModel
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    ViewData["Title"] = Model.Current?.Name ?? "Share";
+    var token = Antiforgery.GetAndStoreTokens(HttpContext).RequestToken;
+    var share = Model.Current;
+}
+<div class="mb-4">
+    <h1 class="h3 mb-1" id="share-name"><i class="bi bi-link-45deg text-primary"></i> @share.Name</h1>
+    @if (!string.IsNullOrEmpty(share.Description))
+    {
+        <p class="text-body-secondary mb-1" id="share-description">@share.Description</p>
+    }
+    <p class="small text-body-secondary mb-0">
+        Shared by @share.Username@(share.ExpiresAt is { } expires ? $" until {expires:yyyy-MM-dd HH:mm} UTC" : "").
+    </p>
+</div>
+
+@if (Model.Locked)
+{
+    <div class="client-narrow">
+        <form method="post" id="share-password-form">
+            <p>This share has a password.</p>
+            @if (Model.ErrorMessage != null)
+            {
+                <div class="alert alert-danger" role="alert" id="share-error">@Model.ErrorMessage</div>
+            }
+            <label class="form-label" for="share-password">Password</label>
+            <input type="password" class="form-control mb-3" id="share-password" name="Password" autocomplete="off" required autofocus />
+            <button type="submit" class="btn btn-primary w-100" id="share-unlock">Open</button>
+        </form>
+    </div>
+}
+else
+{
+    <div class="alert d-none" role="alert" id="client-message"></div>
+    @if (Model.ListProblem != null)
+    {
+        <div class="alert alert-secondary" id="list-problem">@Model.ListProblem</div>
+    }
+
+    @if (Model.CanWrite && Model.Directory != null)
+    {
+        <div id="file-browser" data-api="@Model.BaseUrl" data-path="@Model.Directory" data-chunk="@Model.ChunkBytes" data-token="@token"
+             data-can-overwrite="@(share.AllowOverwrite ? "true" : "false")">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                <label class="btn btn-primary mb-0" for="upload-input" id="upload-button"><i class="bi bi-upload"></i> Upload files</label>
+                <input type="file" id="upload-input" class="d-none" multiple />
+                <span class="small text-body-secondary">to <span class="font-monospace" id="upload-target">@Model.Directory</span></span>
+            </div>
+            <div class="drop-zone mb-3 text-body-secondary small" id="drop-zone">Drop files here to upload them.</div>
+            <ul class="list-unstyled mb-3" id="uploads"></ul>
+        </div>
+    }
+
+    @if (Model.CanRead && Model.Directory != null)
+    {
+        <nav class="mb-3 d-flex gap-2 align-items-center">
+            <a href="@Model.PageLink(Model.ParentOf(Model.Directory))" class="btn btn-sm btn-outline-secondary" id="share-up"><i class="bi bi-arrow-up"></i> Up</a>
+            <span class="font-monospace" id="share-directory">@Model.Directory</span>
+            <a class="btn btn-sm btn-outline-secondary ms-auto" href="@Model.DownloadLink(Model.Directory)" id="share-zip-folder"><i class="bi bi-file-zip"></i> Download folder as zip</a>
+        </nav>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" id="entries">
+                <thead><tr><th>Name</th><th class="text-end">Size</th><th>Modified (UTC)</th><th></th></tr></thead>
+                <tbody>
+                    @if (Model.Entries.Count == 0)
+                    {
+                        <tr><td colspan="4" class="text-body-secondary" id="empty-folder">This folder is empty.</td></tr>
+                    }
+                    @foreach (var entry in Model.Entries)
+                    {
+                        var path = Model.Directory.TrimEnd('/') + "/" + entry.Name;
+                        <tr class="entry" data-path="@path">
+                            <td class="text-break">
+                                @if (entry.IsDirectory)
+                                {
+                                    <a href="@Model.PageLink(path)"><i class="bi bi-folder-fill text-warning"></i> @entry.Name</a>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-file-earmark"></i> @entry.Name
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">@(entry.IsDirectory ? "" : ClientStorage.Format(entry.Size))</td>
+                            <td class="text-nowrap">@entry.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-secondary share-download" href="@Model.DownloadLink(path)" title="Download"><i class="bi bi-download"></i></a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (Model.Directory == null && Model.ListProblem == null)
+    {
+        @if (Model.CanRead)
+        {
+            <div class="mb-3"><a class="btn btn-primary" href="@Model.DownloadLink(null)" id="share-zip-all"><i class="bi bi-file-zip"></i> Download all as zip</a></div>
+        }
+        <ul class="list-group" id="share-roots">
+            @foreach (var (path, entry) in Model.Roots)
+            {
+                <li class="list-group-item d-flex align-items-center gap-2 share-root" data-path="@path">
+                    @if (entry == null)
+                    {
+                        <span class="text-body-secondary"><i class="bi bi-question-circle"></i> @path (not available)</span>
+                    }
+                    else if (entry.IsDirectory)
+                    {
+                        <a href="@Model.PageLink(path)" class="me-auto"><i class="bi bi-folder-fill text-warning"></i> @path</a>
+                        @if (Model.CanRead)
+                        {
+                            <a class="btn btn-sm btn-outline-secondary share-download" href="@Model.DownloadLink(path)" title="Download as zip"><i class="bi bi-file-zip"></i></a>
+                        }
+                    }
+                    else
+                    {
+                        <span class="me-auto"><i class="bi bi-file-earmark"></i> @path <span class="small text-body-secondary">@ClientStorage.Format(entry.Size)</span></span>
+                        <a class="btn btn-sm btn-outline-secondary share-download" href="@Model.DownloadLink(path)" title="Download"><i class="bi bi-download"></i></a>
+                    }
+                </li>
+            }
+        </ul>
+    }
+}
+
+@section Scripts {
+    <script src="~/js/client.js"></script>
+}

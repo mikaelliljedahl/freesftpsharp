@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SshServer.Settings.SqlServer.Migrations;
 
 /// <inheritdoc />
-public partial class _20261114141132_InitialCreate : Migration
+public partial class _20261114143928_InitialCreate : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -205,7 +205,8 @@ public partial class _20261114141132_InitialCreate : Migration
                 PasswordMaxAgeDays = table.Column<int>(type: "int", nullable: false),
                 IdleTimeout = table.Column<int>(type: "int", nullable: false),
                 EnableCommand = table.Column<bool>(type: "bit", nullable: false),
-                EnableDirectTcpIp = table.Column<bool>(type: "bit", nullable: false)
+                EnableDirectTcpIp = table.Column<bool>(type: "bit", nullable: false),
+                Shares = table.Column<string>(type: "nvarchar(max)", nullable: true)
             },
             constraints: table =>
             {
@@ -485,6 +486,37 @@ public partial class _20261114141132_InitialCreate : Migration
             });
 
         migrationBuilder.CreateTable(
+            name: "Shares",
+            columns: table => new
+            {
+                Id = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                UserId = table.Column<int>(type: "int", nullable: false),
+                Username = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
+                Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                Paths = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                Scope = table.Column<string>(type: "nvarchar(16)", maxLength: 16, nullable: false),
+                AllowOverwrite = table.Column<bool>(type: "bit", nullable: false),
+                PasswordHash = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
+                ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                MaxUses = table.Column<int>(type: "int", nullable: false),
+                UsedCount = table.Column<int>(type: "int", nullable: false),
+                AllowedIps = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                LastUsedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Shares", x => x.Id);
+                table.ForeignKey(
+                    name: "FK_Shares_Users_UserId",
+                    column: x => x.UserId,
+                    principalTable: "Users",
+                    principalColumn: "Id",
+                    onDelete: ReferentialAction.Cascade);
+            });
+
+        migrationBuilder.CreateTable(
             name: "TwoFactorEnrolments",
             columns: table => new
             {
@@ -634,6 +666,11 @@ public partial class _20261114141132_InitialCreate : Migration
             unique: true);
 
         migrationBuilder.CreateIndex(
+            name: "IX_Shares_UserId",
+            table: "Shares",
+            column: "UserId");
+
+        migrationBuilder.CreateIndex(
             name: "IX_TwoFactorEnrolments_AdminId",
             table: "TwoFactorEnrolments",
             column: "AdminId",
@@ -744,6 +781,9 @@ public partial class _20261114141132_InitialCreate : Migration
 
         migrationBuilder.DropTable(
             name: "SettingsVersions");
+
+        migrationBuilder.DropTable(
+            name: "Shares");
 
         migrationBuilder.DropTable(
             name: "TwoFactorEnrolments");

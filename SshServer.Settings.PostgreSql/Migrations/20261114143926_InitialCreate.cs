@@ -8,7 +8,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace SshServer.Settings.PostgreSql.Migrations;
 
 /// <inheritdoc />
-public partial class _20261114141131_InitialCreate : Migration
+public partial class _20261114143926_InitialCreate : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -210,7 +210,8 @@ public partial class _20261114141131_InitialCreate : Migration
                 PasswordMaxAgeDays = table.Column<int>(type: "integer", nullable: false),
                 IdleTimeout = table.Column<int>(type: "integer", nullable: false),
                 EnableCommand = table.Column<bool>(type: "boolean", nullable: false),
-                EnableDirectTcpIp = table.Column<bool>(type: "boolean", nullable: false)
+                EnableDirectTcpIp = table.Column<bool>(type: "boolean", nullable: false),
+                Shares = table.Column<string>(type: "text", nullable: true)
             },
             constraints: table =>
             {
@@ -490,6 +491,37 @@ public partial class _20261114141131_InitialCreate : Migration
             });
 
         migrationBuilder.CreateTable(
+            name: "Shares",
+            columns: table => new
+            {
+                Id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                UserId = table.Column<int>(type: "integer", nullable: false),
+                Username = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                Paths = table.Column<List<string>>(type: "text[]", nullable: false),
+                Scope = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                AllowOverwrite = table.Column<bool>(type: "boolean", nullable: false),
+                PasswordHash = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                MaxUses = table.Column<int>(type: "integer", nullable: false),
+                UsedCount = table.Column<int>(type: "integer", nullable: false),
+                AllowedIps = table.Column<List<string>>(type: "text[]", nullable: true),
+                CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                LastUsedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Shares", x => x.Id);
+                table.ForeignKey(
+                    name: "FK_Shares_Users_UserId",
+                    column: x => x.UserId,
+                    principalTable: "Users",
+                    principalColumn: "Id",
+                    onDelete: ReferentialAction.Cascade);
+            });
+
+        migrationBuilder.CreateTable(
             name: "TwoFactorEnrolments",
             columns: table => new
             {
@@ -639,6 +671,11 @@ public partial class _20261114141131_InitialCreate : Migration
             unique: true);
 
         migrationBuilder.CreateIndex(
+            name: "IX_Shares_UserId",
+            table: "Shares",
+            column: "UserId");
+
+        migrationBuilder.CreateIndex(
             name: "IX_TwoFactorEnrolments_AdminId",
             table: "TwoFactorEnrolments",
             column: "AdminId",
@@ -747,6 +784,9 @@ public partial class _20261114141131_InitialCreate : Migration
 
         migrationBuilder.DropTable(
             name: "SettingsVersions");
+
+        migrationBuilder.DropTable(
+            name: "Shares");
 
         migrationBuilder.DropTable(
             name: "TwoFactorEnrolments");

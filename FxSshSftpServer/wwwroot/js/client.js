@@ -1,10 +1,22 @@
-// The file browser of the web client (#69). Every action calls /client/api with the antiforgery token; the server
-// checks the permissions and quotas again, so this script only offers what the page shows.
+// The file browser of the web client (#69) and the upload area of a share link (#70). Every action calls the endpoints
+// under data-api (/client/api, or /shares/{id}) with the antiforgery token; the server checks the permissions, the
+// share and the quotas again, so this script only offers what the page shows.
 (function () {
     'use strict';
+    // "Copy link" buttons (the shares page): copy the value of data-copy.
+    document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(button.dataset.copy);
+            button.textContent = 'Copied';
+        } catch {
+            window.prompt('Copy the link:', button.dataset.copy);
+        }
+    }));
+
     const root = document.getElementById('file-browser');
     if (!root) return;
 
+    const apiBase = root.dataset.api || '/client/api';
     const token = root.dataset.token;
     const directory = root.dataset.path;
     const chunkSize = parseInt(root.dataset.chunk, 10) || 8 * 1024 * 1024;
@@ -59,7 +71,7 @@
 
     async function remove(paths) {
         if (!window.confirm('Delete ' + (paths.length === 1 ? paths[0] : paths.length + ' entries') + '? Folders are deleted with everything in them.')) return;
-        try { await api('POST', '/client/api/delete', { paths: paths }); reload(); } catch (e) { show(e.message); }
+        try { await api('POST', apiBase + '/delete', { paths: paths }); reload(); } catch (e) { show(e.message); }
     }
     if (deleteButton) deleteButton.addEventListener('click', () => remove(selected()));
 
@@ -74,23 +86,25 @@
         dialog.showModal();
         nameInput.select();
     }
-    document.getElementById('name-cancel').addEventListener('click', () => dialog.close());
-    document.getElementById('name-form').addEventListener('submit', event => {
-        event.preventDefault();
-        const name = nameInput.value.trim();
-        dialog.close();
-        if (name && onName) onName(name);
-    });
+    if (dialog) {
+        document.getElementById('name-cancel').addEventListener('click', () => dialog.close());
+        document.getElementById('name-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const name = nameInput.value.trim();
+            dialog.close();
+            if (name && onName) onName(name);
+        });
+    }
 
     const newFolder = document.getElementById('new-folder');
     if (newFolder) newFolder.addEventListener('click', () => askName('New folder', '', async name => {
-        try { await api('POST', '/client/api/mkdir', { path: join(directory, name) }); reload(); } catch (e) { show(e.message); }
+        try { await api('POST', apiBase + '/mkdir', { path: join(directory, name) }); reload(); } catch (e) { show(e.message); }
     }));
 
     document.querySelectorAll('tr.entry').forEach(row => {
         const rename = row.querySelector('.action-rename');
         if (rename) rename.addEventListener('click', () => askName('Rename ' + row.dataset.name, row.dataset.name, async name => {
-            try { await api('POST', '/client/api/rename', { path: row.dataset.path, newName: name }); reload(); } catch (e) { show(e.message); }
+            try { await api('POST', apiBase + '/rename', { path: row.dataset.path, newName: name }); reload(); } catch (e) { show(e.message); }
         }));
         const del = row.querySelector('.action-delete');
         if (del) del.addEventListener('click', () => remove([row.dataset.path]));
@@ -148,12 +162,12 @@
     async function uploadFile(file, overwrite, ui) {
         const id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
         const path = join(directory, file.name);
-        const url = '/client/api/upload?path=' + encodeURIComponent(path) + '&id=' + id + (overwrite ? '&overwrite=true' : '');
+        const url = apiBase + '/upload?path=' + encodeURIComponent(path) + '&id=' + id + (overwrite ? '&overwrite=true' : '');
         const state = { canceled: false, xhr: null };
         ui.cancel.onclick = () => {
             state.canceled = true;
             if (state.xhr) state.xhr.abort();
-            fetch('/client/api/upload?id=' + id, { method: 'DELETE', headers: { 'RequestVerificationToken': token } });
+            fetch(apiBase + '/upload?id=' + id, { method: 'DELETE', headers: { 'RequestVerificationToken': token } });
         };
         let offset = 0;
         let retries = 0;
@@ -172,7 +186,7 @@
                 if ((e.status === 0 || e.status === 409) && retries < 5) {
                     retries++;
                     await new Promise(r => setTimeout(r, 1000 * retries));
-                    const status = await fetch('/client/api/upload?path=' + encodeURIComponent(path) + '&id=' + id, { credentials: 'same-origin' }).then(r => r.json()).catch(() => null);
+                    const status = await fetch(apiBase + '/upload?path=' + encodeURIComponent(path) + '&id=' + id, { credentials: 'same-origin' }).then(r => r.json()).catch(() => null);
                     offset = status && status.known ? status.offset : 0;
                     continue;
                 }
@@ -188,7 +202,7 @@
         files = Array.from(files);
         let checks;
         try {
-            checks = await api('POST', '/client/api/upload/check', { files: files.map(f => ({ path: join(directory, f.name), size: f.size })) });
+            checks = await api('POST', apiBase + '/upload/check', { files: files.map(f => ({ path: join(directory, f.name), size: f.size })) });
         } catch (e) { show(e.message); return; }
         const problems = checks.filter(c => c.problem);
         if (problems.length > 0) {
@@ -198,7 +212,7 @@
         for (let i = 0; i < files.length; i++) {
             const check = checks[i];
             if (check.problem) continue;
-            if (check.exists && !window.confirm(files[i].name + ' exists. Overwrite it?')) continue;
+            if (check.exists && (root.dataset.canOverwrite !== 'true' || !window.confirm(files[i].name + ' exists. Overwrite it?'))) continue;
             const ui = addItem(files[i]);
             try {
                 await uploadFile(files[i], check.exists, ui);

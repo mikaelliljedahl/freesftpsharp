@@ -15,6 +15,7 @@ using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Interfaces.Shares;
 using SshServer.Settings.Sql.Quotas;
 using SshServer.Settings.Sql.TwoFactor;
 using SshServer.Settings.Sql.Cluster;
@@ -33,7 +34,8 @@ namespace SshServer.Settings.Sql;
 /// the administrators (<see cref="Admin"/>), the scope roles (<see cref="Role"/>, referenced by
 /// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>), the event rules with their runs
 /// (<see cref="EventRule"/>, <see cref="EventRuleRun"/>; conditions and actions as JSON text columns), the REST API keys
-/// (<see cref="ApiKey"/>, removed with their administrator) and the signing key of the API tokens (#67) are in the same database,
+/// (<see cref="ApiKey"/>, removed with their administrator), the signing key of the API tokens (#67) and the share links
+/// (<see cref="Share"/>, removed with their user, #70; <see cref="ServerSettings.Shares"/> is a JSON text column) are in the same database,
 /// and so is the shared state of several nodes (#75): the bans, the nodes with their connections and disconnect requests,
 /// the settings version and the data protection keys.
 /// <para>
@@ -81,6 +83,7 @@ public class SettingsDbContext : DbContext
     public DbSet<EventRule> EventRules => Set<EventRule>();
     public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
     public DbSet<QuotaUsageRow> QuotaUsages => Set<QuotaUsageRow>();
+    public DbSet<Share> Shares => Set<Share>();
     public DbSet<BannedIpRow> BannedIps => Set<BannedIpRow>();
     public DbSet<NodeRow> Nodes => Set<NodeRow>();
     public DbSet<ConnectionRow> Connections => Set<ConnectionRow>();
@@ -100,6 +103,26 @@ public class SettingsDbContext : DbContext
             b.PrimitiveCollection(s => s.BindToAddress).IsRequired(false);
             b.PrimitiveCollection(s => s.BlacklistedIps).IsRequired(false);
             b.PrimitiveCollection(s => s.WhitelistedIps).IsRequired(false);
+            b.Property(s => s.Shares).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<ShareSettings>(v), JsonComparer<ShareSettings>());
+        });
+
+        modelBuilder.Entity<Share>(b =>
+        {
+            b.ToTable("Shares");
+            b.HasKey(s => s.Id);
+            b.Property(s => s.Id).HasMaxLength(64).ValueGeneratedNever();
+            // Removing the user removes its share links.
+            b.HasOne<User>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(s => s.UserId);
+            b.Property(s => s.Username).IsRequired().HasMaxLength(256);
+            b.Property(s => s.Name).IsRequired().HasMaxLength(ShareRules.MaxNameLength);
+            b.Property(s => s.Description).HasMaxLength(ShareRules.MaxDescriptionLength);
+            b.PrimitiveCollection(s => s.Paths).IsRequired();
+            b.Property(s => s.Scope).IsRequired().HasConversion<string>().HasMaxLength(16);
+            b.Property(s => s.PasswordHash).HasMaxLength(256);
+            b.PrimitiveCollection(s => s.AllowedIps).IsRequired(false);
+            b.Ignore(s => s.HasPassword);
         });
 
         modelBuilder.Entity<User>(b =>

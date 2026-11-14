@@ -7,6 +7,9 @@ public enum SystemEventType
     Stopping,
     CertificateRenewed,
     ScheduledJobRan,
+
+    /// <summary>The server closed the open sessions of a user (the user expired, was disabled or removed).</summary>
+    SessionsClosed,
 }
 
 /// <summary>Something the server itself did.</summary>

@@ -71,6 +71,14 @@ TOTP code and lets an expired password be changed; no app passwords), with its o
 the sessions. Every file action uses `IFileSystemFactory` with that connection; the page only maps the effective
 permissions to its buttons (`ClientPermissionMap`, the same `PathRuleResolver` as the permission decorator).
 
+The share links (#70) are a part of the web client (`/shares/{id}`, `ShareAccess`, `ShareApi`; the store `IShareStore` in
+the settings database), off unless the web client is on and `ServerSettings.Shares` allows them. A visitor uses the file
+system of the owner with the protocol `HTTPShare`: the factory limits the permissions of the owner to the scope of the
+share (`ClientContext.PermissionMask`, `EffectivePermissions.Restrict`) and the events carry the share id
+(`ClientContext.Metadata`). The only path rule of the share is the containment in its paths (`SharePaths`); everything
+else comes from the chain. The transfers (download with ranges, zip, chunked upload) are `ClientTransfers`, the same code
+as the web client.
+
 ## Several nodes
 
 The settings database is EF Core on an `ISettingsDatabaseProvider` (#75): SQLite in `SshServer.Settings.Sql`, PostgreSQL
@@ -83,7 +91,7 @@ With `Cluster:Enabled` (`AddSshServerCluster`, [CLUSTER.md](CLUSTER.md)) the `Cl
 heartbeat and its connections (`IClusterStore`), takes the disconnect requests for its connections, syncs the bans
 (`IIpBanStore`, through the `LoginBanTracker`) and polls the settings version (`ISettingsVersionStore`, raised by the
 `SettingsVersionSink` for every provider event). `IClusterConnections` is what the admin UI, the REST API and the
-`DisabledUserDisconnector` use to list and close connections: on one node the registry, in a cluster the registry and
+`UserSessionCloser` use to list and close connections: on one node the registry, in a cluster the registry and
 the cached connections of the other nodes. The caches (webhooks, event rules) reload on `ISettingsChangeNotifier`.
 Off, everything is as on one node: no table is written and nothing polls.
 
@@ -202,7 +210,8 @@ The chain today, from the backend outwards:
 2. `TransferQuotaFileSystem` and `BandwidthFileSystem` (#62), around the whole session: the transfer quota and the
    bandwidth of the user for this client. Each is left out without its limit, and both for a server operation
    (`ClientContext.SkipPermissions`). Inside the permissions, so a refused operation is not counted.
-3. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
+3. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters, limited to
+   `ClientContext.PermissionMask` when the client has one (the scope of a share link, #70). It throws only
    `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
    factory leaves it out for a user who may do everything, and for a server operation (`ClientContext.SkipPermissions`,
    the actions of the event rules; a protocol never sets it). It compares paths like the backend does
@@ -226,8 +235,12 @@ reads `User.Permissions`, `User.Storage` or a `Group` itself; a new shared setti
 The lifecycle of a login (status, expiry, password age, session limit; #61) is in `UserLoginRules`. Every protocol asks
 it before the credential check and refuses like a wrong credential; the session limit is checked again when the login is
 recorded (`IConnectionRegistry.TrySetAuthenticated`, one step with the count), so two logins at the same time cannot
-both take the last session. The `DisabledUserDisconnector` sink (registered by `AddSshServerConnections()`) closes the
-connections of a user that is disabled or removed, from the provider events, through the registry.
+both take the last session. The `UserSessionCloser` (registered by `AddSshServerConnections()`) is the one place that closes the sessions of a user
+whose account ended (#132), in every protocol through the registry, with a reason ("The account expired.", "The account
+was disabled.", "The account was removed.") that is logged and published as a `System.SessionsClosed` event (audit log). As
+an event sink it closes the sessions of a user that is disabled or removed, from the provider events. An expiry is a
+point in time and no event, so the `UserLifecycleService` (every 5 seconds) checks the users of the open connections and
+calls the closer for an expired one.
 
 ## Authentication providers
 

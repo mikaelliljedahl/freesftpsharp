@@ -30,7 +30,10 @@ public interface IConnectionRegistry
     /// </summary>
     bool TrySetAuthenticated(Guid id, string username, string authMethod, int maxSessions);
 
-    /// <summary>The number of authenticated connections of <paramref name="username"/> (without case), except <paramref name="except"/>.</summary>
+    /// <summary>
+    /// The number of authenticated connections of <paramref name="username"/> (without case), except <paramref name="except"/>
+    /// and the visitors of the share links of the user (<see cref="ConnectionProtocols.HttpShare"/>).
+    /// </summary>
     int CountSessions(string username, Guid except);
 
     /// <summary>Sets <see cref="ConnectionInfo.LastActivity"/> to now.</summary>

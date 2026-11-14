@@ -133,10 +133,10 @@ public sealed record VirtualFolderSnapshot(int Id, string Name, string? Descript
 public sealed record ServerSettingsSnapshot(string? ServerBanner, int ListenToPort, IReadOnlyList<string> BindToAddress,
     IReadOnlyList<string> BlacklistedIps, bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps,
     int MaxLoginAttemptsBeforeBan, int LoginFailureWindowSeconds, int BanDurationSeconds, bool ExemptLoopbackFromBan,
-    int IdleTimeout, bool EnableCommand, bool EnableDirectTcpIp, int PasswordMaxAgeDays)
+    int IdleTimeout, bool EnableCommand, bool EnableDirectTcpIp, int PasswordMaxAgeDays, Shares.ShareSettings? Shares)
 {
     public static ServerSettingsSnapshot From(ServerSettings s) => new(s.ServerBanner, s.ListenToPort,
         s.BindToAddress?.ToList() ?? [], s.BlacklistedIps?.ToList() ?? [], s.OnlyWhitelistedIps, s.WhitelistedIps?.ToList() ?? [],
         s.MaxLoginAttemptsBeforeBan, s.LoginFailureWindowSeconds, s.BanDurationSeconds, s.ExemptLoopbackFromBan,
-        s.IdleTimeout, s.EnableCommand, s.EnableDirectTcpIp, s.PasswordMaxAgeDays);
+        s.IdleTimeout, s.EnableCommand, s.EnableDirectTcpIp, s.PasswordMaxAgeDays, s.Shares);
 }
