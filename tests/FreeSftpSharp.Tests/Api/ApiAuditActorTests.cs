@@ -4,7 +4,11 @@ using System.Text.Json.Nodes;
 using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
 using FreeSftpSharp.Tests.WebUi;
+using Microsoft.Extensions.DependencyInjection;
+using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.TwoFactor;
+using SshServer.TwoFactor;
 
 namespace FreeSftpSharp.Tests.Api;
 
@@ -64,14 +68,37 @@ public sealed class ApiAuditActorTests : IClassFixture<ApiFactory>, IDisposable
         Assert.Equal(["Delete", "Add"], entries.Select(e => e!["type"]!.GetValue<string>()));
     }
 
+    [Fact]
+    public async Task App_password_and_second_factor_changes_with_an_api_key_have_the_key_name_in_the_actor()
+    {
+        await _factory.AddAdminAsync("secrets-owner", Provisioning);
+        using var owner = await _factory.ClientAsync("secrets-owner");
+        using var client = _factory.ApiKeyClient(await ApiFactory.CreateApiKeyAsync(owner, "helpdesk"));
+        Assert.True(_factory.Repository.AddUser(new User { Username = "actor-secrets-user", UserRootDirectory = _root.Path }));
+        var user = _factory.Repository.GetUser("actor-secrets-user");
+
+        var created = await (await client.PostAsJsonAsync("/api/v1/users/actor-secrets-user/app-passwords", new { name = "Laptop" }, Ct)
+            .ExpectAsync(HttpStatusCode.Created)).JsonAsync();
+        var id = created["appPassword"]!["id"]!.GetValue<string>();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/v1/users/actor-secrets-user/app-passwords/{id}", Ct)).StatusCode);
+        await TwoFactorTestKit.EnrolAsync(_factory.Services.GetRequiredService<TwoFactorService>(), TwoFactorSubject.ForUser(user),
+            TimeProvider.System, "actor-secrets-user");
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/v1/users/actor-secrets-user/two-factor", Ct)).StatusCode);
+
+        // The first entry (Add) is made by the test itself, through the shared repository: the system.
+        var entries = await WaitForActorAsync(owner, "User/actor-secrets-user", "secrets-owner (API key helpdesk)", count: 3, exceptSystem: true);
+        Assert.Contains(entries, e => e!["message"]?.GetValue<string>()?.Contains("TwoFactor") == true);
+    }
+
     /// <summary>The audit entries of the object from GET /api/v1/audit, once <paramref name="count"/> have the actor.</summary>
-    private static async Task<List<JsonNode?>> WaitForActorAsync(HttpClient client, string path, string actor, int count = 1)
+    private static async Task<List<JsonNode?>> WaitForActorAsync(HttpClient client, string path, string actor, int count = 1, bool exceptSystem = false)
     {
         // The audit sink writes in the background.
         for (var i = 0; i < 100; i++)
         {
             var page = await (await client.GetAsync("/api/v1/audit?limit=1000", Ct)).JsonAsync();
-            var entries = page["items"]!.AsArray().Where(e => e!["path"]?.GetValue<string>() == path).ToList();
+            var entries = page["items"]!.AsArray().Where(e => e!["path"]?.GetValue<string>() == path
+                && !(exceptSystem && e["actor"]?.GetValue<string>() == "system")).ToList();
             if (entries.Count(e => e!["actor"]?.GetValue<string>() == actor) >= count)
             {
                 Assert.All(entries, e => Assert.Equal(actor, e!["actor"]!.GetValue<string>()));
