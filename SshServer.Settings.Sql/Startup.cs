@@ -6,8 +6,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Events;
+using SshServer.Settings.Sql.Admins;
 using SshServer.Settings.Sql.Audit;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +22,8 @@ namespace SshServer.Settings.Sql
         /// (see <see cref="SettingsStorageOptions"/>): SQLite by default, LiteDB when <c>Settings:Provider</c> is <c>LiteDb</c>.
         /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>).
+        /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
+        /// provider keeps them in memory only.
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -37,6 +41,12 @@ namespace SshServer.Settings.Sql
                         events: sp.GetService<IEventBus>(),
                         time: sp.GetService<TimeProvider>()));
                     services.TryAddSingleton<IAuditLog>(_ => new SqlAuditLog(dbOptions));
+                    services.TryAddSingleton<IAdminStore>(sp =>
+                    {
+                        // The repository creates and migrates the database; the store only uses the tables.
+                        sp.GetRequiredService<ISettingsRepository>();
+                        return new SqlAdminStore(dbOptions);
+                    });
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -47,6 +57,7 @@ namespace SshServer.Settings.Sql
                 case SettingsProvider.LiteDb:
                     services.AddSingleton<ISettingsRepository>(_ => new SettingsRepository(options.LiteDbPath));
                     services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
+                    services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
                     break;
 
                 default:
@@ -54,6 +65,11 @@ namespace SshServer.Settings.Sql
             }
 
             services.TryAddSingleton<UserAdministrationService>();
+            services.TryAddSingleton(sp => new AdminAdministrationService(
+                sp.GetRequiredService<IAdminStore>(),
+                sp.GetRequiredService<ISettingsRepository>(),
+                sp.GetService<IEventBus>(),
+                sp.GetService<TimeProvider>()));
             return services;
         }
 

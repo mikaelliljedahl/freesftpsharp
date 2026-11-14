@@ -9,6 +9,12 @@ public sealed record AuditQuery
     /// <summary>The user name, exact (without case).</summary>
     public string? Username { get; init; }
 
+    /// <summary>
+    /// Only the entries of these users (exact, without case); entries without a user are left out. Null: no
+    /// restriction. The admin UI sets it for an administrator with a scope role (#60).
+    /// </summary>
+    public IReadOnlyCollection<string>? Usernames { get; init; }
+
     /// <summary>The <see cref="AuditEntry.Type"/>, for example "Upload".</summary>
     public string? Type { get; init; }
 

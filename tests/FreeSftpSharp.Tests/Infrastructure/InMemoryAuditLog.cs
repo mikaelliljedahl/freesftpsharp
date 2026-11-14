@@ -26,6 +26,7 @@ public sealed class InMemoryAuditLog : IAuditLog
         {
             var rows = _entries.Where(a =>
                 (query.Username == null || string.Equals(a.Username, query.Username, StringComparison.OrdinalIgnoreCase))
+                && (query.Usernames == null || (a.Username != null && query.Usernames.Contains(a.Username, StringComparer.OrdinalIgnoreCase)))
                 && (query.Type == null || a.Type == query.Type)
                 && (query.Status == null || a.Status == query.Status)
                 && (query.FromUtc == null || a.TimestampUtc >= query.FromUtc)

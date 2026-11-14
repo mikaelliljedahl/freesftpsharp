@@ -1,7 +1,7 @@
 @page "/"
 @using FxSsh.SshServerModule
 @using Microsoft.Extensions.Options
-@inject ISettingsRepository SettingsRepository
+@inject AdminScopedSettingsRepository SettingsRepository
 @inject IIpBanService BanService
 @inject IOptions<SshServerOptions> ListenOptions
 

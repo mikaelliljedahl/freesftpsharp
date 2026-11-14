@@ -53,7 +53,8 @@ Exit codes: 0 = done, 1 = the operation failed (the reason is on stderr), 2 = wr
 ## Admin web UI (FxSshSftpServer)
 
 `FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
-The UI has one local admin account. It is separate from the SFTP users.
+The UI has its own administrator accounts with permissions and optional scope roles (see
+[Administrators, permissions and roles](#administrators-permissions-and-roles)). They are separate from the SFTP users.
 
 The UI is a Blazor Web App (interactive server rendering) with Bootstrap 5.3 and Bootstrap Icons. All CSS, fonts and
 scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It has these pages:
@@ -66,10 +67,26 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | Connections (`/connections`) | The open client connections (user, client address, protocol and client version, connected since, last activity) with the files they read or write now and the bytes so far, refreshed every 2 seconds; a "Disconnect" action with a confirmation |
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
 | Audit (`/audit`) | The audit log: uploads, downloads, deletes, renames, directories, logins and failed logins, bans, changes of users and settings, with user, client address, path, size, duration and status; filters (user, type, status, date range) and a CSV export |
+| Admins (`/admins`) | The administrators: add, edit and delete; permissions, scope role, allowed networks, enabled, "must change the password at the next login" |
+| Roles (`/roles`) | The scope roles: add and delete roles, and add users to a role or remove them |
+| Change password (`/ChangePassword`) | The signed-in administrator sets a new password (with the current one) |
 
 The UI has a dark mode (the half-circle button in the top bar; it follows the OS by default) and works on phone widths.
 
-### Set the admin password
+### The first administrator
+
+The administrators are stored in the settings database. There are two ways to create the first one:
+
+- **On the command line** (new installations): `FxSshSftpServer --create-admin <name>` creates a super admin in the
+  same database as the server (same configuration) and exits. It asks for the password twice, or reads one line from
+  stdin when the input is redirected (`echo "..." | FxSshSftpServer --create-admin alice`). Then start the server.
+- **From the configuration** (`AdminAuth`, as in older versions): when the database has no administrator yet, the
+  configured `AdminAuth:UserName` / `AdminAuth:PasswordHash` account is imported **once** as a super admin at the
+  start, and the log says so. An existing installation therefore keeps its login after the upgrade.
+  After the import the stored administrators are used; a later change of `AdminAuth:UserName` or
+  `AdminAuth:PasswordHash` is ignored (the log says so). Change the password on the "Change password" page instead.
+
+To set the configured account:
 
 1. Create a password hash (salted PBKDF2-SHA256, 600,000 iterations). The command asks for the password twice
    and prints the configuration value; the password itself is not stored or printed:
@@ -91,10 +108,57 @@ The UI has a dark mode (the half-circle button in the top bar; it follows the OS
 
 3. Restart the server. A plaintext password in `AdminAuth:PasswordHash` is not accepted.
 
-If no valid admin credential is configured, the UI is closed: every request gets `503 Service Unavailable` with a
-short help text, and the log has an error that tells what is missing. The SSH server still runs.
+If no administrator is stored and no valid admin credential is configured, the UI is closed: every request gets
+`503 Service Unavailable` with a short help text, and the log has an error that tells what is missing. The SSH server
+still runs.
 
-All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy).
+All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy), and
+each page needs the permission of its policy (see below).
+
+### Administrators, permissions and roles
+
+Each administrator has a set of permissions. Each permission is an ASP.NET Core authorization policy with the same
+name; a page that needs a permission answers `403 Forbidden` without it, and the menu shows only the pages the
+administrator may open. The services behind the pages check the same permissions again, so a missing permission is
+refused on the server also for a direct call.
+
+| Permission | What it allows |
+| --- | --- |
+| `SuperAdmin` | Everything, also every other permission |
+| `ManageUsers` | The Users page: add, change and delete SFTP users |
+| `ManageGroups`, `ManageFolders`, `ManageEvents` | Reserved for groups, virtual folders and event rules (later roadmap items) |
+| `ViewConnections` | The Connections page |
+| `DisconnectConnections` | The "Disconnect" action on the Connections page |
+| `ViewAudit` | The Audit page |
+| `ManageSettings` | The Server settings and IP access and bans pages |
+| `ManageAdmins` | The Admins and Roles pages |
+
+Rules:
+
+- An administrator never grants a permission that it does not have, and it cannot change or delete an administrator
+  that has more permissions than itself. So only a super admin creates or changes super admins.
+- Nobody changes its own permissions, status or scope, or deletes itself, so the last super admin always stays.
+- A change of the password, the permissions, the scope, the status or the allowed networks of an administrator ends
+  its other sessions at the next request (an open page within 30 seconds).
+- "Allowed networks" (CIDR, like the user whitelist) limit the addresses an administrator may log in from.
+- An administrator with "must change the password" gets the Change password page after the login and has no
+  permission until it has set a new password.
+
+**Scope roles** separate tenants inside one server (like the roles of SFTPGo). Create a role on the Roles page and add
+users to it. An administrator with a role as its *scope*:
+
+- sees and manages only the users of the role (another user is "not found", also by its name),
+- creates users that always get the role, and cannot move a user to another role,
+- sees and closes only the connections of these users, and reads only their audit entries,
+- can only have the permissions `ManageUsers`, `ManageGroups`, `ManageFolders`, `ViewConnections`,
+  `DisconnectConnections` and `ViewAudit`: the server settings and the administrators are global.
+
+An administrator without a scope sees every user. A role that users or administrators have cannot be deleted.
+
+Admin logins (also failed ones) and every change of an administrator or a role are in the audit log, with the
+administrator that made the change. Admin passwords are salted PBKDF2-SHA256 hashes, like the SFTP user passwords.
+With the obsolete LiteDB settings provider the administrators are kept in memory only (the configured account is
+imported at every start).
 
 The login cookie and the antiforgery tokens are protected with ASP.NET Core data protection keys. The keys are
 stored in `DataProtection:KeysPath` (default: `keys/` in the app directory), so a login survives a restart. On

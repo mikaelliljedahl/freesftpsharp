@@ -25,6 +25,11 @@ if (AdminPasswordCommand.IsRequested(args))
     return AdminPasswordCommand.RunOnConsole();
 }
 
+if (AdminCreateCommand.IsRequested(args))
+{
+    return AdminCreateCommand.RunOnConsole(args);
+}
+
 // The bootstrap logger reports errors that happen before the real logger is configured from appsettings.json.
 Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
 

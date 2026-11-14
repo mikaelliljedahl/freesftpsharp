@@ -1,0 +1,216 @@
+@page "/roles"
+@using System.Threading
+@attribute [Authorize(Policy = AdminPolicies.ManageAdmins)]
+@inject AdminAdministrationService Administration
+@inject AdminScopedSettingsRepository SettingsRepository
+@inject CurrentAdmin Current
+@inject ToastService Toasts
+
+<PageTitle>Roles - FreeSftpSharp admin</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-0">Roles</h1>
+    <p class="text-body-secondary mb-0">
+        A role groups users, for example per tenant. An administrator with a role as its scope (on the Admins page) sees and
+        manages only the users of that role, and the users it creates get the role.
+    </p>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-5">
+        <div class="card mb-4">
+            <div class="card-header fw-semibold"><i class="bi bi-plus-circle"></i> New role</div>
+            <div class="card-body">
+                <EditForm Model="newRole" OnValidSubmit="CreateAsync" FormName="role-form" id="role-form">
+                    <div class="mb-3">
+                        <label class="form-label" for="role-name">Name</label>
+                        <InputText id="role-name" class="form-control" @bind-Value="newRole.Name" placeholder="tenant-a" autocomplete="off" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="role-description">Description (optional)</label>
+                        <InputText id="role-description" class="form-control" @bind-Value="newRole.Description" autocomplete="off" />
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-plus"></i> Add role</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+
+        <div class="card">
+            @if (roles.Count == 0)
+            {
+                <div class="card-body text-body-secondary" id="no-roles">No roles yet.</div>
+            }
+            else
+            {
+                <div class="list-group list-group-flush" id="role-list">
+                    @foreach (var role in roles)
+                    {
+                        <div class="list-group-item d-flex align-items-center gap-2 role-row @(selected?.Id == role.Id ? "active" : null)">
+                            <button type="button" class="btn btn-link p-0 text-start flex-grow-1 text-reset text-decoration-none select-role" @onclick="() => Select(role)">
+                                <span class="fw-semibold">@role.Name</span>
+                                <span class="badge text-bg-secondary ms-1">@UsersOf(role).Count users</span>
+                                @if (!string.IsNullOrEmpty(role.Description))
+                                {
+                                    <div class="small">@role.Description</div>
+                                }
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-role" title="Delete" aria-label="Delete @role.Name" @onclick="() => AskDelete(role)"><i class="bi bi-trash"></i></button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (selected is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card" id="role-members">
+                <div class="card-header fw-semibold">Users with the role @selected.Name</div>
+                <div class="card-body">
+                    @if (!canManageUsers)
+                    {
+                        <div class="text-body-secondary">You need the permission to manage users to change the users of a role.</div>
+                    }
+                    else
+                    {
+                        <div class="input-group mb-3">
+                            <select class="form-select" id="role-add-user" aria-label="User without a role" @bind="userToAdd">
+                                <option value="">Add a user without a role...</option>
+                                @foreach (var user in users.Where(u => u.RoleId == null).OrderBy(u => u.Username))
+                                {
+                                    <option value="@user.Username">@user.Username</option>
+                                }
+                            </select>
+                            <button type="button" class="btn btn-outline-primary" id="role-add-user-button" disabled="@string.IsNullOrEmpty(userToAdd)" @onclick="AddUser">Add</button>
+                        </div>
+                        @if (UsersOf(selected).Count == 0)
+                        {
+                            <div class="text-body-secondary">No user has this role.</div>
+                        }
+                        <ul class="list-group">
+                            @foreach (var user in UsersOf(selected))
+                            {
+                                <li class="list-group-item d-flex justify-content-between align-items-center role-member">
+                                    <span>@user.Username</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary remove-member" @onclick="() => SetRole(user.Username, null)">Remove from the role</button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete the role" OnConfirm="DeleteAsync">
+    Delete the role <strong>@pendingDelete?.Name</strong>? A role that users or administrators have cannot be deleted.
+</ConfirmDialog>
+
+@code {
+    private sealed class RoleInput
+    {
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    private IReadOnlyList<Role> roles = Array.Empty<Role>();
+    private List<User> users = new();
+    private bool canManageUsers;
+    private RoleInput newRole = new();
+    private Role selected;
+    private Role pendingDelete;
+    private string userToAdd = "";
+    private ConfirmDialog deleteDialog;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        roles = await Administration.ListRolesAsync(Current.Actor, CancellationToken.None);
+        canManageUsers = Current.Has(AdminPermissions.ManageUsers);
+        users = SettingsRepository.GetAllUsers();
+        if (selected != null)
+            selected = roles.FirstOrDefault(r => r.Id == selected.Id);
+    }
+
+    private List<User> UsersOf(Role role) => users.Where(u => u.RoleId == role.Id).OrderBy(u => u.Username).ToList();
+
+    private void Select(Role role)
+    {
+        selected = role;
+        userToAdd = "";
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var role = await Administration.CreateRoleAsync(Current.Actor, newRole.Name, newRole.Description, CancellationToken.None);
+            Toasts.ShowSuccess($"The role {role.Name} was created.");
+            newRole = new RoleInput();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is AdminAdministrationException or AdminAccessDeniedException)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+    }
+
+    private void AskDelete(Role role)
+    {
+        pendingDelete = role;
+        deleteDialog.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        try
+        {
+            await Administration.DeleteRoleAsync(Current.Actor, pendingDelete.Id, CancellationToken.None);
+            Toasts.ShowSuccess($"The role {pendingDelete.Name} was deleted.");
+            if (selected?.Id == pendingDelete.Id)
+                selected = null;
+        }
+        catch (Exception ex) when (ex is AdminAdministrationException or AdminAccessDeniedException)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+        await LoadAsync();
+    }
+
+    private void AddUser()
+    {
+        if (!string.IsNullOrEmpty(userToAdd))
+            SetRole(userToAdd, selected.Id);
+        userToAdd = "";
+    }
+
+    private void SetRole(string username, int? roleId)
+    {
+        try
+        {
+            var user = SettingsRepository.GetUser(username);
+            if (user is null)
+            {
+                Toasts.ShowError($"The user {username} does not exist any more.");
+            }
+            else
+            {
+                user.RoleId = roleId;
+                if (SettingsRepository.UpdateUser(user))
+                    Toasts.ShowSuccess(roleId == null ? $"{username} has no role now." : $"{username} has the role {selected.Name} now.");
+                else
+                    Toasts.ShowError($"The role of {username} could not be saved.");
+            }
+        }
+        catch (AdminAccessDeniedException ex)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+        users = SettingsRepository.GetAllUsers();
+    }
+}

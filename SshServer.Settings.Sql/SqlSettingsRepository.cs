@@ -199,6 +199,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             LastSuccessfulLogin = newUser.LastSuccessfulLogin,
             Permissions = newUser.Permissions,
             PathFilters = newUser.PathFilters,
+            RoleId = newUser.RoleId,
         };
         db.Users.Add(stored);
         db.SaveChanges();
@@ -218,6 +219,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         var before = UserSnapshot.From(stored);
         var passwordChanged = stored.HashedPassword != updatedUser.HashedPassword;
         var keyChanged = stored.RsaPublicKey != updatedUser.RsaPublicKey;
+        var roleChanged = stored.RoleId != updatedUser.RoleId;
         stored.HashedPassword = updatedUser.HashedPassword;
         stored.LastSuccessfulLogin = updatedUser.LastSuccessfulLogin;
         stored.OnlyWhitelistedIps = updatedUser.OnlyWhitelistedIps;
@@ -226,6 +228,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.WhitelistedIps = updatedUser.WhitelistedIps;
         stored.Permissions = updatedUser.Permissions;
         stored.PathFilters = updatedUser.PathFilters;
+        stored.RoleId = updatedUser.RoleId;
         db.SaveChanges();
 
         var changed = ChangedFields(before, UserSnapshot.From(stored));
@@ -234,6 +237,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             changed.Add("Password");
         if (keyChanged && !changed.Contains(nameof(UserSnapshot.HasPublicKey)))
             changed.Add("PublicKey");
+        if (roleChanged)
+            changed.Add(nameof(User.RoleId));
         if (changed.Count > 0)
             Publish(new ProviderEvent(ProviderAction.Update, ProviderObjectType.User, stored.Username)
             {

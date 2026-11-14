@@ -15,12 +15,88 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114082326_AddAuditLog";
+    public override string LastMigrationId => "20261114105230_AddAdminsAndRoles";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder.HasAnnotation("ProductVersion", "11.0.0");
+
+        modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("AllowedIps")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Email")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastLoginAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("MustChangePassword")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("PasswordHash")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Permissions")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("ScopeRoleId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ScopeRoleId");
+
+                b.HasIndex("Username")
+                    .IsUnique();
+
+                b.ToTable("Admins");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Admins.Role", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("Roles");
+            });
 
         modelBuilder.Entity("SshServer.Interfaces.Audit.AuditEntry", b =>
             {
@@ -170,6 +246,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("Permissions")
                     .HasColumnType("TEXT");
 
+                b.Property<int?>("RoleId")
+                    .HasColumnType("INTEGER");
+
                 b.Property<string>("RsaPublicKey")
                     .HasColumnType("TEXT");
 
@@ -187,10 +266,28 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
 
                 b.HasKey("Id");
 
+                b.HasIndex("RoleId");
+
                 b.HasIndex("Username")
                     .IsUnique();
 
                 b.ToTable("Users");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Role", null)
+                    .WithMany()
+                    .HasForeignKey("ScopeRoleId")
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.User", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Role", null)
+                    .WithMany()
+                    .HasForeignKey("RoleId")
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 #pragma warning restore 612, 618
     }

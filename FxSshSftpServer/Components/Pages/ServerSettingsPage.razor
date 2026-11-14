@@ -1,7 +1,8 @@
 @page "/general"
 @using FxSsh.SshServerModule
 @using Microsoft.Extensions.Options
-@inject ISettingsRepository SettingsRepository
+@attribute [Authorize(Policy = AdminPolicies.ManageSettings)]
+@inject AdminScopedSettingsRepository SettingsRepository
 @inject IOptions<SshServerOptions> ListenOptions
 @inject ToastService Toasts
 
