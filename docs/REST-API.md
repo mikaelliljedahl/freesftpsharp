@@ -98,6 +98,7 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/api-keys` | any administrator (bearer token) | list, create, revoke |
 | `/connections` | ViewConnections; DisconnectConnections to close one | list, `DELETE /connections/{id}` |
 | `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to` |
+| `/shares` | ManageUsers (and the scope role) | the share links of the users (#70), newest first (`?username`), without the password hash; `DELETE /shares/{id}` revokes one |
 | `/webhooks` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/test`, `GET /{id}/deliveries`, `POST /deliveries/{id}/redeliver`, `GET /event-types` |
 | `/event-rules` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/run` (scheduled and on-demand rules), `GET /{id}/runs`, `GET /action-types` |
 | `/ip-bans` | ManageSettings | the active auto-bans, `DELETE /ip-bans/{address}` |
@@ -105,8 +106,9 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/status` | any administrator | version, start time, uptime, node, and the permissions of the caller |
 | `/dump`, `/load` | SuperAdmin | export and import of every stored object (below) |
 
-Shares (#70) get their routes with their feature. The API reads and resets the second factor (#63); a user sets up the
-app itself (the web client) or an administrator in the admin UI, because the setup shows the secret and a QR code.
+The users create their share links (#70) in the web client; the API lists and revokes them. The API reads and resets the
+second factor (#63); a user sets up the app itself (the web client) or an administrator in the admin UI, because the
+setup shows the secret and a QR code.
 
 `allowedProtocols` (#71) of a user is a list of `sftp`, `webdav`, `web`, `ftp` (without case; `all` too on input); not given
 on a `PUT`: all of them; at least one is needed. The app passwords are not part of the user: use their routes. The

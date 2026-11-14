@@ -126,6 +126,7 @@ namespace FxSsh.SshServerModule
             _serverSettings.BanDurationSeconds = UpdatedSettings.BanDurationSeconds;
             _serverSettings.ExemptLoopbackFromBan = UpdatedSettings.ExemptLoopbackFromBan;
             _serverSettings.ServerRsaKey = UpdatedSettings.ServerRsaKey;
+            _serverSettings.Shares = UpdatedSettings.Shares;
             if (!string.IsNullOrWhiteSpace(UpdatedSettings.ServerEcdsaKey)) // never drop the saved key
                 _serverSettings.ServerEcdsaKey = UpdatedSettings.ServerEcdsaKey;
 
