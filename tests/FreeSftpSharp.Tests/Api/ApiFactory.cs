@@ -32,7 +32,7 @@ namespace FreeSftpSharp.Tests.Api;
 /// API keys, audit log, webhooks), so the API runs over the same stores as in production. The configured super admin
 /// (<see cref="AdminUiFactory.AdminUserName"/>) is imported at the start.
 /// </summary>
-public sealed class ApiFactory : AdminUiFactory
+public class ApiFactory : AdminUiFactory
 {
     public const string Password = "Api-Test-Password-1";
 
@@ -63,6 +63,7 @@ public sealed class ApiFactory : AdminUiFactory
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
+        ConfigureSettings(builder);
         builder.UseSetting("Api:Enabled", "true");
         builder.UseSetting("Api:TokenRequestsPerMinute", "10000");
         builder.UseSetting("Webhooks:AllowInsecureWebhooks", "true");
@@ -86,6 +87,11 @@ public sealed class ApiFactory : AdminUiFactory
             services.RemoveAll<SqlApiKeyStore>();
             services.AddSingleton(new SqlApiKeyStore(_db));
         });
+    }
+
+    /// <summary>More settings of a derived host.</summary>
+    protected virtual void ConfigureSettings(IWebHostBuilder builder)
+    {
     }
 
     /// <summary>Adds an administrator with <see cref="Password"/>.</summary>

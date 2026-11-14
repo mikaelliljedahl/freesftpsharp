@@ -52,6 +52,11 @@ a new password, other permissions, another scope or a disabled account ends ever
 and stored in the settings database, encrypted with the data protection keys (`DataProtection:KeysPath`), so several
 nodes that share the database and the key ring accept each other's tokens.
 
+With `Auth:Oidc:Admin:DisableLocalLogin` (single sign-on only, [OIDC.md](OIDC.md)) there is no password login: `POST
+/api/v1/token` answers 403 with a problem text ("The password login of the administrators is turned off ... Use an API
+key"), also for the right password. API keys keep working, and so does `POST /api/v1/token/refresh` for a token that
+is still valid.
+
 An administrator with a second factor (#63) gives its TOTP code, or one of its recovery codes, in `totpCode`; without a
 valid code there is no token. The check is the same as on the login page (`ITwoFactorVerifier`): a code works once, and
 wrong codes count for the lockout of the second factor.

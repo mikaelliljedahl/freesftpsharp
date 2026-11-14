@@ -54,6 +54,7 @@ namespace FxSshSftpServer.Security.Oidc
             services.AddSingleton<IValidateOptions<AdminOidcOptions>, OidcSignInOptionsValidator>();
             services.AddSingleton<IValidateOptions<ClientOidcOptions>, OidcSignInOptionsValidator>();
             services.AddSingleton<AdminOidcAccounts>();
+            services.AddSingleton<IAdminPasswordLoginPolicy, AdminOidcPasswordLoginPolicy>();
             services.AddSingleton<ClientOidcAccounts>();
 
             var admin = configuration.GetSection(AdminOidcOptions.SectionName).Get<AdminOidcOptions>() ?? new AdminOidcOptions();
@@ -247,5 +248,17 @@ namespace FxSshSftpServer.Security.Oidc
 
         private static ILogger Logger(HttpContext context) =>
             context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FxSshSftpServer.Oidc");
+    }
+
+    /// <summary>The password login of the administrators (login page and REST API token) is off with <c>Auth:Oidc:Admin:DisableLocalLogin</c>.</summary>
+    public sealed class AdminOidcPasswordLoginPolicy : IAdminPasswordLoginPolicy
+    {
+        public AdminOidcPasswordLoginPolicy(IOptions<AdminOidcOptions> options)
+        {
+            var admin = options.Value;
+            PasswordLoginAllowed = !(admin.IsEnabled && admin.DisableLocalLogin);
+        }
+
+        public bool PasswordLoginAllowed { get; }
     }
 }

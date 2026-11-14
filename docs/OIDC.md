@@ -31,8 +31,10 @@ can be turned on separately:
   refused with a clear page ("Your account at ... does not have the role that is needed here"). `RoleClaim` can be a
   path into a JSON claim, for example `realm_access.roles` of Keycloak.
 - **The local rules still apply.** A disabled or expired account, an address outside the allowed networks, the global
-  IP rules and the auto-ban refuse the sign-in. A web client user needs the protocol "Web client". The TOTP second
-  factor of the server is not asked: do the multi-factor authentication at the provider.
+  IP rules and the auto-ban refuse the sign-in. A web client user needs the protocol "Web client".
+- **No local second factor.** After a sign-in with the provider, the local TOTP step (#63) is skipped, also for an
+  account that has an authenticator app on this server: the provider is expected to enforce the multi-factor
+  authentication. Turn it on there (for example a Keycloak OTP or WebAuthn policy, or Entra ID Conditional Access).
 - **Events.** A sign-in gives the auth events `LoginOk` (method `oidc`) and `IdpLogin`, a refusal `LoginFailed` with
   the reason. An event rule (#68) on `Auth.IdpLogin` can adjust the account after the sign-in.
 - **Logout.** The logout ends the local session. After a sign-in with the provider, it also ends the session at the
@@ -84,7 +86,7 @@ A user of the sign-in has no password for SFTP or WebDAV. An administrator can g
 | `RequiredRoleValue` | empty | A value that `RoleClaim` must have. Empty: every account of the provider (with a local account) may sign in. |
 | `AutoProvision` | `false` | Create the account at its first sign-in. |
 | `DisplayName` | `single sign-on` | The text of the button: "Sign in with ...". |
-| `DisableLocalLogin` | `false` | Remove the password form of the area; `POST /Login` (or `POST /client/login`) answers 404. Turn it on when the sign-in works. The command line (`--create-admin`) still works. |
+| `DisableLocalLogin` | `false` | Remove the password form of the area; `POST /Login` (or `POST /client/login`) answers 404. For the admin UI also `POST /api/v1/token` of the REST API answers 403. Turn it on when the sign-in works. The command line (`--create-admin`) still works. |
 | `RequireHttpsMetadata` | `true` | The discovery document over HTTPS only. Turn it off only for a test provider on the same host. |
 | `RolePermissions` (admin) | empty | For `AutoProvision`: role value -> comma separated `AdminPermissions`, for example `{ "sftp-admins": "SuperAdmin", "sftp-helpdesk": "ViewConnections, ViewAudit" }`. Required with `AutoProvision`. |
 | `TemplateGroup` (client) | empty | The primary group of a new user. |
@@ -94,8 +96,9 @@ A user of the sign-in has no password for SFTP or WebDAV. An administrator can g
 The settings are checked at the start: an `Authority` without `ClientId`, an `http://` authority with
 `RequireHttpsMetadata`, or an unknown permission name stop the start with a clear message.
 
-`DisableLocalLogin` of the admin UI does not turn off the token endpoint of the REST API (`POST /api/v1/token`, only with
-`Api:Enabled`), which takes a password; use API keys there.
+`DisableLocalLogin` of the admin UI also turns off the password token endpoint of the REST API (#67): `POST
+/api/v1/token` answers 403 with a problem text, also for the right password, and the password is not checked. API keys
+(`X-API-Key`) keep working; create them before you turn the password login off, or with a bearer token while it is on.
 
 ## Keycloak
 
