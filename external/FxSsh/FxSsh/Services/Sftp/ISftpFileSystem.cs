@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FxSsh.Services.Sftp
 {
@@ -73,6 +75,23 @@ namespace FxSsh.Services.Sftp
         /// at the close can drop the unfinished file instead.
         /// </summary>
         void Abort() => Dispose();
+    }
+
+    /// <summary>
+    /// An open file whose READ and WRITE can wait without a thread, for
+    /// example for a bandwidth limit or a remote storage. The engine uses
+    /// these methods instead of <see cref="ISftpFileHandle.Read"/> and
+    /// <see cref="ISftpFileHandle.Write"/>; while one waits, the engine
+    /// handles the requests of the other handles and the path requests of
+    /// the session. The requests of one handle stay in order.
+    /// </summary>
+    public interface ISftpAsyncFileHandle : ISftpFileHandle
+    {
+        /// <summary>Like <see cref="ISftpFileHandle.Read"/>. <paramref name="cancellationToken"/> is cancelled when the session closes.</summary>
+        ValueTask<int> ReadAsync(long offset, Memory<byte> buffer, CancellationToken cancellationToken);
+
+        /// <summary>Like <see cref="ISftpFileHandle.Write"/>. <paramref name="cancellationToken"/> is cancelled when the session closes.</summary>
+        ValueTask WriteAsync(long offset, ReadOnlyMemory<byte> data, CancellationToken cancellationToken);
     }
 
     /// <summary>
