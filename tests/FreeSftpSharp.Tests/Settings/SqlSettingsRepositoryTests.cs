@@ -311,7 +311,8 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
 
         // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions.
         using (var db = new SettingsDbContext(options))
-            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog"], db.Database.GetAppliedMigrations().TakeLast(2));
+            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog"],
+                db.Database.GetAppliedMigrations().SkipWhile(m => m != "20261114080103_AddUserPermissions").Take(2));
         var audit = new SshServer.Settings.Sql.Audit.SqlAuditLog(options);
         await audit.AppendAsync(new SshServer.Interfaces.Audit.AuditEntry { Category = "File", Type = "Upload", Status = "Ok", Username = "old" },
             TestContext.Current.CancellationToken);
