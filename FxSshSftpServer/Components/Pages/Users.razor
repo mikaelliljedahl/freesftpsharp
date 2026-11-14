@@ -1,10 +1,11 @@
 @page "/users"
+@attribute [Authorize(Policy = AdminPolicies.ManageUsers)]
 @using FxSsh.SshServerModule
 @using System.Globalization
 @using SshServer.Interfaces.Permissions
 @using SshServer.Interfaces.Authentication
 @using SshServer.Interfaces.Users
-@inject ISettingsRepository SettingsRepository
+@inject AdminScopedSettingsRepository SettingsRepository
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject IJSRuntime JS
 @inject ToastService Toasts

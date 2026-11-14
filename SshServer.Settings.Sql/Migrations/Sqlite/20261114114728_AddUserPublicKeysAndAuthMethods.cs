@@ -10,7 +10,7 @@ namespace SshServer.Settings.Sql.Migrations.Sqlite;
 /// key to the key list at start (a CSP blob cannot be converted in SQL) and clears it.
 /// (Edited by hand: the default value "All".)
 /// </summary>
-public partial class _20261114110144_AddUserPublicKeysAndAuthMethods : Migration
+public partial class _20261114114728_AddUserPublicKeysAndAuthMethods : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

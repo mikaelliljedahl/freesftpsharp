@@ -1,7 +1,8 @@
 @page "/connections"
 @using System.Globalization
 @implements IDisposable
-@inject IConnectionRegistry Registry
+@attribute [Authorize(Policy = AdminPolicies.ViewConnections)]
+@inject ScopedConnections Registry
 @inject TimeProvider Clock
 @inject ToastService Toasts
 
@@ -80,9 +81,12 @@
                                 }
                             </td>
                             <td class="text-end">
-                                <button type="button" class="btn btn-sm btn-outline-danger disconnect-button" @onclick="() => AskDisconnect(connection)">
-                                    <i class="bi bi-x-circle"></i> Disconnect
-                                </button>
+                                @if (Registry.CanDisconnect)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger disconnect-button" @onclick="() => AskDisconnect(connection)">
+                                        <i class="bi bi-x-circle"></i> Disconnect
+                                    </button>
+                                }
                             </td>
                         </tr>
                     }

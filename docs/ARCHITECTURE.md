@@ -62,6 +62,13 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
 - **Audit log.** The `AuditSink` writes every event to the `AuditEntries` table of the settings database; the
   `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
   admin UI page "Audit" and later the REST API read it through `IAuditLog`.
+- **Webhooks** (#66) are the plug-in `SshServer.Webhooks` (`AddWebhooks()`), with the store `IWebhookStore` of the
+  settings database. The `WebhookSink` writes one outbox row (`WebhookDeliveries`) per matching asynchronous webhook,
+  and the `WebhookDispatcher` (a hosted service) sends the rows with retries; it claims a row with a lease column, so
+  several nodes can share the outbox. The `WebhookEventHook` is an `IEventHook`: it asks the synchronous webhooks of a
+  `Pre*` event inline, with their timeout and fail-open setting. A `HookDecision.Deny` can carry a `ClientMessage`; the
+  `EventingFileSystem` puts it in the `FileSystemException`, and the protocol adds it to its "permission denied". The
+  enabled webhooks are cached in memory (`WebhookCatalog`), so with no webhook an event costs no database read.
 
 ## Observability
 
@@ -140,6 +147,23 @@ to `IFileSystemFactory.CreateAsync`.
 
 The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
 groups, #61). No protocol and no backend reads `User.Permissions` itself.
+
+## Administrators and authorization
+
+The administrators and the scope roles are in the settings database (`IAdminStore`, `SshServer.Interfaces.Admins`).
+`AdminAdministrationService` is the one place for their rules (validation, no privilege escalation, provider events with
+the actor); the admin UI and the command line (`--create-admin`) use it.
+
+- **Permissions are policies.** Each `AdminPermissions` flag is an ASP.NET Core authorization policy with the same name
+  (`AdminPolicies`). Every page has `[Authorize(Policy = ...)]`; the endpoint checks it for the first request and
+  `AuthorizeRouteView` for the navigation in the circuit. The REST API (#67) uses the same policies.
+- **Services check again.** The pages do not use the shared singletons for admin work: they use scoped views of them
+  (`AdminScopedSettingsRepository`, `ScopedConnections`, `ScopedAuditLog`) that check the permission and the scope of
+  the signed-in administrator (`CurrentAdmin`) themselves. A hidden button is never the only check.
+- **The scope is applied in one place.** A scoped administrator sees only the users of its role; the scoped views
+  filter by it, so the users, connections and audit entries of another role are "not found".
+- **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
+  request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
 
 ## General rules
 

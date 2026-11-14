@@ -1,6 +1,23 @@
+@* AuthorizeRouteView checks the [Authorize] policy of a page also when the circuit navigates to it (the endpoint
+   checks it for the first HTTP request). The services behind the pages check the permissions again. *@
 <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <PageTitle>Access denied - FreeSftpSharp admin</PageTitle>
+                    <h1 class="h3" id="access-denied">Access denied</h1>
+                    <p>You do not have the permission for this page.</p>
+                }
+                else
+                {
+                    <PageTitle>Session ended - FreeSftpSharp admin</PageTitle>
+                    <h1 class="h3" id="session-ended">Your session has ended</h1>
+                    <p><a href="Login" data-enhance-nav="false">Log in again</a>.</p>
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>

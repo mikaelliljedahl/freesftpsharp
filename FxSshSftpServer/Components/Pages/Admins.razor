@@ -1,0 +1,264 @@
+@page "/admins"
+@using System.Globalization
+@using System.Threading
+@attribute [Authorize(Policy = AdminPolicies.ManageAdmins)]
+@inject AdminAdministrationService Administration
+@inject CurrentAdmin Current
+@inject ToastService Toasts
+
+<PageTitle>Admins - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Admins</h1>
+        <p class="text-body-secondary mb-0">
+            The accounts of this admin UI. Each permission opens a part of the UI. An administrator with a scope role sees only
+            the users of that role. You cannot grant permissions that you do not have.
+        </p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-admin"><i class="bi bi-person-plus"></i> Add administrator</button>
+</div>
+
+<div class="row g-4">
+    <div class="@(form is null ? "col-12" : "col-xl-5")">
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Permissions</th>
+                            <th class="d-none d-md-table-cell">Last login (UTC)</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var admin in admins)
+                        {
+                            <tr class="admin-row">
+                                <td>
+                                    <span class="fw-semibold">@admin.Username</span>
+                                    @if (admin.Status != AdminStatus.Enabled)
+                                    {
+                                        <span class="badge text-bg-secondary ms-1">disabled</span>
+                                    }
+                                    @if (admin.ScopeRoleId is { } scope)
+                                    {
+                                        <div class="small text-body-secondary">scope: @RoleName(scope)</div>
+                                    }
+                                </td>
+                                <td class="small">@Describe(admin.Permissions)</td>
+                                <td class="d-none d-md-table-cell small">@(admin.LastLoginAt?.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? "never")</td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-primary edit-admin" title="Edit" aria-label="Edit @admin.Username" @onclick="() => Edit(admin)"><i class="bi bi-pencil"></i></button>
+                                        <button type="button" class="btn btn-outline-danger delete-admin" title="Delete" aria-label="Delete @admin.Username" @onclick="() => AskDelete(admin.Username)"><i class="bi bi-trash"></i></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    @if (form is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>@(form.IsNew ? "New administrator" : $"Edit {form.Username}")</span>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseForm"></button>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="admin-form" id="admin-form">
+                        <DataAnnotationsValidator />
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" for="admin-username">User name</label>
+                                <InputText id="admin-username" class="form-control" @bind-Value="form.Username" readonly="@(!form.IsNew)" autocomplete="off" />
+                                <ValidationMessage For="() => form.Username" />
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="admin-email">E-mail (optional)</label>
+                                <InputText id="admin-email" class="form-control" @bind-Value="form.Email" autocomplete="off" />
+                                <ValidationMessage For="() => form.Email" />
+                            </div>
+                        </div>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
+                            @if (!form.IsNew)
+                            {
+                                <div class="small text-body-secondary mb-2">Leave empty to keep the password.</div>
+                            }
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="admin-password">@(form.IsNew ? "Password" : "New password")</label>
+                                    <InputText id="admin-password" type="password" class="form-control" @bind-Value="form.NewPassword" autocomplete="new-password" />
+                                    <ValidationMessage For="() => form.NewPassword" />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="admin-confirm-password">Repeat the password</label>
+                                    <InputText id="admin-confirm-password" type="password" class="form-control" @bind-Value="form.ConfirmPassword" autocomplete="new-password" />
+                                    <ValidationMessage For="() => form.ConfirmPassword" />
+                                </div>
+                            </div>
+                            <div class="form-check mt-2">
+                                <InputCheckbox id="admin-must-change" class="form-check-input" @bind-Value="form.MustChangePassword" />
+                                <label class="form-check-label" for="admin-must-change">Must change the password at the next login</label>
+                            </div>
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Permissions</legend>
+                            <div class="mb-3">
+                                <label class="form-label" for="admin-scope">Scope role</label>
+                                <InputSelect id="admin-scope" class="form-select" @bind-Value="form.ScopeRoleId">
+                                    <option value="">No scope: all users</option>
+                                    @foreach (var role in roles)
+                                    {
+                                        <option value="@role.Id">@role.Name</option>
+                                    }
+                                </InputSelect>
+                                <div class="form-text">With a scope role the administrator sees and manages only the users of the role, and it can only have the permissions for users, connections and the audit log.</div>
+                            </div>
+                            <div class="row row-cols-1 row-cols-sm-2 g-1">
+                                @foreach (var permission in AdminPermissionRules.SingleFlags)
+                                {
+                                    var id = "perm-" + permission;
+                                    <div class="col">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" id="@id" checked="@form.Has(permission)"
+                                                   disabled="@(!Current.Actor.Has(permission))"
+                                                   @onchange="e => form.Set(permission, e.Value is true)" />
+                                            <label class="form-check-label" for="@id">@Label(permission)</label>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            <ValidationMessage For="() => form.Permissions" />
+                        </fieldset>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="admin-allowed-ips">Allowed networks (optional)</label>
+                            <InputTextArea id="admin-allowed-ips" class="form-control font-monospace" rows="3" @bind-Value="form.AllowedIps" placeholder="192.168.1.0/24" />
+                            <ValidationMessage For="() => form.AllowedIps" />
+                            <div class="form-text">One network per line. Empty: the administrator may log in from every address.</div>
+                        </div>
+
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox id="admin-enabled" class="form-check-input" @bind-Value="form.Enabled" />
+                            <label class="form-check-label" for="admin-enabled">Enabled</label>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                            <button type="submit" class="btn btn-primary" disabled="@saving"><i class="bi bi-floppy"></i> Save</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete the administrator" OnConfirm="DeleteAsync">
+    Delete the administrator <strong>@pendingDelete</strong>? Its sessions end at the next request.
+</ConfirmDialog>
+
+@code {
+    private IReadOnlyList<Admin> admins = Array.Empty<Admin>();
+    private IReadOnlyList<Role> roles = Array.Empty<Role>();
+    private AdminForm form;
+    private string pendingDelete;
+    private bool saving;
+    private ConfirmDialog deleteDialog;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var actor = Current.Actor;
+        admins = await Administration.ListAdminsAsync(actor, CancellationToken.None);
+        roles = await Administration.ListRolesAsync(actor, CancellationToken.None);
+    }
+
+    private void StartNew() => form = AdminForm.New();
+
+    private void Edit(Admin admin) => form = AdminForm.From(admin);
+
+    private void CloseForm() => form = null;
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        try
+        {
+            var actor = Current.Actor;
+            var input = form.ToInput();
+            var password = form.PasswordToSave;
+            // Hash off the circuit's synchronization context: PBKDF2 with 600,000 iterations takes a moment.
+            var saved = await Task.Run(() => form.IsNew
+                ? Administration.CreateAdminAsync(actor, input, password, CancellationToken.None)
+                : Administration.UpdateAdminAsync(actor, input, password, CancellationToken.None));
+            Toasts.ShowSuccess($"The administrator {saved.Username} was saved.");
+            form = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is AdminAdministrationException or AdminAccessDeniedException)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private void AskDelete(string username)
+    {
+        pendingDelete = username;
+        deleteDialog.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        try
+        {
+            await Administration.DeleteAdminAsync(Current.Actor, pendingDelete, CancellationToken.None);
+            Toasts.ShowSuccess($"The administrator {pendingDelete} was deleted.");
+            if (form?.Username == pendingDelete)
+                form = null;
+        }
+        catch (Exception ex) when (ex is AdminAdministrationException or AdminAccessDeniedException)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+        await LoadAsync();
+    }
+
+    private string RoleName(int id) => roles.FirstOrDefault(r => r.Id == id)?.Name ?? $"#{id}";
+
+    private static string Describe(AdminPermissions permissions) =>
+        permissions.HasFlag(AdminPermissions.SuperAdmin) ? "Super admin (everything)"
+        : permissions == AdminPermissions.None ? "none"
+        : string.Join(", ", AdminPermissionRules.SingleFlags.Where(p => permissions.HasFlag(p)).Select(Label));
+
+    private static string Label(AdminPermissions permission) => permission switch
+    {
+        AdminPermissions.SuperAdmin => "Super admin (everything)",
+        AdminPermissions.ManageUsers => "Manage users",
+        AdminPermissions.ManageGroups => "Manage groups",
+        AdminPermissions.ManageFolders => "Manage folders",
+        AdminPermissions.ManageEvents => "Manage event rules",
+        AdminPermissions.ViewConnections => "See connections",
+        AdminPermissions.DisconnectConnections => "Close connections",
+        AdminPermissions.ViewAudit => "Read the audit log",
+        AdminPermissions.ManageSettings => "Server settings and IP access",
+        AdminPermissions.ManageAdmins => "Manage administrators and roles",
+        _ => permission.ToString(),
+    };
+}

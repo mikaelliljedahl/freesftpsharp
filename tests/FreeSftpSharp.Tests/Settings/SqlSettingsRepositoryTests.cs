@@ -318,12 +318,15 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.True(repository.UpdateUser(user));
         Assert.Equal(SamplePermissions(), repository.GetUser("old").Permissions);
 
-        // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions.
+        // The upgrade also runs the later migrations in order: the audit table (#65) comes right after the permissions.
+        // Later migrations can follow; they are not part of this check.
         using (var db = new SettingsDbContext(options))
         {
             var applied = db.Database.GetAppliedMigrations().ToList();
-            Assert.True(applied.IndexOf("20261114080103_AddUserPermissions") < applied.IndexOf("20261114082326_AddAuditLog"), string.Join(", ", applied));
-            Assert.Contains("20261114110144_AddUserPublicKeysAndAuthMethods", applied);
+            var permissions = applied.IndexOf("20261114080103_AddUserPermissions");
+            Assert.True(permissions >= 0, string.Join(", ", applied));
+            Assert.Equal("20261114082326_AddAuditLog", applied.ElementAtOrDefault(permissions + 1));
+            Assert.Contains(applied, m => m.EndsWith("_AddUserPublicKeysAndAuthMethods", StringComparison.Ordinal));
         }
         var audit = new SshServer.Settings.Sql.Audit.SqlAuditLog(options);
         await audit.AppendAsync(new SshServer.Interfaces.Audit.AuditEntry { Category = "File", Type = "Upload", Status = "Ok", Username = "old" },
@@ -343,7 +346,7 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         using (var db = new SettingsDbContext(options))
         {
             // The schema before issue #58: one key per user as a base64 CSP blob in the column RsaPublicKey.
-            db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().Migrate("20261114082326_AddAuditLog");
+            db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().Migrate("20261114112133_AddAdminsAndRoles");
             db.Database.ExecuteSqlRaw(
                 "INSERT INTO ServerSettings (ServerRsaKey, ServerBanner, ListenToPort, BindToAddress, BlacklistedIps, MaxLoginAttemptsBeforeBan, " +
                 "IdleTimeout, EnableCommand, EnableDirectTcpIp, OnlyWhitelistedIps, LoginFailureWindowSeconds, BanDurationSeconds, ExemptLoopbackFromBan) " +

@@ -1,20 +1,27 @@
-using SshServer.Interfaces.Security;
 using System;
+using System.Net;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.Security;
+using SshServer.Interfaces.Users;
 
 namespace FxSshSftpServer.Security
 {
     /// <summary>
-    /// Cookie authentication for the admin UI with one local admin account from configuration.
-    /// Every endpoint (pages, the Blazor hub) needs an authenticated user unless it allows anonymous access.
+    /// Cookie authentication and authorization for the admin UI. The administrators are stored in the settings database
+    /// (<see cref="IAdminStore"/>); the configured <c>AdminAuth</c> account is imported once as the first super admin.
+    /// Every endpoint (pages, the Blazor hub) needs an authenticated administrator unless it allows anonymous access,
+    /// and each page needs the policy of its permission (<see cref="AdminPolicies"/>).
     /// </summary>
     public static class AdminAuthenticationSetup
     {
@@ -25,6 +32,7 @@ namespace FxSshSftpServer.Security
         {
             services.Configure<AdminAuthOptions>(configuration.GetSection(AdminAuthOptions.SectionName));
             services.AddSingleton<AdminCredentialValidator>();
+            services.AddSingleton<AdminSessionValidator>();
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton(sp =>
             {
@@ -42,46 +50,80 @@ namespace FxSshSftpServer.Security
                     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                     options.LoginPath = "/Login";
                     options.LogoutPath = "/Logout";
-                    options.AccessDeniedPath = "/Login";
                     options.ExpireTimeSpan = TimeSpan.FromHours(8);
                     options.SlidingExpiration = true;
                     options.Events = new CookieAuthenticationEvents
                     {
-                        // The Blazor hub is not a page: answer 401/403 instead of redirecting to the login page.
+                        // The Blazor hub is not a page: answer 401 instead of redirecting to the login page.
                         OnRedirectToLogin = context => RedirectOrStatus(context, StatusCodes.Status401Unauthorized),
-                        OnRedirectToAccessDenied = context => RedirectOrStatus(context, StatusCodes.Status403Forbidden),
+                        // A logged-in administrator without the permission of a page gets 403, not the login page.
+                        OnRedirectToAccessDenied = Forbidden,
+                        OnValidatePrincipal = ValidatePrincipalAsync,
                     };
                 });
 
             services.AddAuthorization(options =>
             {
                 options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+                options.AddAdminPolicies();
             });
+
+            // The circuit checks its login again periodically; the scoped services check the permissions themselves.
+            services.AddScoped<AuthenticationStateProvider, AdminRevalidatingAuthenticationStateProvider>();
+            services.AddScoped<CurrentAdmin>();
+            services.AddScoped<AdminScopedSettingsRepository>();
+            services.AddScoped<ScopedAuditLog>();
+            services.AddScoped<ScopedConnections>();
+            // In the admin UI every user operation goes through the scope of the signed-in administrator. The command
+            // line (ServerConsoleApp) keeps the singleton on the shared repository.
+            services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
 
             return services;
         }
 
         /// <summary>
-        /// Closes the whole UI with 503 when no admin credential is configured. Put it first in the pipeline.
+        /// Imports the configured <c>AdminAuth</c> account as the first super admin when no administrator is stored, and
+        /// closes the whole UI with 503 when there is still no administrator. Put it first in the pipeline.
         /// </summary>
         public static IApplicationBuilder UseAdminUiRequiresCredential(this IApplicationBuilder app)
         {
-            var validator = app.ApplicationServices.GetRequiredService<AdminCredentialValidator>();
-            var options = app.ApplicationServices.GetRequiredService<IOptions<AdminAuthOptions>>().Value;
-            var logger = app.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger("FxSshSftpServer.AdminAuth");
+            var services = app.ApplicationServices;
+            var store = services.GetRequiredService<IAdminStore>();
+            var administration = services.GetRequiredService<AdminAdministrationService>();
+            var options = services.GetRequiredService<IOptions<AdminAuthOptions>>().Value;
+            var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("FxSshSftpServer.AdminAuth");
 
-            if (validator.IsConfigured)
+            // Startup, before the server accepts requests: waiting here is fine.
+            var hasAdmins = store.AnyAdminAsync(default).GetAwaiter().GetResult();
+            if (!hasAdmins && options.IsConfigured
+                && administration.ImportConfiguredAdminAsync(options.UserName, options.PasswordHash, default).GetAwaiter().GetResult())
             {
-                logger.LogInformation("Admin UI login is enabled for user {UserName}.", validator.UserName);
+                // Information, not a warning: the import is the expected first start after an upgrade.
+                logger.LogInformation(
+                    "Imported the configured admin account {UserName} (AdminAuth) as a super admin into the settings database. " +
+                    "Logins now use the stored administrators; manage them on the Admins page. AdminAuth is not read again.",
+                    options.UserName.Trim());
+                hasAdmins = true;
+            }
+            else if (hasAdmins && !string.IsNullOrWhiteSpace(options.PasswordHash))
+            {
+                logger.LogInformation(
+                    "AdminAuth is configured, but administrators are stored in the settings database: AdminAuth is ignored.");
+            }
+
+            if (hasAdmins)
+            {
+                logger.LogInformation("Admin UI login is enabled.");
                 return app;
             }
 
             logger.LogError(
-                "The admin UI is closed: {Reason}. Set AdminAuth:UserName and AdminAuth:PasswordHash " +
-                "(create the hash with 'FxSshSftpServer {Switch}') and restart. The SSH server still runs.",
+                "The admin UI is closed: no administrator is stored and {Reason}. Create one with 'FxSshSftpServer {CreateSwitch} <name>', " +
+                "or set AdminAuth:UserName and AdminAuth:PasswordHash (create the hash with 'FxSshSftpServer {Switch}'), and restart. The SSH server still runs.",
                 string.IsNullOrWhiteSpace(options.PasswordHash) ? "AdminAuth:PasswordHash is not set"
                     : !PasswordHasher.IsWellFormed(options.PasswordHash) ? "AdminAuth:PasswordHash is not a valid PBKDF2-SHA256 hash"
                     : "AdminAuth:UserName is not set",
+                AdminCreateCommand.Switch,
                 AdminPasswordCommand.Switch);
 
             return app.Use(async (HttpContext context, Func<Task> _) =>
@@ -89,11 +131,36 @@ namespace FxSshSftpServer.Security
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 context.Response.ContentType = "text/plain; charset=utf-8";
                 await context.Response.WriteAsync(
-                    "The admin UI is closed because no admin credential is configured.\n\n" +
-                    $"Run 'FxSshSftpServer {AdminPasswordCommand.Switch}' to create a password hash, set " +
+                    "The admin UI is closed because no administrator exists.\n\n" +
+                    $"Run 'FxSshSftpServer {AdminCreateCommand.Switch} <name>' to create the first administrator, or run " +
+                    $"'FxSshSftpServer {AdminPasswordCommand.Switch}' to create a password hash and set " +
                     "AdminAuth:UserName and AdminAuth:PasswordHash (appsettings.json, environment variables " +
-                    "AdminAuth__UserName / AdminAuth__PasswordHash, or user secrets) and restart the server.\n");
+                    "AdminAuth__UserName / AdminAuth__PasswordHash, or user secrets). Then restart the server.\n");
             });
+        }
+
+        private static async Task ValidatePrincipalAsync(CookieValidatePrincipalContext context)
+        {
+            var validator = context.HttpContext.RequestServices.GetRequiredService<AdminSessionValidator>();
+            IPAddress client = context.HttpContext.Connection.RemoteIpAddress;
+            if (await validator.IsValidAsync(context.Principal, client, context.HttpContext.RequestAborted))
+                return;
+
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        }
+
+        private static async Task Forbidden(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            if (context.Request.Path.StartsWithSegments(BlazorHubPath))
+                return;
+            context.Response.ContentType = "text/html; charset=utf-8";
+            await context.Response.WriteAsync(
+                "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\" /><title>Access denied - FreeSftpSharp</title>" +
+                "<link rel=\"stylesheet\" href=\"/lib/bootstrap/css/bootstrap.min.css\" /></head>" +
+                "<body class=\"p-4\"><h1 class=\"h4\">Access denied</h1><p>You do not have the permission for this page.</p>" +
+                "<p><a href=\"/\">Back to the dashboard</a></p></body></html>");
         }
 
         private static Task RedirectOrStatus(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
