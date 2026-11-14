@@ -9,6 +9,7 @@ using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
 
@@ -38,6 +39,10 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual int IdleTimeoutSeconds => 600;
     /// <summary>Changes the server settings before the server starts. Override it in a derived fixture.</summary>
     protected virtual void ConfigureSettings(ServerSettings settings)
+    {
+    }
+    /// <summary>Changes the default test user before the server starts (for example its permissions). Override it in a derived fixture.</summary>
+    protected virtual void ConfigureUser(User user)
     {
     }
     /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
@@ -181,14 +186,16 @@ public class SftpServerFixture : IAsyncLifetime
         ConfigureSettings(settings);
 
         var repository = new InMemorySettingsRepository(settings);
-        repository.AddUser(new User
+        var user = new User
         {
             Username = TestCredentials.Username,
             HashedPassword = TestCredentials.HashPassword(TestCredentials.Password),
             UserRootDirectory = UserRoot,
             OnlyWhitelistedIps = false,
             WhitelistedIps = new List<string>(),
-        });
+        };
+        ConfigureUser(user);
+        repository.AddUser(user);
 
         var time = CreateTimeProvider();
         BanTracker = new LoginBanTracker(time);
@@ -203,7 +210,7 @@ public class SftpServerFixture : IAsyncLifetime
     /// (AddSshServerStorage + AddLocalDiskStorage). Override it in a derived fixture.
     /// </summary>
     protected virtual IFileSystemFactory CreateFileSystemFactory()
-        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
+        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), new EffectivePermissionsService());
 
     private static int GetFreeTcpPort()
     {

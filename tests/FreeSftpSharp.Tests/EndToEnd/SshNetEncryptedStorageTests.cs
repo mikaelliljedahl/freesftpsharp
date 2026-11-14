@@ -6,6 +6,7 @@ using Renci.SshNet;
 using Renci.SshNet.Common;
 using SshServer.Filesystem.Encrypted;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Storage;
 
@@ -19,7 +20,8 @@ public sealed class EncryptedSftpServerFixture : SftpServerFixture
         var keys = TestKeys.Provider("a", ("a", TestKeys.KeyA));
         return new StorageFileSystemFactory(
             new StorageProviderRegistry([new LocalDiskStorageProvider(), new EncryptedLocalStorageProvider(keys)]),
-            new EncryptedUserRootStorageResolver(Options.Create(new EncryptedStorageOptions { Enabled = true })));
+            new EncryptedUserRootStorageResolver(Options.Create(new EncryptedStorageOptions { Enabled = true })),
+            new EffectivePermissionsService());
     }
 }
 

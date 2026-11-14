@@ -71,6 +71,9 @@ public static class LiteDbSettingsReader
                     OnlyWhitelistedIps = stored.OnlyWhitelistedIps,
                     WhitelistedIps = stored.WhitelistedIps,
                     LastSuccessfulLogin = stored.LastSuccessfulLogin,
+                    // Not in files of older versions: then the default of User ("/" = All).
+                    Permissions = stored.Permissions,
+                    PathFilters = stored.PathFilters,
                 });
             }
         }
