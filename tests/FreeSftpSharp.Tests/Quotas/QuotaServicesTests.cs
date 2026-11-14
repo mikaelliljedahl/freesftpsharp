@@ -178,6 +178,25 @@ public sealed class QuotaServicesTests : IDisposable
         Assert.Equal([Alice], _tracker.DiskScopes().Select(s => s.Key));
     }
 
+    [Fact]
+    public async Task The_event_rule_actions_queue_a_scan_and_reset_the_transfer_counters()
+    {
+        var queue = new QuotaScanQueue();
+        var user = new User { Username = "alice" };
+        var context = new SshServer.Interfaces.EventRules.EventActionContext(new SshServer.Interfaces.EventRules.EventRule(), null, user,
+            new Dictionary<string, string>(), new Dictionary<string, string>(), _clock.GetUtcNow(), t => t);
+        await _tracker.LoadAsync(Alice, Ct);
+        _tracker.AddTransfer(Alice, 10, 20);
+
+        var scan = await new QuotaScanRuleAction(queue).ExecuteAsync(context, Ct);
+        var reset = await new QuotaResetTransferRuleAction(_tracker).ExecuteAsync(context, Ct);
+
+        Assert.False(scan.IsFailure);
+        Assert.True(queue.IsUserPending("alice"));
+        Assert.False(reset.IsFailure);
+        Assert.Equal((0L, 0L), (_tracker.Current(Alice).UploadedBytes, _tracker.Current(Alice).DownloadedBytes));
+    }
+
     private QuotaScanService Scanner(ISettingsRepository repository, QuotaScanQueue queue)
     {
         var providers = new SshServerModule.Storage.StorageProviderRegistry([new LocalDiskStorageProvider()]);

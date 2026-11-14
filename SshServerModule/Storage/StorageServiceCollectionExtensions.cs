@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Quotas;
@@ -26,7 +27,8 @@ namespace SshServerModule.Storage
         /// The quotas and bandwidth limits (#62): <see cref="IEffectiveQuotaService"/>, the counters (<see cref="QuotaUsageTracker"/>
         /// over an <see cref="IQuotaUsageStore"/>: in memory unless AddSshServerSettings registers the database store), the
         /// decorators of the factory, the scan (<see cref="QuotaScanService"/>, section <c>Quota</c>) and the flush of the
-        /// counters as hosted services, and the sink that follows the user changes. A user without a quota costs nothing.
+        /// counters as hosted services, the sink that follows the user changes, and the event rule actions "QuotaScan" and
+        /// "QuotaResetTransfer". A user without a quota costs nothing.
         /// </para>
         /// </summary>
         public static IServiceCollection AddSshServerStorage(this IServiceCollection services)
@@ -50,6 +52,9 @@ namespace SshServerModule.Storage
             services.AddHostedService(sp => sp.GetRequiredService<QuotaScanService>());
             services.AddHostedService<QuotaUsageFlushService>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, QuotaProviderEventSink>());
+            // The event rule actions "Rescan quota" and "Reset transfer quota" (#68): used only with AddEventRules.
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventRuleAction, QuotaScanRuleAction>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventRuleAction, QuotaResetTransferRuleAction>());
             services.AddOptions<QuotaOptions>()
                 .Configure<IServiceProvider>((options, sp) =>
                 {
