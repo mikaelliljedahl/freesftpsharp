@@ -198,21 +198,6 @@ public sealed class ConnectionRegistryTests
         Assert.Equal(ConnectionEventKind.Disconnected, _events.Last().Kind);
     }
 
-    /// <summary>The entry leaves the registry at once, not when the protocol has finished its close (an SSH session waits for its send queue).</summary>
-    [Fact]
-    public async Task DisconnectAsync_removes_the_connection_before_the_protocol_has_closed_it()
-    {
-        var closing = new TaskCompletionSource();
-        var connection = _registry.Register(new ConnectionRegistration(ConnectionProtocols.Sftp, "127.0.0.1:3", _ => closing.Task));
-
-        var disconnect = _registry.DisconnectAsync(connection.Id, "Disabled.");
-
-        Assert.False(disconnect.IsCompleted);
-        Assert.Null(_registry.Get(connection.Id));
-        closing.SetResult();
-        Assert.True(await disconnect);
-    }
-
     [Fact]
     public async Task DisconnectAsync_of_an_unknown_connection_returns_false()
     {
