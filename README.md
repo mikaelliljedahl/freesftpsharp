@@ -249,6 +249,22 @@ The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub
 example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, groups, quotas,
 an audit log, webhooks, a REST API, WebDAV and FTP, and more settings databases.
 
+## Log files
+
+Both hosts log with Serilog. The sinks are in `appsettings.json` under `Serilog:WriteTo` and are **named**
+(`File`, `HtmlFile`, and `Console` in ServerConsoleApp), not listed in an array, so that one environment variable
+can change one setting of one sink. Relative paths are resolved against the program directory.
+
+| Environment variable | Default | Meaning |
+|---|---|---|
+| `Serilog__WriteTo__File__Args__path` | `logs/FxSshServer.txt` | Text log file (rolls at 10 MB) |
+| `Serilog__WriteTo__HtmlFile__Args__path` | `logs/html/FxSshServer.html` | HTML log file |
+| `Serilog__MinimumLevel__Default` | `Information` | Minimum level |
+
+The container image and the systemd unit set the two paths to `/data/logs` and `/var/log/freesftpsharp`. If you add
+your own sink in `appsettings.Production.json`, give it a name as a key (`"WriteTo": { "Mine": { "Name": ... } }`);
+an array there cannot be combined with the environment variables.
+
 ## Network access settings
 
 These fields of the server settings (`ServerSettings`) control who can connect. Network entries are CIDR

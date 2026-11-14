@@ -57,6 +57,62 @@ public class LoggingConfigurationTests
         Assert.NotEmpty(paths);
         Assert.All(paths, p => Assert.StartsWith(AppContext.BaseDirectory, p));
     }
+    [Theory]
+    [MemberData(nameof(Apps))]
+    public void File_sink_paths_can_be_overridden_by_environment_variables(string name)
+    {
+        // Same keys as the environment variables Serilog__WriteTo__File__Args__path and ...__HtmlFile__Args__path.
+        var dir = Path.Combine(Path.GetTempPath(), "fss-log-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddJsonFile(SettingsPath(name), optional: false)
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Serilog:WriteTo:File:Args:path"] = Path.Combine(dir, "log-.txt"),
+                    ["Serilog:WriteTo:HtmlFile:Args:path"] = Path.Combine(dir, "html", "log.html"),
+                }).Build();
+
+            using (var logger = new LoggerConfiguration().ReadFrom.Configuration(LogFilePaths.MakeAbsolute(configuration)).CreateLogger())
+                logger.Information("hello");
+
+            Assert.NotEmpty(Directory.GetFiles(dir, "log-*.txt"));
+            Assert.NotEmpty(Directory.GetFiles(Path.Combine(dir, "html"), "log*.html"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+}
+
+/// <summary>Starts the web host with the log path set by an environment variable (issue #114).</summary>
+[Collection(AdminUiCollection.Name)]
+public class LogPathEnvironmentVariableTests
+{
+    [Fact]
+    public async Task Web_host_starts_and_writes_the_log_to_the_path_of_the_environment_variable()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "fss-log-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("Serilog__WriteTo__File__Args__path", Path.Combine(dir, "log-.txt"));
+        try
+        {
+            using (var factory = new AdminUiFactory())
+            {
+                using var client = factory.CreateBrowser();
+                var response = await client.GetAsync("/Login", TestContext.Current.CancellationToken);
+                Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+            }
+
+            Log.CloseAndFlush();
+            Assert.NotEmpty(Directory.GetFiles(dir, "log-*.txt"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("Serilog__WriteTo__File__Args__path", null);
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
 }
 
 /// <summary>Starts the web host normally and checks that it logs no warnings (issue #33).</summary>

@@ -47,7 +47,8 @@ a non-root user to bind ports 22 and 80. If yours does not, set `SshServer__Port
   see a changed host key.
 - **Configuration.** Every setting is an environment variable (`Section__Key`): `SshServer__Port`,
   `Observability__Prometheus__Enabled`, `Serilog__MinimumLevel__Default`, and so on. The logs go to the container
-  log (console) and to `/data/logs`.
+  log (console) and to `/data/logs`: the image sets `Serilog__WriteTo__File__Args__path` and
+  `Serilog__WriteTo__HtmlFile__Args__path` (see [Log files](../README.md#log-files)).
 
 ### HTTPS
 
@@ -82,7 +83,7 @@ sudo freesftpsharp-1.2.3-linux-x64/deploy/systemd/install.sh freesftpsharp-1.2.3
 to `/opt/freesftpsharp`, writes `/etc/freesftpsharp/freesftpsharp.env` with a generated admin password (printed once)
 and the admin UI on `127.0.0.1:5000`, and installs and starts
 [`freesftpsharp.service`](../deploy/systemd/freesftpsharp.service). State is in `/var/lib/freesftpsharp`, logs are in
-`/var/log/freesftpsharp`. The unit gives the process only the capability to bind ports below 1024, and a
+`/var/log/freesftpsharp` (the unit sets `Serilog__WriteTo__File__Args__path` and `Serilog__WriteTo__HtmlFile__Args__path`). The unit gives the process only the capability to bind ports below 1024, and a
 read-only file system except for its state and log directories: add the directories of the user roots to
 `ReadWritePaths=`. Manage users with `/opt/freesftpsharp/ServerConsoleApp/ServerConsoleApp user ...` using the same
 environment (`sudo -u freesftpsharp env ConnectionStrings__Settings="Data Source=/var/lib/freesftpsharp/freesftpsharp.db" ...`).

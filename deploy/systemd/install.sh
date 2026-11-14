@@ -21,8 +21,6 @@ rm -rf /opt/freesftpsharp.previous
 mkdir -p /opt/freesftpsharp
 cp -a "$src/FxSshSftpServer" "$src/ServerConsoleApp" /opt/freesftpsharp/
 chmod 0755 /opt/freesftpsharp/FxSshSftpServer/FxSshSftpServer /opt/freesftpsharp/ServerConsoleApp/ServerConsoleApp
-# The relative log paths of appsettings.json (logs/...) are below the program directory: send them to /var/log.
-ln -sfn /var/log/freesftpsharp /opt/freesftpsharp/FxSshSftpServer/logs
 
 install -d -m 0750 -o root -g freesftpsharp /etc/freesftpsharp
 if [ ! -f /etc/freesftpsharp/freesftpsharp.env ]; then

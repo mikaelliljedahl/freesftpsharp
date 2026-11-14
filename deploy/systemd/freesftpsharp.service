@@ -15,6 +15,8 @@ EnvironmentFile=-/etc/freesftpsharp/freesftpsharp.env
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ConnectionStrings__Settings=Data Source=/var/lib/freesftpsharp/freesftpsharp.db
 Environment=DataProtection__KeysPath=/var/lib/freesftpsharp/keys
+Environment=Serilog__WriteTo__File__Args__path=/var/log/freesftpsharp/FxSshServer.txt
+Environment=Serilog__WriteTo__HtmlFile__Args__path=/var/log/freesftpsharp/html/FxSshServer.html
 Restart=on-failure
 RestartSec=5
 
