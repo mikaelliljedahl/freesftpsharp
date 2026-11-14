@@ -13,6 +13,7 @@ using FxSsh.SshServerModule;
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
+using SshServerModule.Connections;
 
 using FxSshSftpServer.Security;
 
@@ -49,6 +50,7 @@ builder.Services.AddScoped<FxSshSftpServer.Components.Shared.ToastService>();
 Log.Debug("AddHostedService<HostedServer>...");
 builder.Services.AddHostedService<HostedServer>();
 builder.Services.AddSshServerSecurity(); // auto-ban state, IIpBanService for the admin UI
+builder.Services.AddSshServerConnections(); // the open connections, shared with the admin UI
 builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:BindToAddress override the stored settings
 
 Log.Debug("AddSshServerSettings...");
