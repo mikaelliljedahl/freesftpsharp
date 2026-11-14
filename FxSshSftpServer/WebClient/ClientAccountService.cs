@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FxSsh.SshServerModule;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
@@ -45,9 +46,10 @@ namespace FxSshSftpServer.WebClient
         private readonly IEventBus _events;
         private readonly TimeProvider _time;
         private readonly ILogger<ClientAccountService> _logger;
+        private readonly AuditActorContext _actors;
 
         public ClientAccountService(ISettingsRepository repository, TwoFactorService twoFactor, IConnectionRegistry connections, IEventBus events,
-            TimeProvider time, ILogger<ClientAccountService> logger)
+            TimeProvider time, ILogger<ClientAccountService> logger, AuditActorContext actors)
         {
             _repository = repository;
             // The users service on the shared repository: the scoped one of the admin UI checks an administrator.
@@ -57,6 +59,7 @@ namespace FxSshSftpServer.WebClient
             _events = events;
             _time = time;
             _logger = logger;
+            _actors = actors;
         }
 
         public User GetUser(string username) => _repository.GetUser(username);
@@ -82,8 +85,11 @@ namespace FxSshSftpServer.WebClient
             user = RequireUser(username); // the check can have upgraded an old hash
             user.HashedPassword = PasswordHasher.Hash(newPassword);
             user.PasswordChangedAt = _time.GetUtcNow().UtcDateTime;
-            if (!_repository.UpdateUser(user))
-                throw new ClientAccountException("The password could not be saved. Try again.");
+            using (_actors.Begin(SelfActor))
+            {
+                if (!_repository.UpdateUser(user))
+                    throw new ClientAccountException("The password could not be saved. Try again.");
+            }
             _logger.LogInformation("User {Username} changed the password in the web client.", user.Username);
             return user;
         }
@@ -97,7 +103,8 @@ namespace FxSshSftpServer.WebClient
             RequireUser(username);
             try
             {
-                return _users.AddPublicKeys(username, text, null, PublicKeySource.SelfService);
+                using (_actors.Begin(SelfActor))
+                    return _users.AddPublicKeys(username, text, null, PublicKeySource.SelfService);
             }
             catch (UserAdministrationException ex)
             {
@@ -110,7 +117,8 @@ namespace FxSshSftpServer.WebClient
             RequireUser(username);
             try
             {
-                return _users.RemovePublicKey(username, keyBase64 ?? "");
+                using (_actors.Begin(SelfActor))
+                    return _users.RemovePublicKey(username, keyBase64 ?? "");
             }
             catch (UserAdministrationException ex)
             {

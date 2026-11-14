@@ -26,6 +26,7 @@ public sealed class AuditLogTests : IDisposable
     private readonly DbContextOptions<SettingsDbContext> _options;
     private readonly RecordingEventBus _bus = new();
     private readonly FakeTimeProvider _time = new(Now);
+    private readonly AuditActorContext _actors = new();
     private readonly SqlSettingsRepository _repository;
     private readonly SqlAuditLog _log;
 
@@ -35,7 +36,7 @@ public sealed class AuditLogTests : IDisposable
         _connection.Open();
         _options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_connection).Options;
         // The repository creates and migrates the database, as at the start of the server.
-        _repository = new SqlSettingsRepository(_options, createHostKey: () => TestCredentials.HostKey, events: _bus, time: _time);
+        _repository = new SqlSettingsRepository(_options, createHostKey: () => TestCredentials.HostKey, events: _bus, time: _time, actors: _actors);
         _log = new SqlAuditLog(_options);
     }
 
@@ -252,5 +253,56 @@ public sealed class AuditLogTests : IDisposable
         var change = Assert.Single(_bus.Published.OfType<ProviderEvent>(), e => e.ObjectType == ProviderObjectType.ServerSettings);
         Assert.Equal(["ServerBanner", "HostKey"], change.ChangedFields);
         Assert.DoesNotContain("new-key-material", AuditEntryMapper.From(change).Details);
+    }
+
+    [Fact]
+    public void The_repository_events_have_the_actor_of_the_call_and_system_without_one()
+    {
+        var user = new User { Username = "erin", UserRootDirectory = "/srv/erin", WhitelistedIps = [] };
+        using (_actors.Begin("root (API key ci)"))
+        {
+            _repository.AddUser(user);
+            var settings = _repository.ServerSettings;
+            settings.ServerBanner = "ActorBanner";
+            _repository.UpdateServerSettings(settings);
+            var folder = new SshServer.Interfaces.Storage.VirtualFolder { Name = "shared", Storage = new SshServer.Interfaces.Storage.StorageConfig { Provider = "local", Options = "{}" } };
+            _repository.AddVirtualFolder(folder);
+            var group = new SshServer.Interfaces.Groups.Group { Name = "staff" };
+            _repository.AddGroup(group);
+            _repository.RemoveGroup(group.Id);
+            _repository.RemoveVirtualFolder(folder.Id);
+        }
+        _repository.RemoveUser("erin");
+
+        var events = _bus.Published.OfType<ProviderEvent>().ToList();
+        Assert.Equal(7, events.Count);
+        Assert.All(events.Take(6), e => Assert.Equal("root (API key ci)", e.Actor));
+        Assert.Equal((ProviderAction.Delete, AuditActorContext.System), (events[6].Action, events[6].Actor));
+        Assert.Equal("root (API key ci)", AuditEntryMapper.From(events[0]).Actor);
+    }
+
+    [Fact]
+    public async Task The_actor_context_is_restored_and_does_not_leak_to_another_flow()
+    {
+        using (_actors.Begin("outer"))
+        {
+            using (_actors.Begin("inner"))
+                Assert.Equal("inner", _actors.Current);
+            Assert.Equal("outer", _actors.Current);
+            await Task.Run(() => Assert.Equal("outer", _actors.Current), Ct);
+        }
+        Assert.Equal(AuditActorContext.System, _actors.Current);
+
+        var started = new TaskCompletionSource();
+        var other = Task.Run(async () =>
+        {
+            await started.Task;
+            return _actors.Current;
+        }, Ct);
+        using (_actors.Begin("someone"))
+        {
+            started.SetResult();
+            Assert.Equal(AuditActorContext.System, await other);
+        }
     }
 }

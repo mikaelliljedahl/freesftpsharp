@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces.Admins;
@@ -73,6 +74,8 @@ namespace FxSshSftpServer.Security
             // The circuit checks its login again periodically; the scoped services check the permissions themselves.
             services.AddScoped<AuthenticationStateProvider, AdminRevalidatingAuthenticationStateProvider>();
             services.AddScoped<CurrentAdmin>();
+            // The scoped repository sets the administrator as the actor of the provider events (#134).
+            services.TryAddSingleton<SshServer.Interfaces.Audit.AuditActorContext>();
             services.AddScoped<AdminScopedSettingsRepository>();
             services.AddScoped<ScopedAuditLog>();
             services.AddScoped<ScopedConnections>();

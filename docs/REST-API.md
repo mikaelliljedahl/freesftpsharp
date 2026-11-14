@@ -77,7 +77,7 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 - A request with an API key cannot create or revoke API keys, so a leaked key cannot make new ones.
 - `GET /api/v1/api-keys` lists the keys of the caller; `?all=true` (ManageAdmins) lists those of the administrators it
   may manage. `DELETE /api/v1/api-keys/{id}` revokes a key.
-- The changes of an administrator through the API key are in the audit log as `name (API key terraform)`.
+- The changes of an administrator through the API key (users, groups, virtual folders, settings, admins, roles, webhooks, event rules) are in the audit log as `name (API key terraform)`.
 
 ## Resources
 
@@ -94,7 +94,7 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/admins`, `/roles` | ManageAdmins | list, get, create, `PUT`, `PATCH` (admins), delete |
 | `/api-keys` | any administrator (bearer token) | list, create, revoke |
 | `/connections` | ViewConnections; DisconnectConnections to close one | list, `DELETE /connections/{id}` |
-| `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to` |
+| `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to`; `actor` is who made a change |
 | `/webhooks` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/test`, `GET /{id}/deliveries`, `POST /deliveries/{id}/redeliver`, `GET /event-types` |
 | `/event-rules` | ManageEvents | list, get, create, `PUT`, `PATCH`, delete, `POST /{id}/run` (scheduled and on-demand rules), `GET /{id}/runs`, `GET /action-types` |
 | `/ip-bans` | ManageSettings | the active auto-bans, `DELETE /ip-bans/{address}` |

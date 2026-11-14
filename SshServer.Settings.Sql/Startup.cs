@@ -46,6 +46,8 @@ namespace SshServer.Settings.Sql
             var options = SettingsStorageOptions.FromConfiguration(configuration);
             services.AddSingleton(options);
             services.AddSshServerSecretProtection();
+            // The actor of the provider events (#134): set by the admin services, read by the repository.
+            services.TryAddSingleton<AuditActorContext>();
 
             switch (options.Provider)
             {
@@ -56,7 +58,8 @@ namespace SshServer.Settings.Sql
                         sp.GetService<ILogger<SqlSettingsRepository>>(),
                         options.LiteDbPath,
                         events: sp.GetService<IEventBus>(),
-                        time: sp.GetService<TimeProvider>()));
+                        time: sp.GetService<TimeProvider>(),
+                        actors: sp.GetRequiredService<AuditActorContext>()));
                     services.TryAddSingleton<IAuditLog>(_ => new SqlAuditLog(dbOptions));
                     // Like the audit log: the repository creates and migrates the database when the host starts. The store
                     // does not resolve the repository (that would be a cycle: repository, event bus, webhook sink, store).

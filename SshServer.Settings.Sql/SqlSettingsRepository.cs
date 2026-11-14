@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Groups;
@@ -18,7 +19,8 @@ namespace SshServer.Settings.Sql;
 /// The returned objects are detached copies: change them and call the Update methods to save.
 /// <para>
 /// Every saved change of a user or of the server settings is published as a <see cref="ProviderEvent"/>, without
-/// secrets. An update that changes only <see cref="User.LastLoginAt"/> (each login) gives no event.
+/// secrets, with the actor of the <see cref="AuditActorContext"/> (#134). An update that changes only
+/// <see cref="User.LastLoginAt"/> (each login) gives no event.
 /// </para>
 /// </summary>
 public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
@@ -27,6 +29,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
     private readonly ILogger _logger;
     private readonly IEventBus? _events;
     private readonly TimeProvider _time;
+    private readonly AuditActorContext? _actors;
 
     /// <param name="options">The EF Core options (provider and connection).</param>
     /// <param name="logger">The logger.</param>
@@ -34,18 +37,21 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
     /// <param name="createHostKey">Makes a new host key when there is nothing to import. Default: RSA 4096 (as before).</param>
     /// <param name="events">The event bus for the provider events. Null: no events.</param>
     /// <param name="time">The clock of the events. Null: the system clock.</param>
+    /// <param name="actors">The actor of the events (#134). Null: every change is made by <see cref="AuditActorContext.System"/>.</param>
     public SqlSettingsRepository(
         DbContextOptions<SettingsDbContext> options,
         ILogger<SqlSettingsRepository>? logger = null,
         string? legacyLiteDbPath = null,
         Func<string>? createHostKey = null,
         IEventBus? events = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        AuditActorContext? actors = null)
     {
         _options = options;
         _logger = (ILogger?)logger ?? NullLogger.Instance;
         _events = events;
         _time = time ?? TimeProvider.System;
+        _actors = actors;
         Initialize(legacyLiteDbPath, createHostKey ?? CreateDefaultHostKey);
     }
 
@@ -513,14 +519,18 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         return changed;
     }
 
-    /// <summary>Publishes a provider event. The actor is not known here (null) until the admin identity comes (#67).</summary>
+    /// <summary>Publishes a provider event with the actor of the call (#134).</summary>
     private void Publish(ProviderEvent @event)
     {
         if (_events == null)
             return;
         try
         {
-            var publish = _events.PublishAsync(@event with { Timestamp = _time.GetUtcNow() });
+            var publish = _events.PublishAsync(@event with
+            {
+                Timestamp = _time.GetUtcNow(),
+                Actor = _actors?.Current ?? AuditActorContext.System,
+            });
             if (!publish.IsCompletedSuccessfully)
                 publish.AsTask().GetAwaiter().GetResult();
         }
