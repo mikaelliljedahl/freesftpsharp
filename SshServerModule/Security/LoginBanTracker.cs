@@ -51,6 +51,14 @@ namespace FxSsh.SshServerModule.Security
         private readonly IIpBanStore _store;
         private readonly ILogger _logger;
 
+        /// <summary>
+        /// The bans of this node that a sync must keep although the store did not have them when it read: 0 while the write
+        /// is open or after it failed (the ban holds on this node only), else the <see cref="_storeWrites"/> number of the
+        /// write. A sync that started after that write takes the ban from the store and drops the entry.
+        /// </summary>
+        private readonly Dictionary<IPAddress, long> _ownBans = new();
+        private long _storeWrites;
+
         /// <summary>How long a write to the shared store may take before the ban stays on this node only.</summary>
         private static readonly TimeSpan StoreTimeout = TimeSpan.FromSeconds(5);
 
@@ -105,8 +113,17 @@ namespace FxSsh.SshServerModule.Security
                 ban = new IpBan(address, now, now + policy.Duration, times.Count);
                 _bans[address] = ban;
                 _failures.Remove(address); // counted from zero after the ban
+                if (_store != null)
+                    _ownBans[address] = 0;
             }
-            WriteToStore(ct => _store.AddAsync(ban, ct), "store the ban of", address);
+            if (WriteToStore(ct => _store.AddAsync(ban, ct), "store the ban of", address))
+            {
+                lock (_lock)
+                {
+                    if (_ownBans.ContainsKey(address))
+                        _ownBans[address] = ++_storeWrites;
+                }
+            }
             return true;
         }
 
@@ -137,6 +154,7 @@ namespace FxSsh.SshServerModule.Security
                 wasBanned = IsBannedCore(address, now);
                 _bans.Remove(address);
                 _failures.Remove(address);
+                _ownBans.Remove(address);
             }
             WriteToStore(ct => _store.RemoveAsync(address, ct), "lift the stored ban of", address);
             return wasBanned;
@@ -144,22 +162,36 @@ namespace FxSsh.SshServerModule.Security
 
         /// <summary>
         /// Takes the bans of the shared store (the bans of every node) in place of the bans in memory, and removes the
-        /// expired bans from the store. A ban of this node that is newer than the read is kept. Nothing without a store.
+        /// expired bans from the store, so a ban lifted on another node is lifted here at the next sync. A ban of this node
+        /// that the read may not contain (its write is open, failed, or ended after the read started) is kept. Nothing
+        /// without a store.
         /// </summary>
         public async Task SyncAsync(CancellationToken ct)
         {
             if (_store == null)
                 return;
+            long writesBefore;
+            lock (_lock)
+                writesBefore = _storeWrites;
             var start = Time.GetUtcNow();
             await _store.RemoveExpiredAsync(start, ct);
             var active = await _store.ListActiveAsync(start, ct);
             lock (_lock)
             {
-                var recent = _bans.Values.Where(b => b.BannedAt >= start - StoreTimeout).ToList();
+                var keep = new List<IpBan>();
+                foreach (var (address, write) in _ownBans.ToList())
+                {
+                    if (write != 0 && write <= writesBefore)
+                        _ownBans.Remove(address); // stored before the read: the store decides now
+                    else if (_bans.TryGetValue(address, out var own))
+                        keep.Add(own);
+                    else
+                        _ownBans.Remove(address);
+                }
                 _bans.Clear();
                 foreach (var ban in active)
                     _bans[CidrNotation.Normalize(ban.Address)] = ban with { Address = CidrNotation.Normalize(ban.Address) };
-                foreach (var ban in recent)
+                foreach (var ban in keep)
                     _bans.TryAdd(ban.Address, ban);
             }
         }
@@ -168,18 +200,20 @@ namespace FxSsh.SshServerModule.Security
         /// Writes a change to the shared store and waits for it (bans are rare; the other nodes see it at their next sync).
         /// A failure is logged: the ban then holds on this node only.
         /// </summary>
-        private void WriteToStore(Func<CancellationToken, Task> write, string what, IPAddress address)
+        private bool WriteToStore(Func<CancellationToken, Task> write, string what, IPAddress address)
         {
             if (_store == null)
-                return;
+                return false;
             try
             {
                 using var timeout = new CancellationTokenSource(StoreTimeout);
                 Task.Run(() => write(timeout.Token), timeout.Token).GetAwaiter().GetResult();
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Could not {What} {Address} in the settings database; it holds on this node only.", what, address);
+                return false;
             }
         }
 
