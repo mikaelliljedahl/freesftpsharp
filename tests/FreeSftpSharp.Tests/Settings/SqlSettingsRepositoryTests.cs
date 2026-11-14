@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
 using SshServer.Settings.Sql;
 
@@ -41,7 +42,6 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Username = username,
         UserRootDirectory = "/srv/sftp/" + username,
         HashedPassword = TestCredentials.HashPassword("secret"),
-        RsaPublicKey = null!,
         OnlyWhitelistedIps = true,
         WhitelistedIps = new List<string> { "10.0.0.0/8", "192.168.1.5" },
         LastSuccessfulLogin = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
@@ -173,7 +173,9 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.Equal("alice", stored.Username);
         Assert.Equal("/srv/sftp/alice", stored.UserRootDirectory);
         Assert.Equal(user.HashedPassword, stored.HashedPassword);
-        Assert.Null(stored.RsaPublicKey);
+        Assert.Null(stored.PublicKeys);
+        Assert.Equal(AuthMethods.All, stored.AllowedAuthMethods);
+        Assert.Null(stored.RequireAllOf);
         Assert.True(stored.OnlyWhitelistedIps);
         Assert.Equal(new[] { "10.0.0.0/8", "192.168.1.5" }, stored.WhitelistedIps);
         Assert.Equal(user.LastSuccessfulLogin, stored.LastSuccessfulLogin);
@@ -183,12 +185,13 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
     [Fact]
     public void A_user_without_whitelist_and_password_can_be_stored()
     {
-        Assert.True(_repository.AddUser(new User { Username = "keyonly", RsaPublicKey = "key" }));
+        var key = TestUserKeys.Ed25519();
+        Assert.True(_repository.AddUser(new User { Username = "keyonly", PublicKeys = [key.Entry] }));
 
         var stored = _repository.GetUser("keyonly");
         Assert.Null(stored.HashedPassword);
         Assert.Null(stored.WhitelistedIps);
-        Assert.Equal("key", stored.RsaPublicKey);
+        Assert.Equal(key.Entry.KeyBase64, Assert.Single(stored.PublicKeys!).KeyBase64);
     }
 
     [Fact]
@@ -198,7 +201,10 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         var user = _repository.GetUser("bob");
         var newHash = TestCredentials.HashPassword("new");
         user.HashedPassword = newHash;
-        user.RsaPublicKey = "public-key";
+        var key = TestUserKeys.Ed25519();
+        user.PublicKeys = [key.Entry];
+        user.AllowedAuthMethods = AuthMethods.Password | AuthMethods.PublicKey;
+        user.RequireAllOf = [AuthMethods.PublicKey, AuthMethods.Password];
         user.UserRootDirectory = "/other";
         user.OnlyWhitelistedIps = false;
         user.WhitelistedIps = new List<string>();
@@ -208,7 +214,9 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
 
         var stored = _repository.GetUser("bob");
         Assert.Equal(newHash, stored.HashedPassword);
-        Assert.Equal("public-key", stored.RsaPublicKey);
+        Assert.Equal(key.Entry.KeyBase64, Assert.Single(stored.PublicKeys!).KeyBase64);
+        Assert.Equal(AuthMethods.Password | AuthMethods.PublicKey, stored.AllowedAuthMethods);
+        Assert.Equal([AuthMethods.PublicKey, AuthMethods.Password], stored.RequireAllOf);
         Assert.Equal("/other", stored.UserRootDirectory);
         Assert.False(stored.OnlyWhitelistedIps);
         Assert.NotNull(stored.WhitelistedIps);
@@ -298,7 +306,8 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         var user = repository.GetUser("old");
         Assert.Equal("/srv/old", user.UserRootDirectory);
         Assert.Equal("hash", user.HashedPassword);
-        Assert.Equal("key", user.RsaPublicKey);
+        Assert.Null(user.PublicKeys); // "key" is not a readable key: it did not work before and is dropped
+        Assert.Equal(AuthMethods.All, user.AllowedAuthMethods);
         Assert.Equal(new[] { "10.0.0.0/8" }, user.WhitelistedIps);
         Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, user.Permissions);
         Assert.Null(user.PathFilters);
@@ -311,11 +320,88 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
 
         // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions.
         using (var db = new SettingsDbContext(options))
-            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog"], db.Database.GetAppliedMigrations().TakeLast(2));
+        {
+            var applied = db.Database.GetAppliedMigrations().ToList();
+            Assert.True(applied.IndexOf("20261114080103_AddUserPermissions") < applied.IndexOf("20261114082326_AddAuditLog"), string.Join(", ", applied));
+            Assert.Contains("20261114110144_AddUserPublicKeysAndAuthMethods", applied);
+        }
         var audit = new SshServer.Settings.Sql.Audit.SqlAuditLog(options);
         await audit.AppendAsync(new SshServer.Interfaces.Audit.AuditEntry { Category = "File", Type = "Upload", Status = "Ok", Username = "old" },
             TestContext.Current.CancellationToken);
         Assert.Equal(1, (await audit.QueryAsync(new SshServer.Interfaces.Audit.AuditQuery { Username = "old" }, TestContext.Current.CancellationToken)).TotalCount);
+    }
+
+    [Fact]
+    public void Users_of_a_database_before_issue_58_keep_their_key_and_password()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connection).Options;
+        using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(2048);
+        var csp = Convert.ToBase64String(rsa.ExportCspBlob(false));
+        var hash = TestCredentials.HashPassword("old-password");
+        using (var db = new SettingsDbContext(options))
+        {
+            // The schema before issue #58: one key per user as a base64 CSP blob in the column RsaPublicKey.
+            db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().Migrate("20261114082326_AddAuditLog");
+            db.Database.ExecuteSqlRaw(
+                "INSERT INTO ServerSettings (ServerRsaKey, ServerBanner, ListenToPort, BindToAddress, BlacklistedIps, MaxLoginAttemptsBeforeBan, " +
+                "IdleTimeout, EnableCommand, EnableDirectTcpIp, OnlyWhitelistedIps, LoginFailureWindowSeconds, BanDurationSeconds, ExemptLoopbackFromBan) " +
+                "VALUES ('old-key', NULL, 22, NULL, NULL, 0, 600, 0, 0, 0, 600, 1800, 1)");
+            db.Database.ExecuteSqlRaw(
+                "INSERT INTO Users (Username, UserRootDirectory, HashedPassword, RsaPublicKey, OnlyWhitelistedIps, WhitelistedIps, LastSuccessfulLogin, Permissions) " +
+                "VALUES ('both', '/srv/both', {0}, {1}, 0, NULL, '2026-01-02 03:04:05', NULL), " +
+                "('passwordonly', '/srv/p', {0}, NULL, 0, NULL, '2026-01-02 03:04:05', NULL)", hash, csp);
+        }
+
+        using (var repository = new SqlSettingsRepository(options, createHostKey: () => throw new InvalidOperationException("must not be called")))
+        {
+            var both = repository.GetUser("both");
+            var entry = Assert.Single(both.PublicKeys!);
+            Assert.Equal("ssh-rsa", entry.KeyType);
+            var blob = SshPublicKey.RsaBlob(rsa.ExportParameters(false));
+            Assert.Equal(Convert.ToBase64String(blob), entry.KeyBase64);
+            Assert.Equal(SshPublicKey.Fingerprint(blob), entry.Fingerprint);
+            Assert.Equal(PublicKeySource.Admin, entry.Source);
+            Assert.Null(entry.ExpiresAt);
+            Assert.Equal(hash, both.HashedPassword);
+            Assert.Equal(AuthMethods.All, both.AllowedAuthMethods);
+            Assert.Null(both.RequireAllOf);
+            Assert.True(FxSsh.SshServerModule.UserLogics.VerifyUserKey(both, blob, DateTime.UtcNow));
+
+            var passwordOnly = repository.GetUser("passwordonly");
+            Assert.Null(passwordOnly.PublicKeys);
+            Assert.Equal(AuthMethods.All, passwordOnly.AllowedAuthMethods);
+        }
+
+        // The old column is cleared, so the next start does not add the key again.
+        using (var db = new SettingsDbContext(options))
+            Assert.Equal(0, db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM Users WHERE RsaPublicKey IS NOT NULL").Single());
+        using (var again = new SqlSettingsRepository(options))
+            Assert.Single(again.GetUser("both").PublicKeys!);
+    }
+
+    [Fact]
+    public void The_keys_of_a_user_are_stored_with_all_fields()
+    {
+        var key = TestUserKeys.Rsa("bob@laptop");
+        key.Entry.ExpiresAt = new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        key.Entry.Source = PublicKeySource.SelfService;
+        var user = NewUser("keys");
+        user.PublicKeys = [key.Entry, TestUserKeys.Ed25519().Entry];
+        Assert.True(_repository.AddUser(user));
+
+        var stored = _repository.GetUser("keys").PublicKeys!;
+
+        Assert.Equal(2, stored.Count);
+        Assert.Equal(key.Entry.KeyType, stored[0].KeyType);
+        Assert.Equal(key.Entry.KeyBase64, stored[0].KeyBase64);
+        Assert.Equal(key.Entry.Fingerprint, stored[0].Fingerprint);
+        Assert.Equal("bob@laptop", stored[0].Comment);
+        Assert.Equal(key.Entry.AddedAt, stored[0].AddedAt);
+        Assert.Equal(key.Entry.ExpiresAt, stored[0].ExpiresAt);
+        Assert.Equal(PublicKeySource.SelfService, stored[0].Source);
+        Assert.Equal("ssh-ed25519", stored[1].KeyType);
     }
 
     [Fact]

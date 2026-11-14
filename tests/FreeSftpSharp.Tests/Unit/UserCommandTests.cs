@@ -119,7 +119,33 @@ public sealed class UserCommandTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         var user = _repository.GetUser("keyuser");
         Assert.Null(user.HashedPassword);
-        Assert.False(string.IsNullOrEmpty(user.RsaPublicKey));
+        Assert.Single(user.PublicKeys!);
+    }
+
+    [Fact]
+    public void Add_with_an_authorized_keys_file_stores_every_key()
+    {
+        var keyFile = _temp.File("authorized_keys");
+        File.WriteAllText(keyFile, TestUserKeys.Ed25519().AuthorizedKeysLine + "\n# laptop\n" + TestUserKeys.Rsa().AuthorizedKeysLine + "\n");
+
+        var result = Run("", "add", "keyuser", "--root", _temp.File("r"), "--public-key", keyFile);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(new[] { "ssh-ed25519", "ssh-rsa" }, _repository.GetUser("keyuser").PublicKeys!.Select(k => k.KeyType));
+        Assert.Contains("2 keys", Run("", "list").Output);
+    }
+
+    [Fact]
+    public void Add_with_a_key_file_with_options_fails_with_the_line()
+    {
+        var keyFile = _temp.File("authorized_keys");
+        File.WriteAllText(keyFile, TestUserKeys.Ed25519().AuthorizedKeysLine + "\nrestrict " + TestUserKeys.Ed25519().AuthorizedKeysLine + "\n");
+
+        var result = Run("", "add", "keyuser", "--root", _temp.File("r"), "--public-key", keyFile);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("Line 2", result.Error);
+        Assert.Null(_repository.GetUser("keyuser"));
     }
 
     [Fact]
@@ -220,8 +246,7 @@ public sealed class UserCommandTests : IDisposable
         Assert.Contains("key", bob);
         Assert.DoesNotContain("password", bob);
         Assert.DoesNotContain("PBKDF2", result.Output);
-        var storedKey = _repository.GetUser("bob").RsaPublicKey;
-        Assert.NotNull(storedKey);
+        var storedKey = Assert.Single(_repository.GetUser("bob").PublicKeys!).KeyBase64;
         Assert.DoesNotContain(storedKey, result.Output);
     }
 

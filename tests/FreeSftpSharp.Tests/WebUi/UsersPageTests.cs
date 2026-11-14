@@ -3,6 +3,7 @@ using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
 using FxSshSftpServer.Components.Pages;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Security;
 
@@ -16,13 +17,13 @@ public sealed class UsersPageTests : AdminUiComponentContext
 
     private readonly TempDirectory _root = new();
 
-    private void AddUser(string name, string? password = "secret-password", string? key = null) =>
+    private void AddUser(string name, string? password = "secret-password", params PublicKeyEntry[] keys) =>
         Repository.AddUser(new User
         {
             Username = name,
             UserRootDirectory = _root.Path,
             HashedPassword = password is null ? null : TestCredentials.HashPassword(password),
-            RsaPublicKey = key,
+            PublicKeys = keys.Length == 0 ? null : keys.ToList(),
             WhitelistedIps = new List<string>(),
         });
 
@@ -148,18 +149,106 @@ public sealed class UsersPageTests : AdminUiComponentContext
     }
 
     [Fact]
-    public void Editing_shows_the_last_login_and_the_key_fingerprint()
+    public void Editing_shows_the_last_login_and_the_fingerprints_of_the_keys()
     {
-        using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(2048);
-        var key = Convert.ToBase64String(rsa.ExportCspBlob(false));
-        AddUser("gina", key: key);
+        var ed25519 = TestUserKeys.Ed25519("gina@laptop");
+        var rsa = TestUserKeys.Rsa("gina@desktop");
+        AddUser("gina", "secret-password", ed25519.Entry, rsa.Entry);
         Repository.GetUser("gina").LastSuccessfulLogin = new DateTime(2026, 10, 30, 8, 15, 0, DateTimeKind.Utc);
         var page = Render<Users>();
 
+        Assert.Contains("2 keys", page.Find("#user-table").TextContent);
         page.Find(".edit-user").Click();
 
         Assert.Equal("2026-10-30 08:15", page.Find("#last-login").TextContent);
-        Assert.Equal(FxSsh.SshServerModule.ServerInfo.GetUserKeyFingerprint(key), page.Find("#user-key-fingerprint").TextContent);
+        Assert.Equal(new[] { ed25519.Entry.Fingerprint, rsa.Entry.Fingerprint }, page.FindAll(".key-fingerprint").Select(e => e.TextContent));
+        Assert.StartsWith("SHA256:", ed25519.Entry.Fingerprint);
+        Assert.Contains("gina@laptop", page.Find("#key-table").TextContent);
+    }
+
+    [Fact]
+    public void Keys_pasted_as_text_are_added_with_the_expiry()
+    {
+        AddUser("lisa");
+        var first = TestUserKeys.Ed25519();
+        var second = TestUserKeys.EcdsaNistP256();
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.Find("#new-keys").Change(first.AuthorizedKeysLine + "\n" + second.AuthorizedKeysLine);
+        page.Find("#new-keys-expiry").Change("2027-03-01");
+        page.Find("#add-keys").Click();
+
+        var keys = Repository.GetUser("lisa").PublicKeys!;
+        Assert.Equal(new[] { first.Entry.KeyBase64, second.Entry.KeyBase64 }, keys.Select(k => k.KeyBase64));
+        Assert.All(keys, k => Assert.Equal(new DateTime(2027, 3, 1, 0, 0, 0, DateTimeKind.Utc), k.ExpiresAt));
+        Assert.Equal(2, page.FindAll(".key-row").Count);
+    }
+
+    [Fact]
+    public void A_pasted_line_with_options_shows_the_error_and_adds_nothing()
+    {
+        AddUser("mona");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.Find("#new-keys").Change("from=\"10.0.0.0/8\" " + TestUserKeys.Ed25519().AuthorizedKeysLine);
+        page.Find("#add-keys").Click();
+
+        Assert.Contains("options", page.Find("#key-error").TextContent);
+        Assert.Null(Repository.GetUser("mona").PublicKeys);
+    }
+
+    [Fact]
+    public void The_login_methods_and_the_multi_step_login_are_saved()
+    {
+        AddUser("nina");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.Find("#multi-step").Change(FxSshSftpServer.Models.UserForm.KeyThenPassword);
+        page.Find("#user-form").Submit();
+
+        page.WaitForAssertion(() => Assert.Equal([AuthMethods.PublicKey, AuthMethods.Password], Repository.GetUser("nina").RequireAllOf), SaveTimeout);
+        Assert.Equal(AuthMethods.All, Repository.GetUser("nina").AllowedAuthMethods);
+
+        page.Find("#multi-step").Change("");
+        page.Find("#allow-password").Change(false);
+        page.Find("#user-form").Submit();
+
+        page.WaitForAssertion(() => Assert.Null(Repository.GetUser("nina").RequireAllOf), SaveTimeout);
+        Assert.Equal(AuthMethods.PublicKey | AuthMethods.KeyboardInteractive, Repository.GetUser("nina").AllowedAuthMethods);
+    }
+
+    [Fact]
+    public void A_multi_step_login_with_a_method_that_is_not_allowed_is_not_saved()
+    {
+        AddUser("olga");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.Find("#allow-password").Change(false);
+        page.Find("#multi-step").Change(FxSshSftpServer.Models.UserForm.KeyThenPassword);
+        page.Find("#user-form").Submit();
+
+        Assert.Contains("not an allowed method", page.Find("#user-form").TextContent);
+        Assert.Null(Repository.GetUser("olga").RequireAllOf);
+        Assert.Equal(AuthMethods.All, Repository.GetUser("olga").AllowedAuthMethods);
+    }
+
+    [Fact]
+    public void No_login_method_at_all_is_not_saved()
+    {
+        AddUser("petra");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.Find("#allow-password").Change(false);
+        page.Find("#allow-public-key").Change(false);
+        page.Find("#user-form").Submit();
+
+        Assert.Contains("Allow the password, the public key or both.", page.Find("#user-form").TextContent);
+        Assert.Equal(AuthMethods.All, Repository.GetUser("petra").AllowedAuthMethods);
     }
 
     [Fact]
@@ -201,24 +290,51 @@ public sealed class UsersPageTests : AdminUiComponentContext
         page.Find(".edit-user").Click();
         page.Find("#generate-key").Click();
 
-        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("judy").RsaPublicKey), TimeSpan.FromSeconds(30));
+        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("judy").PublicKeys), TimeSpan.FromSeconds(30));
         var invocation = Assert.Single(download.Invocations);
         Assert.Equal("judy.pem", invocation.Arguments[0]);
-        page.WaitForAssertion(() => Assert.StartsWith("SHA256:", page.Find("#user-key-fingerprint").TextContent), SaveTimeout);
+        Assert.Equal("ssh-rsa", Assert.Single(Repository.GetUser("judy").PublicKeys!).KeyType);
+        page.WaitForAssertion(() => Assert.StartsWith("SHA256:", page.Find(".key-fingerprint").TextContent), SaveTimeout);
     }
 
     [Fact]
-    public void Removing_the_key_asks_for_confirmation()
+    public void Generating_an_ed25519_key_adds_it_and_downloads_an_openssh_private_key()
     {
-        using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(2048);
-        AddUser("kim", key: Convert.ToBase64String(rsa.ExportCspBlob(false)));
+        AddUser("jane");
+        var download = JSInterop.SetupVoid("BlazorDownloadFile", _ => true);
+        download.SetVoidResult();
         var page = Render<Users>();
 
         page.Find(".edit-user").Click();
-        page.Find("#remove-key").Click();
+        page.Find("#generate-ed25519-key").Click();
+
+        page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("jane").PublicKeys), SaveTimeout);
+        var entry = Assert.Single(Repository.GetUser("jane").PublicKeys!);
+        Assert.Equal("ssh-ed25519", entry.KeyType);
+        var invocation = Assert.Single(download.Invocations);
+        Assert.Equal("jane_ed25519", invocation.Arguments[0]);
+        // The private key works: SSH.NET reads it and it has the stored public key.
+        var bytes = (byte[])invocation.Arguments[2]!;
+        Assert.StartsWith("-----BEGIN OPENSSH PRIVATE KEY-----", System.Text.Encoding.UTF8.GetString(bytes));
+        using var keyFile = new Renci.SshNet.PrivateKeyFile(new MemoryStream(bytes));
+        var key = Assert.IsType<Renci.SshNet.Security.ED25519Key>(keyFile.Key);
+        Assert.Equal(Convert.FromBase64String(entry.KeyBase64)[^32..], key.PublicKey);
+    }
+
+    [Fact]
+    public void Removing_a_key_asks_for_confirmation_and_keeps_the_other_keys()
+    {
+        var remove = TestUserKeys.Ed25519();
+        var keep = TestUserKeys.Rsa();
+        AddUser("kim", "secret-password", remove.Entry, keep.Entry);
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.FindAll(".remove-key")[0].Click();
         page.Find(".confirm-button").Click();
 
-        Assert.Null(Repository.GetUser("kim").RsaPublicKey);
+        Assert.Equal(keep.Entry.KeyBase64, Assert.Single(Repository.GetUser("kim").PublicKeys!).KeyBase64);
+        Assert.Single(page.FindAll(".key-row"));
     }
 
     protected override void Dispose(bool disposing)

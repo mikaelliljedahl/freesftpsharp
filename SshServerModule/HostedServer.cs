@@ -1,4 +1,5 @@
 ﻿using FxSsh.Logging;
+using FxSsh.Messages.UserAuth;
 using FxSsh.Services;
 using FxSsh.Services.Sftp;
 using FxSsh.SshServerModule.Security;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Connections;
@@ -88,6 +90,7 @@ namespace FxSsh.SshServerModule
                     server.InactivityTimeout = timeouts.InactivityTimeout;
                     foreach (var hostKey in hostKeys)
                         server.AddHostKey(hostKey.Algorithm, hostKey.Pem);
+                    Ed25519PublicKey.Register(server); // ed25519 user keys (issue #58)
                     server.ConnectionAccepted += OnConnectionAccepted;
                     servers.Add(server);
                     await server.StartAsync(cancellationToken);
@@ -168,7 +171,8 @@ namespace FxSsh.SshServerModule
             if (e is UserAuthService authService)
             {
                 var attempt = new AuthAttempt();
-                authService.UserAuth += (s, args) => OnUserAuth(args, attempt, connectionId);
+                authService.UserAuth += (s, args) => OnUserAuth(authService, args, attempt, connectionId);
+                authService.PartialSucceed += (s, args) => OnUserAuthPartiallySucceeded(authService, args, attempt);
                 authService.Succeed += (s, serviceName) => OnUserAuthSucceeded(session, attempt, connectionId);
             }
             else if (e is ConnectionService connectionService)
@@ -195,22 +199,42 @@ namespace FxSsh.SshServerModule
             tcp.Start();
         }
 
-        /// <summary>The user that the last accepted authentication request of a session was for.</summary>
+        /// <summary>The login state of one session.</summary>
         private sealed class AuthAttempt
         {
+            /// <summary>The steps of a multi-step login that are done.</summary>
+            public readonly AuthenticationProgress Progress = new();
+
+            /// <summary>The user and method of the last accepted request (set when the login is complete).</summary>
             public volatile string AcceptedUsername;
             public volatile string AcceptedMethod;
+
+            /// <summary>The user and method of the last request that was accepted as one step of a multi-step login.</summary>
+            public User PendingUser;
+            public AuthMethods PendingMethod;
         }
 
-        void OnUserAuth(UserAuthArgs e, AuthAttempt attempt, Guid connectionId)
+        void OnUserAuth(UserAuthService service, UserAuthArgs e, AuthAttempt attempt, Guid connectionId)
         {
             e.Result = false;
+            e.PartialSuccess = false;
             attempt.AcceptedUsername = null;
-            var failure = Authenticate(e);
+            attempt.PendingUser = null;
+            var failure = Authenticate(e, attempt, out var user, out var method);
+            service.AuthenticationsThatCanContinue = attempt.Progress.MethodsThatCanContinue(user)
+                ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
 
             if (e.Result)
             {
-                attempt.AcceptedMethod = e.AuthMethod;
+                if (!attempt.Progress.IsLastStep(user))
+                {
+                    // Partial success (RFC 4252 section 5.1): FxSsh calls OnUserAuthPartiallySucceeded after the check.
+                    e.PartialSuccess = true;
+                    attempt.PendingUser = user;
+                    attempt.PendingMethod = method;
+                    return;
+                }
+                attempt.AcceptedMethod = attempt.Progress.Describe(method);
                 attempt.AcceptedUsername = e.Username;
                 return;
             }
@@ -227,9 +251,27 @@ namespace FxSsh.SshServerModule
             // would be banned. A wrong public key cannot be guessed like a password.
         }
 
-        /// <summary>Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null.</summary>
-        string Authenticate(UserAuthArgs e)
+        /// <summary>One step of a multi-step login is verified (for a public key: after the signature check).</summary>
+        void OnUserAuthPartiallySucceeded(UserAuthService service, UserAuthArgs e, AuthAttempt attempt)
         {
+            var user = attempt.PendingUser;
+            if (user == null)
+                return;
+            attempt.Progress.CompleteStep(user, attempt.PendingMethod);
+            var next = attempt.Progress.MethodsThatCanContinue(user) ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
+            service.AuthenticationsThatCanContinue = next;
+            _logger.LogInformation("Step {Step} of the login of {Username} ({Method}) succeeded; the next step is {Next}.",
+                attempt.Progress.Completed.Count, e.Username, e.AuthMethod, string.Join(",", next));
+        }
+
+        /// <summary>
+        /// Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null. <paramref name="user"/>
+        /// is the stored user (null when it is unknown), <paramref name="method"/> the method of the request.
+        /// </summary>
+        string Authenticate(UserAuthArgs e, AuthAttempt attempt, out User user, out AuthMethods method)
+        {
+            method = AuthMethodRules.FromSshName(e.AuthMethod);
+            user = null;
             if (e.Session.RemoteEndPoint is IPEndPoint remote && _bans.IsBanned(remote.Address))
             {
                 // Banned while this session was open: no more attempts on it.
@@ -238,10 +280,11 @@ namespace FxSsh.SshServerModule
                 return "the address is banned";
             }
 
-            var user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
+            user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
             if (user == null)
             {
-                if (e.AuthMethod == "password")
+                attempt.Progress.Reset();
+                if (method == AuthMethods.Password)
                     UserLogics.SimulatePasswordCheck(); // same time as for a real user
                 _logger.LogInformation("Authentication ({Method}) failed for unknown user {Username} from {RemoteEndPoint}.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
@@ -255,14 +298,23 @@ namespace FxSsh.SshServerModule
                 return "the address is not in the whitelist of the user";
             }
 
-            switch (e.AuthMethod)
+            var refusal = attempt.Progress.Check(user, method);
+            if (refusal != null)
             {
-                case "publickey":
-                    e.Result = UserLogics.VerifyUserKey(user, e.Fingerprint);
+                if (method == AuthMethods.Password)
+                    UserLogics.SimulatePasswordCheck(); // the same time as a wrong password
+                _logger.LogInformation("Authentication ({Method}) of {Username} refused: {Reason}.", e.AuthMethod, e.Username, refusal);
+                return refusal;
+            }
+
+            switch (method)
+            {
+                case AuthMethods.PublicKey:
+                    e.Result = UserLogics.VerifyUserKey(user, e.Key, Now.UtcDateTime);
                     _logger.LogInformation("Public key authentication of {Username}, {KeyAlgorithm} SHA256:{Fingerprint}. Successful: {Result}",
                         e.Username, e.KeyAlgorithm, e.Fingerprint, e.Result);
                     return e.Result ? null : "the public key is not accepted";
-                case "password":
+                case AuthMethods.Password:
                     e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
                     _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
                     return e.Result ? null : "wrong password";

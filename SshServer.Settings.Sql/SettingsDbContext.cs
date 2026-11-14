@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Audit;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
 
 namespace SshServer.Settings.Sql;
@@ -13,11 +14,19 @@ namespace SshServer.Settings.Sql;
 /// <see cref="ServerSettings"/> and <see cref="User"/> classes from SshServer.Interfaces, so the stored
 /// fields are the same as in the LiteDB file. Lists of strings are stored as JSON text columns
 /// (EF Core primitive collections), which works on SQLite and on SQL Server. The permissions and path filters of a
-/// user are JSON text columns too, with the permission flags as names (<c>{"/":"All","/in":"Upload"}</c>). The audit
-/// log (<see cref="AuditEntry"/>) is in the same database.
+/// user are JSON text columns too, with the permission flags as names (<c>{"/":"All","/in":"Upload"}</c>), and so are
+/// the public keys and the required login steps (issue #58). The allowed login methods are a text column with the flag
+/// names (<c>All</c>, <c>Password, PublicKey</c>). The audit log (<see cref="AuditEntry"/>) is in the same database.
 /// </summary>
 public class SettingsDbContext : DbContext
 {
+    /// <summary>
+    /// The old single key of a user (a base64 CSP blob, before issue #58), a shadow property of the column
+    /// "RsaPublicKey". <see cref="SqlSettingsRepository"/> converts it to an entry of <see cref="User.PublicKeys"/> at
+    /// start and clears it; nothing else reads it.
+    /// </summary>
+    internal const string LegacyRsaPublicKey = "RsaPublicKey";
+
     public SettingsDbContext(DbContextOptions<SettingsDbContext> options) : base(options)
     {
     }
@@ -52,7 +61,12 @@ public class SettingsDbContext : DbContext
             b.HasIndex(u => u.Username).IsUnique();
             b.Property(u => u.UserRootDirectory).IsRequired(false);
             b.Property(u => u.HashedPassword).IsRequired(false);
-            b.Property(u => u.RsaPublicKey).IsRequired(false);
+            b.Property<string?>(LegacyRsaPublicKey).IsRequired(false);
+            b.Property(u => u.PublicKeys).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<List<PublicKeyEntry>>(v), JsonComparer<List<PublicKeyEntry>>());
+            b.Property(u => u.AllowedAuthMethods).IsRequired().HasMaxLength(128).HasConversion<string>();
+            b.Property(u => u.RequireAllOf).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<List<AuthMethods>>(v), JsonComparer<List<AuthMethods>>());
             b.PrimitiveCollection(u => u.WhitelistedIps).IsRequired(false);
             b.Property(u => u.Permissions).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<Dictionary<string, FilePermissions>>(v), JsonComparer<Dictionary<string, FilePermissions>>());

@@ -2,8 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Security;
 
 namespace SshServer.Interfaces.Users
@@ -70,7 +69,10 @@ namespace SshServer.Interfaces.Users
         /// kept. A missing root directory is created. Throws <see cref="UserAdministrationException"/> with a message
         /// for the operator when the input is not valid.
         /// </summary>
-        /// <param name="publicKeyText">The content of an OpenSSH <c>.pub</c> file or a PEM public key (RSA).</param>
+        /// <param name="publicKeyText">
+        /// The content of an OpenSSH <c>.pub</c> or <c>authorized_keys</c> file (ed25519, ECDSA or RSA keys, one per line)
+        /// or a PEM public key.
+        /// </param>
         public User Create(string? username, string? rootDirectory, string? password, string? publicKeyText)
         {
             var name = username?.Trim() ?? string.Empty;
@@ -88,7 +90,7 @@ namespace SshServer.Interfaces.Users
                     throw new UserAdministrationException(passwordError);
             }
 
-            var publicKey = publicKeyText == null ? null : ConvertPublicKey(publicKeyText);
+            var publicKeys = publicKeyText == null ? null : ParsePublicKeys(publicKeyText, PublicKeySource.Admin, null);
 
             if (_repository.GetAllUsers().Any(u => string.Equals(u.Username, name, StringComparison.OrdinalIgnoreCase)))
                 throw new UserAdministrationException($"The user '{name}' already exists.");
@@ -109,7 +111,7 @@ namespace SshServer.Interfaces.Users
                 Username = name,
                 UserRootDirectory = root,
                 HashedPassword = password == null ? null : PasswordHasher.Hash(password),
-                RsaPublicKey = publicKey,
+                PublicKeys = publicKeys?.ToList(),
                 OnlyWhitelistedIps = false,
                 WhitelistedIps = new List<string>(),
             };
@@ -119,74 +121,78 @@ namespace SshServer.Interfaces.Users
         }
 
         /// <summary>
-        /// Converts an RSA public key (OpenSSH <c>ssh-rsa AAAA...</c> line or a PEM) to the stored format: a base64
-        /// CSP blob, the same as the admin UI makes.
+        /// Adds the keys of an <c>authorized_keys</c> text (or one PEM public key) to a user. A key that the user already
+        /// has is skipped. Nothing is added when a line is not a supported key: the exception tells which lines.
         /// </summary>
-        public static string ConvertPublicKey(string text)
+        /// <param name="expiresAtUtc">The expiry of the new keys, or null.</param>
+        /// <returns>The number of added keys and of skipped keys (already in the list).</returns>
+        public (int Added, int Skipped) AddPublicKeys(string username, string text, DateTime? expiresAtUtc,
+            PublicKeySource source = PublicKeySource.Admin)
         {
-            try
+            var user = GetExistingUser(username);
+            var keys = ParsePublicKeys(text, source, expiresAtUtc);
+            var list = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>();
+            var added = 0;
+            foreach (var key in keys)
             {
-                var trimmed = text.Trim();
-                RSAParameters parameters;
-                if (trimmed.StartsWith("-----BEGIN", StringComparison.Ordinal))
-                {
-                    using var pem = RSA.Create();
-                    pem.ImportFromPem(trimmed);
-                    parameters = pem.ExportParameters(false);
-                }
-                else
-                {
-                    parameters = ParseOpenSshRsaKey(trimmed);
-                }
-
-                using var csp = new RSACryptoServiceProvider();
-                csp.ImportParameters(parameters);
-                return Convert.ToBase64String(csp.ExportCspBlob(false));
+                if (list.Any(k => k.KeyBase64 == key.KeyBase64))
+                    continue;
+                list.Add(key);
+                added++;
             }
-            catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException or InvalidOperationException)
-            {
-                throw new UserAdministrationException("The public key is not a valid RSA public key (OpenSSH 'ssh-rsa' line or PEM). Only RSA keys are supported.");
-            }
+            if (added > 0)
+                Save(user, list);
+            return (added, keys.Count - added);
         }
 
-        private static RSAParameters ParseOpenSshRsaKey(string line)
+        /// <summary>Adds one key entry (for example a generated key). Returns false when the user already has the key.</summary>
+        public bool AddPublicKey(string username, PublicKeyEntry key)
         {
-            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2 || parts[0] != "ssh-rsa")
-                throw new FormatException("Not an ssh-rsa key.");
-            var blob = Convert.FromBase64String(parts[1]);
-            var position = 0;
-            if (Encoding.ASCII.GetString(ReadString(blob, ref position)) != "ssh-rsa")
-                throw new FormatException("Not an ssh-rsa key.");
-            var exponent = ReadString(blob, ref position);
-            var modulus = ReadString(blob, ref position);
-            return new RSAParameters
-            {
-                Exponent = TrimLeadingZeros(exponent),
-                Modulus = TrimLeadingZeros(modulus),
-            };
+            ArgumentNullException.ThrowIfNull(key);
+            var user = GetExistingUser(username);
+            var list = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>();
+            if (list.Any(k => k.KeyBase64 == key.KeyBase64))
+                return false;
+            list.Add(key);
+            Save(user, list);
+            return true;
         }
 
-        private static byte[] ReadString(byte[] data, ref int position)
+        /// <summary>Removes the key with this blob (base64) from a user. Returns false when the user does not have it.</summary>
+        public bool RemovePublicKey(string username, string keyBase64)
         {
-            if (position + 4 > data.Length)
-                throw new FormatException("Truncated key.");
-            var length = (data[position] << 24) | (data[position + 1] << 16) | (data[position + 2] << 8) | data[position + 3];
-            position += 4;
-            if (length < 0 || position + length > data.Length)
-                throw new FormatException("Truncated key.");
-            var result = new byte[length];
-            Array.Copy(data, position, result, 0, length);
-            position += length;
-            return result;
+            var user = GetExistingUser(username);
+            var list = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>();
+            if (list.RemoveAll(k => k.KeyBase64 == keyBase64) == 0)
+                return false;
+            Save(user, list);
+            return true;
         }
 
-        private static byte[] TrimLeadingZeros(byte[] value)
+        /// <summary>
+        /// Reads the keys of a text. Throws <see cref="UserAdministrationException"/> with all refused lines, or when
+        /// there is no key.
+        /// </summary>
+        public static IReadOnlyList<PublicKeyEntry> ParsePublicKeys(string text, PublicKeySource source, DateTime? expiresAtUtc)
         {
-            var skip = 0;
-            while (skip < value.Length - 1 && value[skip] == 0)
-                skip++;
-            return value.Skip(skip).ToArray();
+            var result = SshPublicKey.ParseAuthorizedKeys(text ?? string.Empty, source, DateTime.UtcNow);
+            if (result.Errors.Count > 0)
+                throw new UserAdministrationException(string.Join(Environment.NewLine, result.Errors));
+            if (result.Keys.Count == 0)
+                throw new UserAdministrationException("There is no public key in the text.");
+            foreach (var key in result.Keys)
+                key.ExpiresAt = expiresAtUtc;
+            return result.Keys;
+        }
+
+        private User GetExistingUser(string username) =>
+            _repository.GetUser(username) ?? throw new UserAdministrationException($"The user '{username}' does not exist.");
+
+        private void Save(User user, List<PublicKeyEntry> keys)
+        {
+            user.PublicKeys = keys;
+            if (!_repository.UpdateUser(user))
+                throw new UserAdministrationException($"The keys of '{user.Username}' could not be saved.");
         }
     }
 

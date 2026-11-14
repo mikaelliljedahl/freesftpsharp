@@ -1,56 +1,72 @@
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
+using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 
 namespace FreeSftpSharp.Tests.Unit;
 
 /// <summary>
-/// <see cref="UserLogics"/>: public key authentication by fingerprint and the IP whitelist (passwords: UserPasswordVerificationTests).
+/// <see cref="UserLogics"/>: public key authentication by the whole key blob (issue #58) and the IP whitelist (passwords: UserPasswordVerificationTests).
 /// </summary>
 public sealed class UserLogicsTests
 {
+    private static readonly DateTime Now = new(2026, 11, 14, 12, 0, 0, DateTimeKind.Utc);
+
+    private static User UserWith(params PublicKeyEntry[] keys) => new() { Username = "u", PublicKeys = keys.ToList() };
+
     [Fact]
-    public void Fingerprint_of_a_stored_key_is_the_sha256_of_the_ssh_public_key_blob()
+    public void Each_key_of_the_user_is_accepted()
     {
-        using var rsa = new RSACryptoServiceProvider(2048);
-        var stored = Convert.ToBase64String(rsa.ExportCspBlob(false));
+        var ed25519 = TestUserKeys.Ed25519();
+        var rsa = TestUserKeys.Rsa();
+        var user = UserWith(ed25519.Entry, rsa.Entry);
 
-        var fingerprint = UserLogics.GetRsaPublicKeyFingerprint(stored);
-
-        Assert.Equal(ExpectedFingerprint(rsa.ExportParameters(false)), fingerprint);
+        Assert.True(UserLogics.VerifyUserKey(user, ed25519.Blob, Now));
+        Assert.True(UserLogics.VerifyUserKey(user, rsa.Blob, Now));
     }
 
     [Fact]
-    public void The_key_of_the_user_is_accepted()
+    public void A_key_that_is_not_in_the_list_is_rejected()
     {
-        using var rsa = new RSACryptoServiceProvider(2048);
-        var user = new User { Username = "u", RsaPublicKey = Convert.ToBase64String(rsa.ExportCspBlob(false)) };
+        var user = UserWith(TestUserKeys.Ed25519().Entry, TestUserKeys.Rsa().Entry);
 
-        Assert.True(UserLogics.VerifyUserKey(user, ExpectedFingerprint(rsa.ExportParameters(false))));
+        Assert.False(UserLogics.VerifyUserKey(user, TestUserKeys.Ed25519().Blob, Now));
+        Assert.False(UserLogics.VerifyUserKey(user, TestUserKeys.Rsa().Blob, Now));
     }
 
     [Fact]
-    public void Another_key_is_rejected()
+    public void A_key_with_the_same_fingerprint_but_another_blob_is_rejected()
     {
-        using var userKey = new RSACryptoServiceProvider(2048);
-        using var otherKey = new RSACryptoServiceProvider(2048);
-        var user = new User { Username = "u", RsaPublicKey = Convert.ToBase64String(userKey.ExportCspBlob(false)) };
+        // The stored entry claims the fingerprint of the client key, but its blob is another key: only the blob counts.
+        var client = TestUserKeys.Ed25519();
+        var stored = TestUserKeys.Ed25519().Entry;
+        stored.Fingerprint = client.Entry.Fingerprint;
 
-        Assert.False(UserLogics.VerifyUserKey(user, ExpectedFingerprint(otherKey.ExportParameters(false))));
+        Assert.False(UserLogics.VerifyUserKey(UserWith(stored), client.Blob, Now));
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("not base64!")]
-    public void A_user_without_a_valid_key_is_rejected(string? storedKey)
+    [Fact]
+    public void An_expired_key_is_rejected_and_a_key_before_its_expiry_is_accepted()
     {
-        using var rsa = new RSACryptoServiceProvider(2048);
-        var user = new User { Username = "u", RsaPublicKey = storedKey! };
+        var key = TestUserKeys.Ed25519();
+        key.Entry.ExpiresAt = Now;
+        var user = UserWith(key.Entry);
 
-        Assert.False(UserLogics.VerifyUserKey(user, ExpectedFingerprint(rsa.ExportParameters(false))));
+        Assert.False(UserLogics.VerifyUserKey(user, key.Blob, Now));
+        Assert.True(UserLogics.VerifyUserKey(user, key.Blob, Now.AddSeconds(-1)));
+    }
+
+    [Fact]
+    public void A_user_without_keys_or_an_empty_request_is_rejected()
+    {
+        var key = TestUserKeys.Ed25519();
+
+        Assert.False(UserLogics.VerifyUserKey(new User { Username = "u" }, key.Blob, Now));
+        Assert.False(UserLogics.VerifyUserKey(UserWith(), key.Blob, Now));
+        Assert.False(UserLogics.VerifyUserKey(UserWith(key.Entry), Array.Empty<byte>(), Now));
+        Assert.False(UserLogics.VerifyUserKey(UserWith(key.Entry), null!, Now));
+        Assert.False(UserLogics.VerifyUserKey(UserWith(new PublicKeyEntry { KeyBase64 = "broken!" }), key.Blob, Now));
     }
 
     [Theory]
@@ -76,27 +92,5 @@ public sealed class UserLogicsTests
         var user = new User { Username = "u", OnlyWhitelistedIps = false };
 
         Assert.True(UserLogics.VerifyUserIpWhitelisted(user, new IPEndPoint(IPAddress.Parse("10.0.0.1"), 50000)));
-    }
-
-    /// <summary>base64(SHA-256("ssh-rsa" public key blob)), RFC 4253 section 6.6, made without FxSsh.</summary>
-    private static string ExpectedFingerprint(RSAParameters parameters)
-    {
-        using var blob = new MemoryStream();
-        WriteString(blob, Encoding.ASCII.GetBytes("ssh-rsa"));
-        WriteString(blob, Mpint(parameters.Exponent!));
-        WriteString(blob, Mpint(parameters.Modulus!));
-        return Convert.ToBase64String(SHA256.HashData(blob.ToArray()));
-    }
-
-    private static byte[] Mpint(byte[] unsignedBigEndian)
-    {
-        var value = unsignedBigEndian.SkipWhile(b => b == 0).ToArray();
-        return value.Length > 0 && (value[0] & 0x80) != 0 ? new byte[] { 0 }.Concat(value).ToArray() : value;
-    }
-
-    private static void WriteString(Stream stream, byte[] data)
-    {
-        stream.Write(new[] { (byte)(data.Length >> 24), (byte)(data.Length >> 16), (byte)(data.Length >> 8), (byte)data.Length });
-        stream.Write(data);
     }
 }

@@ -3,6 +3,7 @@ using FreeSftpSharp.Tests.Infrastructure;
 using FxSsh.SshServerModule;
 using Microsoft.EntityFrameworkCore;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
 using SshServer.Settings.Sql;
 
@@ -18,6 +19,27 @@ public sealed class LiteDbImportTests : IDisposable
 
     public void Dispose() => _temp.Dispose();
 
+    /// <summary>The key of bob, as versions before issue #58 stored it: a base64 CSP blob in the field RsaPublicKey.</summary>
+    private static readonly RSAParameters BobKey = CreateBobKey(out BobLegacyKey);
+    private static readonly string BobLegacyKey;
+
+    private static RSAParameters CreateBobKey(out string cspBlob)
+    {
+        using var rsa = new RSACryptoServiceProvider(2048);
+        cspBlob = Convert.ToBase64String(rsa.ExportCspBlob(false));
+        return rsa.ExportParameters(false);
+    }
+
+    /// <summary>Writes the old key field of a user into the LiteDB file, as an old version did.</summary>
+    private void WriteLegacyKey(string username, string cspBlob)
+    {
+        using var raw = new LiteDB.LiteDatabase(LiteDbPath);
+        var users = raw.GetCollection("users");
+        var document = users.FindOne(LiteDB.Query.EQ("Username", username));
+        document["RsaPublicKey"] = cspBlob;
+        Assert.True(users.Update(document));
+    }
+
     private string LiteDbPath => _temp.File("config.db");
 
     private DbContextOptions<SettingsDbContext> SqliteOptions =>
@@ -25,6 +47,13 @@ public sealed class LiteDbImportTests : IDisposable
 
     /// <summary>Makes a config.db like an old installation: settings with a host key and two users.</summary>
     private string CreateLiteDb(string? ecdsaKey = null)
+    {
+        var hostKey = CreateLiteDbWithoutLegacyKey(ecdsaKey);
+        WriteLegacyKey("bob", BobLegacyKey);
+        return hostKey;
+    }
+
+    private string CreateLiteDbWithoutLegacyKey(string? ecdsaKey)
     {
         using var liteDb = new SettingsRepository(LiteDbPath);
         ISettingsRepository repository = liteDb;
@@ -52,7 +81,6 @@ public sealed class LiteDbImportTests : IDisposable
         {
             Username = "bob",
             UserRootDirectory = "/srv/bob",
-            RsaPublicKey = "bob-public-key",
             WhitelistedIps = new List<string>(),
             Permissions = new() { ["/"] = FilePermissions.List, ["/in"] = FilePermissions.Upload },
             PathFilters = new() { ["/in"] = new PathFilter { DeniedPatterns = ["*.exe"] } },
@@ -79,6 +107,20 @@ public sealed class LiteDbImportTests : IDisposable
         var stored = repository.GetUser("carol");
         Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.None, ["/a/b"] = FilePermissions.Download | FilePermissions.List }, stored.Permissions);
         Assert.Equal([".*"], stored.PathFilters!["/a"].HiddenPatterns);
+    }
+
+    [Fact]
+    public void The_LiteDB_repository_moves_the_old_key_of_a_user_to_the_key_list()
+    {
+        CreateLiteDb();
+
+        using var liteDb = new SettingsRepository(LiteDbPath);
+        ISettingsRepository repository = liteDb;
+
+        var bob = repository.GetUser("bob");
+        Assert.Equal(Convert.ToBase64String(SshPublicKey.RsaBlob(BobKey)), Assert.Single(bob.PublicKeys!).KeyBase64);
+        Assert.Null(((UserWithObjectId)bob).RsaPublicKey);
+        Assert.Null(repository.GetUser("alice").PublicKeys);
     }
 
     [Fact]
@@ -127,7 +169,11 @@ public sealed class LiteDbImportTests : IDisposable
         Assert.Equal(new[] { "10.1.2.3" }, alice.WhitelistedIps);
         Assert.Equal(new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc), alice.LastSuccessfulLogin.ToUniversalTime());
         var bob = repository.GetUser("bob");
-        Assert.Equal("bob-public-key", bob.RsaPublicKey);
+        var bobKey = Assert.Single(bob.PublicKeys!);
+        Assert.Equal(Convert.ToBase64String(SshPublicKey.RsaBlob(BobKey)), bobKey.KeyBase64);
+        Assert.Equal("ssh-rsa", bobKey.KeyType);
+        Assert.Equal(AuthMethods.All, bob.AllowedAuthMethods);
+        Assert.Null(alice.PublicKeys);
         Assert.Null(bob.HashedPassword);
         Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.List, ["/in"] = FilePermissions.Upload }, bob.Permissions);
         Assert.Equal(["*.exe"], bob.PathFilters!["/in"].DeniedPatterns);

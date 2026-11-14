@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114082326_AddAuditLog";
+    public override string LastMigrationId => "20261114110144_AddUserPublicKeysAndAuthMethods";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -155,6 +155,11 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .ValueGeneratedOnAdd()
                     .HasColumnType("INTEGER");
 
+                b.Property<string>("AllowedAuthMethods")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("HashedPassword")
                     .HasColumnType("TEXT");
 
@@ -168,6 +173,12 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Permissions")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("PublicKeys")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("RequireAllOf")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("RsaPublicKey")

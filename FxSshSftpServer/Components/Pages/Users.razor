@@ -2,6 +2,8 @@
 @using FxSsh.SshServerModule
 @using System.Globalization
 @using SshServer.Interfaces.Permissions
+@using SshServer.Interfaces.Authentication
+@using SshServer.Interfaces.Users
 @inject ISettingsRepository SettingsRepository
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject IJSRuntime JS
@@ -41,9 +43,13 @@
                             {
                                 <span class="badge text-bg-secondary me-1">password</span>
                             }
-                            @if (!string.IsNullOrWhiteSpace(context.RsaPublicKey))
+                            @if (context.PublicKeys is { Count: > 0 } keys)
                             {
-                                <span class="badge text-bg-info me-1">key</span>
+                                <span class="badge text-bg-info me-1">@(keys.Count == 1 ? "key" : $"{keys.Count} keys")</span>
+                            }
+                            @if (context.RequireAllOf is { Count: > 0 })
+                            {
+                                <span class="badge text-bg-primary me-1" title="Multi-step login">@context.RequireAllOf.Count-step</span>
                             }
                             @if (context.OnlyWhitelistedIps && context.WhitelistedIps is { Count: > 0 })
                             {
@@ -142,39 +148,112 @@
                         </fieldset>
 
                         <fieldset class="border rounded p-3 mb-3">
-                            <legend class="float-none w-auto px-2 fs-6 mb-0">Public key</legend>
-                            @if (KeyFingerprint is { } fingerprint)
-                            {
-                                <div class="small mb-2">RSA key <span class="font-monospace-sm" id="user-key-fingerprint">@fingerprint</span></div>
-                            }
-                            else if (!string.IsNullOrWhiteSpace(form.RsaPublicKey))
-                            {
-                                <div class="small text-warning-emphasis mb-2">The stored public key cannot be read.</div>
-                            }
-                            else
-                            {
-                                <div class="small text-body-secondary mb-2">No key. Generate one: the server keeps the public key, and your browser downloads the private key (<code>.pem</code>) once.</div>
-                            }
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Public keys</legend>
                             @if (form.IsNew)
                             {
-                                <div class="small text-body-secondary">Save the user first, then generate a key.</div>
+                                <div class="small text-body-secondary">Save the user first, then add or generate keys.</div>
                             }
                             else
                             {
+                                @if (form.PublicKeys.Count == 0)
+                                {
+                                    <div class="small text-body-secondary mb-2" id="no-keys">No keys. Add the public key of the user (an OpenSSH <code>.pub</code> line or an <code>authorized_keys</code> file), or generate one: the server keeps the public key, and your browser downloads the private key once.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-2" id="key-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Type</th>
+                                                    <th scope="col">Fingerprint</th>
+                                                    <th scope="col">Comment</th>
+                                                    <th scope="col">Added (UTC)</th>
+                                                    <th scope="col">Expires (UTC)</th>
+                                                    <th scope="col"><span class="visually-hidden">Remove</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var key in form.PublicKeys)
+                                                {
+                                                    <tr class="key-row">
+                                                        <td class="small text-nowrap">@key.KeyType</td>
+                                                        <td><span class="font-monospace-sm key-fingerprint">@key.Fingerprint</span></td>
+                                                        <td class="small">@key.Comment</td>
+                                                        <td class="small text-nowrap">@Date(key.AddedAt)</td>
+                                                        <td class="small text-nowrap">
+                                                            @if (key.ExpiresAt is { } expires)
+                                                            {
+                                                                @Date(expires)
+                                                                @if (key.IsExpired(DateTime.UtcNow))
+                                                                {
+                                                                    <span class="badge text-bg-danger ms-1">expired</span>
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="text-body-secondary">never</span>
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            <button type="button" class="btn btn-sm btn-outline-danger remove-key" title="Remove" aria-label="Remove the key @key.Fingerprint"
+                                                                    @onclick="() => AskRemoveKey(key)"><i class="bi bi-x"></i></button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+
+                                <label class="form-label small mb-1" for="new-keys">Add keys</label>
+                                <textarea id="new-keys" class="form-control form-control-sm font-monospace mb-2" rows="3" placeholder="ssh-ed25519 AAAA... user@laptop"
+                                          @bind="newKeysText"></textarea>
+                                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                    <label class="small" for="new-keys-expiry">Expires on (UTC, optional)</label>
+                                    <input type="date" id="new-keys-expiry" class="form-control form-control-sm w-auto" @bind="newKeysExpiry" />
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AddKeys" id="add-keys"><i class="bi bi-plus"></i> Add from text</button>
+                                </div>
+                                @if (keyError is not null)
+                                {
+                                    <div class="small text-danger mb-2" id="key-error" style="white-space: pre-line">@keyError</div>
+                                }
+                                <div class="form-text mb-2">One key per line: ed25519, ECDSA or RSA (at least 2048 bits). Options such as <code>from=</code> or <code>restrict</code> are not supported. A login compares the whole key.</div>
                                 <div class="d-flex flex-wrap gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="GenerateKeyAsync" disabled="@generatingKey" id="generate-key">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => GenerateKeyAsync(ed25519: true)" disabled="@generatingKey" id="generate-ed25519-key">
+                                        <i class="bi bi-key"></i> Generate an ed25519 key
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => GenerateKeyAsync(ed25519: false)" disabled="@generatingKey" id="generate-key">
                                         @if (generatingKey)
                                         {
                                             <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
                                         }
-                                        <i class="bi bi-key"></i> @(string.IsNullOrWhiteSpace(form.RsaPublicKey) ? "Generate a key" : "Generate a new key")
+                                        <i class="bi bi-key"></i> Generate an RSA key
                                     </button>
-                                    @if (!string.IsNullOrWhiteSpace(form.RsaPublicKey))
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => removeKeyDialog.Open()" id="remove-key"><i class="bi bi-x-circle"></i> Remove the key</button>
-                                    }
                                 </div>
                             }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Login methods</legend>
+                            <div class="form-check form-check-inline">
+                                <InputCheckbox id="allow-password" class="form-check-input" @bind-Value="form.AllowPassword" />
+                                <label class="form-check-label" for="allow-password">Password</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <InputCheckbox id="allow-public-key" class="form-check-input" @bind-Value="form.AllowPublicKey" />
+                                <label class="form-check-label" for="allow-public-key">Public key</label>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-label small mb-1" for="multi-step">Multi-step login</label>
+                                <InputSelect id="multi-step" class="form-select form-select-sm w-auto" @bind-Value="form.MultiStep">
+                                    <option value="">Off: one allowed method is enough</option>
+                                    <option value="@UserForm.KeyThenPassword">Public key, then password</option>
+                                    <option value="@UserForm.PasswordThenKey">Password, then public key</option>
+                                </InputSelect>
+                            </div>
+                            <ValidationMessage For="() => form.AllowPassword" />
+                            <div class="form-text">A method that is not allowed fails like a wrong password. With a multi-step login the user needs both methods, in this order.</div>
                         </fieldset>
 
                         <fieldset class="border rounded p-3 mb-3">
@@ -320,7 +399,7 @@
 </ConfirmDialog>
 
 <ConfirmDialog @ref="removeKeyDialog" Title="Remove the public key" ConfirmText="Remove" OnConfirm="RemoveKey">
-    Remove the public key of <strong>@form?.Username</strong>? Key login stops working for this user.
+    Remove the key <span class="font-monospace-sm">@pendingKeyRemoval?.Fingerprint</span> of <strong>@form?.Username</strong>? The next login with this key is refused.
 </ConfirmDialog>
 
 @code {
@@ -329,6 +408,10 @@
     private UserForm form;
     private string pendingDelete;
     private bool generatingKey;
+    private string newKeysText;
+    private DateTime? newKeysExpiry;
+    private string keyError;
+    private PublicKeyEntry pendingKeyRemoval;
     private ConfirmDialog deleteDialog;
     private ConfirmDialog removeKeyDialog;
 
@@ -338,21 +421,38 @@
                          || (u.UserRootDirectory ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
              .AsQueryable();
 
-    private string KeyFingerprint => ServerInfo.GetUserKeyFingerprint(form?.RsaPublicKey);
-
     protected override void OnInitialized() => LoadUsers();
 
     private void LoadUsers() => users = SettingsRepository.GetAllUsers();
 
-    private void StartNew() => form = UserForm.New();
+    private void StartNew()
+    {
+        ResetKeyInput();
+        form = UserForm.New();
+    }
 
     private void Edit(User user)
     {
+        ResetKeyInput();
         var stored = SettingsRepository.GetUser(user.Username);
         form = stored is null ? null : UserForm.From(stored);
     }
 
     private void CloseForm() => form = null;
+
+    private void ResetKeyInput()
+    {
+        newKeysText = null;
+        newKeysExpiry = null;
+        keyError = null;
+    }
+
+    /// <summary>Reloads the keys of the open form after a key change (the rest of the form keeps what the admin typed).</summary>
+    private void ReloadKeys(string username)
+    {
+        form.PublicKeys = SettingsRepository.GetUser(username)?.PublicKeys?.ToList() ?? new();
+        LoadUsers();
+    }
 
     private async Task SaveAsync()
     {
@@ -414,38 +514,60 @@
         return Task.CompletedTask;
     }
 
-    private async Task GenerateKeyAsync()
+    private void AddKeys()
     {
-        var user = SettingsRepository.GetUser(form.Username);
-        if (user is null)
+        keyError = null;
+        if (string.IsNullOrWhiteSpace(newKeysText))
+        {
+            keyError = "Paste one or more public keys first.";
             return;
+        }
+        var expires = newKeysExpiry is { } date ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc) : (DateTime?)null;
+        try
+        {
+            var (added, skipped) = UserService.AddPublicKeys(form.Username, newKeysText, expires);
+            ReloadKeys(form.Username);
+            newKeysText = null;
+            Toasts.ShowSuccess(skipped == 0
+                ? $"Added {added} key(s) to {form.Username}."
+                : $"Added {added} key(s) to {form.Username}; {skipped} key(s) were already in the list.");
+        }
+        catch (UserAdministrationException ex)
+        {
+            keyError = ex.Message;
+        }
+    }
 
+    private async Task GenerateKeyAsync(bool ed25519)
+    {
+        var username = form.Username;
         generatingKey = true;
         try
         {
-            // The same format as before: a 4096-bit RSA key, the public part as a base64 CSP blob, the private key as PEM.
-            var (publicKey, privateKeyPem) = await Task.Run(() =>
-            {
-                using var csp = new System.Security.Cryptography.RSACryptoServiceProvider(4096);
-                return (Convert.ToBase64String(csp.ExportCspBlob(false)), RSAConverter.ExportPrivateKey(csp));
-            });
+            var comment = $"{username}@freesftpsharp";
+            var key = await Task.Run(() => ed25519
+                ? UserKeyGenerator.GenerateEd25519(comment, DateTime.UtcNow)
+                : UserKeyGenerator.GenerateRsa(comment, DateTime.UtcNow));
 
-            user.RsaPublicKey = publicKey;
-            if (!SettingsRepository.UpdateUser(user))
+            try
             {
-                Toasts.ShowError($"The key of {user.Username} could not be saved.");
+                UserService.AddPublicKey(username, key.PublicKey);
+            }
+            catch (UserAdministrationException ex)
+            {
+                Toasts.ShowError(ex.Message);
                 return;
             }
 
-            var downloaded = await JS.SaveFile(System.Text.Encoding.UTF8.GetBytes(privateKeyPem), $"{user.Username}.pem");
-            form.RsaPublicKey = publicKey;
-            LoadUsers();
+            var fileName = (ed25519 ? $"{username}_ed25519" : username) + key.FileExtension;
+            var downloaded = await JS.SaveFile(System.Text.Encoding.UTF8.GetBytes(key.PrivateKey), fileName);
+            ReloadKeys(username);
             if (!downloaded)
             {
-                Toasts.ShowError($"The new key of {user.Username} was saved, but the browser could not download the private key. Generate a new key.");
+                Toasts.ShowError($"The new key of {username} was saved, but the browser could not download the private key. Remove the key and generate a new one.");
                 return;
             }
-            Toasts.ShowSuccess($"A new key was saved for {user.Username}. Keep the downloaded .pem file safe; it is not stored on the server.");
+            Toasts.ShowSuccess($"A new key was added for {username}. Keep the downloaded private key safe; it is not stored on the server.");
         }
         finally
         {
@@ -453,23 +575,32 @@
         }
     }
 
+    private void AskRemoveKey(PublicKeyEntry key)
+    {
+        pendingKeyRemoval = key;
+        removeKeyDialog.Open();
+    }
+
     private void RemoveKey()
     {
-        var user = SettingsRepository.GetUser(form.Username);
-        if (user is null)
+        var key = pendingKeyRemoval;
+        if (key is null || form is null)
             return;
-        user.RsaPublicKey = null;
-        if (SettingsRepository.UpdateUser(user))
+        try
         {
-            form.RsaPublicKey = null;
-            LoadUsers();
-            Toasts.ShowSuccess($"The key of {user.Username} was removed.");
+            if (UserService.RemovePublicKey(form.Username, key.KeyBase64))
+                Toasts.ShowSuccess($"The key {key.Fingerprint} of {form.Username} was removed.");
+            else
+                Toasts.ShowError($"The key {key.Fingerprint} of {form.Username} was not found.");
         }
-        else
+        catch (UserAdministrationException ex)
         {
-            Toasts.ShowError($"The key of {user.Username} could not be removed.");
+            Toasts.ShowError(ex.Message);
         }
+        ReloadKeys(form.Username);
     }
+
+    private static string Date(DateTime value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string LastLogin(DateTime value) =>
         value == default ? "never" : value.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
