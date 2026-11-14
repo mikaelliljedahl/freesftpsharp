@@ -148,6 +148,43 @@ public sealed class SshNetQuotaTests : IClassFixture<QuotaSftpServerFixture>
         Assert.True(free < TimeSpan.FromSeconds(5), $"The unlimited user took {free}.");
     }
 
+    /// <summary>
+    /// Issue #133: the throttle of a running upload must not hold the other requests of the same SFTP session. At 32 KiB/s
+    /// the 1 MiB upload takes about 30 seconds; a directory list and a STAT in the meantime answer at once.
+    /// </summary>
+    [Fact]
+    public async Task A_directory_list_during_a_throttled_upload_on_the_same_session_answers_at_once()
+    {
+        var root = _server.AddQuotaUser("bw-upload-busy", u => u.Bandwidth = new BandwidthLimit { UploadKiBPerSecond = 32 });
+        File.WriteAllBytes(Path.Combine(root, "other.bin"), new byte[10]);
+        using var client = _server.Connect("bw-upload-busy");
+        var ct = TestContext.Current.CancellationToken;
+
+        using var source = new MemoryStream(new byte[1024 * KiB]);
+        var upload = Task.Run(() => client.UploadFile(source, "/big.bin"), ct);
+        // Wait until the upload runs and its requests wait for the throttle.
+        var started = Stopwatch.StartNew();
+        while (source.Position < 256 * KiB && started.Elapsed < TimeSpan.FromSeconds(10))
+            await Task.Delay(50, ct);
+        Assert.False(upload.IsCompleted, "The upload must still run.");
+
+        var watch = Stopwatch.StartNew();
+        var listing = client.ListDirectory("/").Select(f => f.Name).ToList();
+        var listTime = watch.Elapsed;
+        watch.Restart();
+        var size = client.GetAttributes("/other.bin").Size;
+        var statTime = watch.Elapsed;
+
+        Assert.Contains("other.bin", listing);
+        Assert.Equal(10, size);
+        Assert.True(listTime < TimeSpan.FromSeconds(1), $"The directory list took {listTime}.");
+        Assert.True(statTime < TimeSpan.FromSeconds(1), $"The STAT took {statTime}.");
+        Assert.False(upload.IsCompleted, "The upload must still be throttled.");
+
+        client.Disconnect(); // ends the upload; the partial file does not matter here
+        await Assert.ThrowsAnyAsync<Exception>(() => upload);
+    }
+
     private TimeSpan Time(string username)
     {
         using var client = _server.Connect(username);

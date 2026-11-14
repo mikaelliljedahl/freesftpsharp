@@ -11,8 +11,9 @@ namespace SshServerModule.Quotas
     /// The storage rule "bandwidth" (issue #62) for one session: a <see cref="TokenBucket"/> per direction, shared by every
     /// open file of the session. A write waits for its bytes before it reaches the storage; a read waits for the bytes it
     /// read before it returns. The protocol answers the request only then, which throttles SFTP clients (SSH.NET and
-    /// OpenSSH keep a fixed number of requests in flight). A waiting request holds the thread of the session, as a slow
-    /// storage does.
+    /// OpenSSH keep a fixed number of requests in flight). The wait is asynchronous: the SFTP engine handles the other
+    /// requests of the session (a directory list, a STAT, the requests of another file) while a READ or WRITE waits, and
+    /// keeps the requests of one handle in order (#133).
     /// </summary>
     public sealed class BandwidthFileSystem : IFileSystem
     {
