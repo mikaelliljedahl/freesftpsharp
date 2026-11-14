@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using FxSsh.Messages.UserAuth;
 
 namespace FxSsh.Services
 {
@@ -64,8 +66,27 @@ namespace FxSsh.Services
         }
 
         /// <summary>
+        /// Creates the args of a "keyboard-interactive" authentication request
+        /// (RFC 4256).
+        /// </summary>
+        /// <param name="session">The session requesting authentication.</param>
+        /// <param name="username">The user name requesting authentication.</param>
+        /// <param name="submethods">The submethods hint of the client (usually empty).</param>
+        public static UserAuthArgs ForKeyboardInteractive(Session session, string username, string submethods)
+        {
+            ArgumentNullException.ThrowIfNull(username);
+
+            return new UserAuthArgs(session)
+            {
+                AuthMethod = "keyboard-interactive",
+                Username = username,
+                Submethods = submethods ?? "",
+            };
+        }
+
+        /// <summary>
         /// Gets the authentication method of this attempt: "none",
-        /// "password", or "publickey".
+        /// "password", "publickey" or "keyboard-interactive".
         /// </summary>
         public string AuthMethod { get; private set; }
 
@@ -103,6 +124,30 @@ namespace FxSsh.Services
         /// populated for "publickey" requests.
         /// </summary>
         public byte[] Key { get; private set; }
+
+        /// <summary>
+        /// Gets the submethods hint of the client; only populated for
+        /// "keyboard-interactive" requests.
+        /// </summary>
+        public string Submethods { get; private set; }
+
+        /// <summary>
+        /// Gets the answers of the client to the last
+        /// <see cref="InfoRequest"/>, in the order of the prompts; null for the
+        /// "keyboard-interactive" request itself and for the other methods.
+        /// Cleared after the handler returns.
+        /// </summary>
+        public IReadOnlyList<string> Responses { get; internal set; }
+
+        /// <summary>
+        /// Gets or sets the prompts that the service sends for a
+        /// "keyboard-interactive" attempt (SSH_MSG_USERAUTH_INFO_REQUEST) when
+        /// the handler leaves <see cref="Result"/> false. The service raises
+        /// <see cref="UserAuthService.UserAuth"/> again with the responses.
+        /// Null: no prompt (the attempt fails unless <see cref="Result"/> is
+        /// true). Ignored for the other methods.
+        /// </summary>
+        public KeyboardInteractiveInfoRequest InfoRequest { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether the host accepts the

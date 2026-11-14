@@ -27,6 +27,65 @@ namespace FxSsh.Tests.Messages
         }
 
         [TestMethod]
+        public void KeyboardInteractiveRequestMessage_loads_language_and_submethods()
+        {
+            var request = new RequestMessage();
+            request.Load(TestMessages.Payload(RequestMessage.MessageNumber)
+                .Write("alice", Encoding.UTF8)
+                .Write("ssh-connection", Encoding.ASCII)
+                .Write("keyboard-interactive", Encoding.ASCII)
+                .Write("", Encoding.UTF8)
+                .Write("pam", Encoding.UTF8)
+                .ToByteArray());
+
+            var message = Message.LoadFrom<KeyboardInteractiveRequestMessage>(request);
+
+            Assert.AreEqual("alice", message.Username);
+            Assert.AreEqual("", message.LanguageTag);
+            Assert.AreEqual("pam", message.Submethods);
+        }
+
+        [TestMethod]
+        public void InfoResponseMessage_loads_the_responses_as_utf8()
+        {
+            var message = new InfoResponseMessage();
+            message.Load(TestMessages.Payload(InfoResponseMessage.MessageNumber)
+                .Write(2u)
+                .Write("123456", Encoding.UTF8)
+                .Write("åäö", Encoding.UTF8)
+                .ToByteArray());
+
+            CollectionAssert.AreEqual(new[] { "123456", "åäö" }, (System.Collections.ICollection)message.Responses);
+        }
+
+        [TestMethod]
+        public void InfoResponseMessage_with_too_many_responses_is_rejected()
+        {
+            var message = new InfoResponseMessage();
+            var payload = TestMessages.Payload(InfoResponseMessage.MessageNumber)
+                .Write((uint)InfoResponseMessage.MaximumResponses + 1)
+                .ToByteArray();
+
+            Assert.ThrowsExactly<ArgumentException>(() => message.Load(payload));
+        }
+
+        [TestMethod]
+        public void InfoRequestMessage_writes_the_prompts()
+        {
+            var packet = new InfoRequestMessage(new KeyboardInteractiveInfoRequest("n", "i",
+                new[] { new KeyboardInteractivePrompt("Code: ", false) })).GetPacket();
+
+            var reader = new SshDataReader(packet);
+            Assert.AreEqual((byte)60, reader.ReadByte());
+            Assert.AreEqual("n", reader.ReadString(Encoding.UTF8));
+            Assert.AreEqual("i", reader.ReadString(Encoding.UTF8));
+            Assert.AreEqual("", reader.ReadString(Encoding.UTF8));
+            Assert.AreEqual(1u, reader.ReadUInt32());
+            Assert.AreEqual("Code: ", reader.ReadString(Encoding.UTF8));
+            Assert.IsFalse(reader.ReadBoolean());
+        }
+
+        [TestMethod]
         public void KeyExchangeXInitMessage_loads_leaving_payload_unparsed()
         {
             var message = new KeyExchangeXInitMessage();
