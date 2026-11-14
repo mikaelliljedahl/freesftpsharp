@@ -46,12 +46,12 @@ public sealed class LdapAuthenticationProvider : IAuthenticationProvider
         }
         catch (TimeoutException)
         {
-            _logger.LogWarning("The directory did not answer the {Request} in time; the login is refused.", request);
+            _logger.LogWarning("The directory did not answer the {Request} in time; the login is refused.", request.ToString());
             return AuthResult.Failure("the directory did not answer in time");
         }
         catch (LdapDirectoryException ex)
         {
-            _logger.LogWarning("The directory cannot check the {Request}: {Error}", request, ex.Message);
+            _logger.LogWarning("The directory cannot check the {Request}: {Error}", request.ToString(), ex.Message);
             return AuthResult.Failure("the directory cannot be used: " + ex.Message);
         }
     }

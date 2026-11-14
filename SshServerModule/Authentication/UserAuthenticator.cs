@@ -72,7 +72,7 @@ public sealed class UserAuthenticator : IUserAuthenticator
             catch (Exception ex)
             {
                 // Fail closed. The request text has no password.
-                _logger.LogError(ex, "The authentication provider {Provider} failed for the {Request}; the login is refused.", provider.Name, request);
+                _logger.LogError(ex, "The authentication provider {Provider} failed for the {Request}; the login is refused.", provider.Name, request.ToString());
                 result = AuthResult.Failure($"the authentication provider {provider.Name} failed");
             }
 

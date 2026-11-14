@@ -74,7 +74,7 @@ public sealed class HttpAuthHookProvider : IAuthenticationProvider
                         return Refuse(request, "the answer is not a valid user: " + ex.Message);
                     }
                 default:
-                    _logger.LogInformation("The authentication hook refused the {Request}: HTTP {Status}.", request, (int)response.StatusCode);
+                    _logger.LogInformation("The authentication hook refused the {Request}: HTTP {Status}.", request.ToString(), (int)response.StatusCode);
                     return AuthResult.Failure($"the authentication hook answered HTTP {(int)response.StatusCode}");
             }
         }
@@ -90,7 +90,7 @@ public sealed class HttpAuthHookProvider : IAuthenticationProvider
 
     private AuthResult Refuse(AuthRequest request, string reason)
     {
-        _logger.LogWarning("The {Request} is refused: {Reason}.", request, reason);
+        _logger.LogWarning("The {Request} is refused: {Reason}.", request.ToString(), reason);
         return AuthResult.Failure(reason);
     }
 
