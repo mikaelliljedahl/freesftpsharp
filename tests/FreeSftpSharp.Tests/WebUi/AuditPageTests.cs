@@ -41,16 +41,16 @@ public sealed class AuditPageTests : AdminUiComponentContext
         var page = Render<AuditPage>();
         page.WaitForAssertion(() => Assert.Equal("4", page.Find("#audit-count").TextContent));
 
-        page.Find("#filter-user").Change("ALICE");
-        page.Find("#filter-from").Change(DateOnly.FromDateTime(Today).ToString("yyyy-MM-dd"));
-        page.Find("#filter-type").Change("Upload");
-        page.Find("#audit-filter").Submit();
+        page.Change("#filter-user", "ALICE");
+        page.Change("#filter-from", DateOnly.FromDateTime(Today).ToString("yyyy-MM-dd"));
+        page.Change("#filter-type", "Upload");
+        page.Submit("#audit-filter");
 
         page.WaitForAssertion(() => Assert.Equal("1", page.Find("#audit-count").TextContent));
         Assert.Contains("Error", page.Find("#audit-table tbody tr").TextContent);
 
-        page.Find("#filter-status").Change("Ok");
-        page.Find("#audit-filter").Submit();
+        page.Change("#filter-status", "Ok");
+        page.Submit("#audit-filter");
         page.WaitForAssertion(() => Assert.NotNull(page.Find("#no-audit-entries")));
     }
 
@@ -61,9 +61,9 @@ public sealed class AuditPageTests : AdminUiComponentContext
         Add("Upload", "bob", Today);
         var save = JSInterop.SetupVoid("BlazorDownloadFile", _ => true);
         var page = Render<AuditPage>();
-        page.Find("#filter-user").Change("bob");
+        page.Change("#filter-user", "bob");
 
-        page.Find("#export-audit").Click();
+        page.Click("#export-audit");
 
         var call = Assert.Single(save.Invocations);
         Assert.StartsWith("audit-", (string)call.Arguments[0]!);

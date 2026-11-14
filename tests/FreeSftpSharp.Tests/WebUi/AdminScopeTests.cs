@@ -113,12 +113,12 @@ public sealed class AdminScopeTests : AdminUiComponentContext
         SignInAsTenantA();
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("carol");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#new-password").Change("long-enough-1");
-        page.Find("#confirm-password").Change("long-enough-1");
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "carol");
+        page.Change("#root-directory", _root.Path);
+        page.Change("#new-password", "long-enough-1");
+        page.Change("#confirm-password", "long-enough-1");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("carol")), SaveTimeout);
         Assert.Equal(_tenantA, Repository.GetUser("carol").RoleId);
@@ -274,13 +274,13 @@ public sealed class AdminScopeTests : AdminUiComponentContext
     {
         var page = Render<Admins>();
 
-        page.Find("#add-admin").Click();
-        page.Find("#admin-username").Change("helper");
-        page.Find("#admin-password").Change("long-enough-1");
-        page.Find("#admin-confirm-password").Change("long-enough-1");
-        page.Find("#admin-scope").Change(_tenantA.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        page.Find("#perm-ManageUsers").Change(true);
-        page.Find("#admin-form").Submit();
+        page.Click("#add-admin");
+        page.Change("#admin-username", "helper");
+        page.Change("#admin-password", "long-enough-1");
+        page.Change("#admin-confirm-password", "long-enough-1");
+        page.Change("#admin-scope", _tenantA.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        page.Change("#perm-ManageUsers", true);
+        page.Submit("#admin-form");
 
         page.WaitForAssertion(() => Assert.NotNull(AdminStore.GetAdminAsync("helper", CancellationToken.None).Result), SaveTimeout);
         var admin = (await AdminStore.GetAdminAsync("helper", CancellationToken.None))!;
@@ -296,7 +296,7 @@ public sealed class AdminScopeTests : AdminUiComponentContext
         SignInAs(AdminPermissions.ManageAdmins | AdminPermissions.ManageUsers, name: "manager");
         var page = Render<Admins>();
 
-        page.Find("#add-admin").Click();
+        page.Click("#add-admin");
 
         Assert.False(page.Find("#perm-ManageUsers").HasAttribute("disabled"));
         Assert.True(page.Find("#perm-SuperAdmin").HasAttribute("disabled"));
@@ -308,14 +308,15 @@ public sealed class AdminScopeTests : AdminUiComponentContext
     {
         var page = Render<Roles>();
 
-        page.Find("#role-name").Change("tenant-c");
-        page.Find("#role-form").Submit();
+        page.Change("#role-name", "tenant-c");
+        page.Submit("#role-form");
         page.WaitForAssertion(() => Assert.Contains("tenant-c", page.Find("#role-list").TextContent));
 
-        var row = page.FindAll(".role-row").Single(r => r.TextContent.Contains("tenant-c"));
-        row.QuerySelector(".select-role")!.Click();
-        page.Find("#role-add-user").Change("no-role");
-        page.Find("#role-add-user-button").Click();
+        PageEvents.Trigger(
+            () => page.FindAll(".role-row").Single(r => r.TextContent.Contains("tenant-c")).QuerySelector(".select-role")!,
+            e => e.Click());
+        page.Change("#role-add-user", "no-role");
+        page.Click("#role-add-user-button");
 
         var roleId = (await AdminStore.ListRolesAsync(CancellationToken.None)).Single(r => r.Name == "tenant-c").Id;
         Assert.Equal(roleId, Repository.GetUser("no-role").RoleId);

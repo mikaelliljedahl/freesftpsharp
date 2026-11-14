@@ -56,16 +56,16 @@ public sealed class GroupsPageTests : AdminUiComponentContext
     {
         var page = Render<Groups>();
 
-        page.Find("#add-group").Click();
-        page.Find("#group-name").Change("readers");
-        page.Find("#group-description").Change("read only");
-        page.Find("#group-set-permissions").Change(true);
+        page.Click("#add-group");
+        page.Change("#group-name", "readers");
+        page.Change("#group-description", "read only");
+        page.Change("#group-set-permissions", true);
         foreach (var column in FxSshSftpServer.Models.PermissionRow.Columns.Where(c => c.Flag is not (FilePermissions.List or FilePermissions.Download)))
-            page.Find($"#permission-0-{column.Flag}").Change(false);
-        page.Find("#group-restrict-methods").Change(true);
-        page.Find("#group-allow-password").Change(false);
-        page.Find("#group-allowed-ips").Change("10.0.0.0/8");
-        page.Find("#group-form").Submit();
+            page.Change($"#permission-0-{column.Flag}", false);
+        page.Change("#group-restrict-methods", true);
+        page.Change("#group-allow-password", false);
+        page.Change("#group-allowed-ips", "10.0.0.0/8");
+        page.Submit("#group-form");
 
         var group = Assert.Single(Repository.GetGroups());
         Assert.Equal(("readers", "read only"), (group.Name, group.Description));
@@ -82,19 +82,19 @@ public sealed class GroupsPageTests : AdminUiComponentContext
     {
         var page = Render<Groups>();
 
-        page.Find("#add-group").Click();
-        page.Find("#group-name").Change("limited");
-        page.Find("#quota-size").Change("2");
-        page.Find("#quota-total").Change("100");
-        page.Find("#bandwidth-upload").Change("128");
-        page.Find("#group-form").Submit();
+        page.Click("#add-group");
+        page.Change("#group-name", "limited");
+        page.Change("#quota-size", "2");
+        page.Change("#quota-total", "100");
+        page.Change("#bandwidth-upload", "128");
+        page.Submit("#group-form");
 
         var group = Assert.Single(Repository.GetGroups());
         Assert.Equal(2L * 1024 * 1024, group.DiskQuota!.MaxSizeBytes);
         Assert.Equal(100L * 1024 * 1024, group.TransferQuota!.MaxTotalBytes);
         Assert.Equal(128, group.Bandwidth!.UploadKiBPerSecond);
 
-        page.Find(".edit-group").Click();
+        page.Click(".edit-group");
         Assert.Equal("2", page.Find("#quota-size").GetAttribute("value"));
     }
 
@@ -103,16 +103,16 @@ public sealed class GroupsPageTests : AdminUiComponentContext
     {
         var page = Render<Groups>();
 
-        page.Find("#add-group").Click();
-        page.Find("#group-name").Change("empty");
-        page.Find("#group-allowed-ips").Change("10.0.0.0/40");
-        page.Find("#group-form").Submit();
+        page.Click("#add-group");
+        page.Change("#group-name", "empty");
+        page.Change("#group-allowed-ips", "10.0.0.0/40");
+        page.Submit("#group-form");
 
         Assert.Contains("Not a valid network: 10.0.0.0/40", page.Find("#group-problems").TextContent);
         Assert.Empty(Repository.GetGroups());
 
-        page.Find("#group-allowed-ips").Change("");
-        page.Find("#group-form").Submit();
+        page.Change("#group-allowed-ips", "");
+        page.Submit("#group-form");
 
         var group = Assert.Single(Repository.GetGroups());
         Assert.Null(group.Permissions);
@@ -130,8 +130,8 @@ public sealed class GroupsPageTests : AdminUiComponentContext
         var page = Render<Groups>();
 
         Assert.Equal("alice, bob", page.Find(".group-members").TextContent);
-        page.Find(".delete-group").Click();
-        page.Find(".confirm-button").Click();
+        page.Click(".delete-group");
+        page.Click(".confirm-button");
 
         Assert.NotNull(Repository.GetGroup(group.Id));
         Assert.Contains("Remove them from the group first", Toasts.Messages.Single().Text);
@@ -145,19 +145,19 @@ public sealed class GroupsPageTests : AdminUiComponentContext
         AddUser("carol");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#primary-group").Change(readers.Id.ToString());
-        page.Find($"#secondary-group-{lan.Id}").Change(true);
+        page.Click(".edit-user");
+        page.Change("#primary-group", readers.Id.ToString());
+        page.Change($"#secondary-group-{lan.Id}", true);
         Assert.True(page.Find("#inherit-permissions").HasAttribute("checked")); // a user without own rules takes those of the groups
         Assert.Empty(page.FindAll("#permission-table"));
         Assert.Contains("group readers", page.Find("#effective-permissions").TextContent);
         Assert.Contains("10.0.0.0/8", page.Find("#effective-networks").TextContent);
         Assert.Contains("group lan", page.Find("#effective-networks").TextContent);
-        page.Find("#user-enabled").Change(false);
-        page.Find("#user-expires").Change("2027-01-31");
-        page.Find("#user-max-sessions").Change("2");
-        page.Find("#user-description").Change("contractor");
-        page.Find("#user-form").Submit();
+        page.Change("#user-enabled", false);
+        page.Change("#user-expires", "2027-01-31");
+        page.Change("#user-max-sessions", "2");
+        page.Change("#user-description", "contractor");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal(readers.Id, Repository.GetUser("carol").PrimaryGroupId), SaveTimeout);
         var user = Repository.GetUser("carol");
@@ -177,12 +177,12 @@ public sealed class GroupsPageTests : AdminUiComponentContext
         AddUser("dave", u => u.Permissions = new() { ["/"] = FilePermissions.All, ["/in"] = FilePermissions.Upload });
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#primary-group").Change(readers.Id.ToString());
+        page.Click(".edit-user");
+        page.Change("#primary-group", readers.Id.ToString());
 
         Assert.False(page.Find("#inherit-permissions").HasAttribute("checked"));
         Assert.Contains("user", page.Find("#effective-permissions .origin").TextContent);
-        page.Find("#user-form").Submit();
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal(readers.Id, Repository.GetUser("dave").PrimaryGroupId), SaveTimeout);
         Assert.Equal(FilePermissions.Upload, Repository.GetUser("dave").Permissions!["/in"]);
@@ -198,12 +198,12 @@ public sealed class GroupsPageTests : AdminUiComponentContext
         });
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("erin");
-        page.Find("#root-directory").Change("");
-        page.Find("#primary-group").Change(homes.Id.ToString());
+        page.Click("#add-user");
+        page.Change("#username", "erin");
+        page.Change("#root-directory", "");
+        page.Change("#primary-group", homes.Id.ToString());
         Assert.Contains("group homes", page.Find("#effective-storage").TextContent);
-        page.Find("#user-form").Submit();
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("erin")), SaveTimeout);
         Assert.Null(Repository.GetUser("erin").Storage);
@@ -252,10 +252,10 @@ public sealed class GroupsPageTests : AdminUiComponentContext
         SignInAs(AdminPermissions.ManageUsers, tenantA, "tenant-a-admin");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
         Assert.Contains("outside your scope", page.Find("#primary-group").TextContent);
-        page.Find($"#secondary-group-{mine.Id}").Change(true);
-        page.Find("#user-form").Submit();
+        page.Change($"#secondary-group-{mine.Id}", true);
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal([mine.Id], Repository.GetUser("a-user").SecondaryGroupIds), SaveTimeout);
         Assert.Equal(global.Id, Repository.GetUser("a-user").PrimaryGroupId);

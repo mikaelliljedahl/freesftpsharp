@@ -24,8 +24,8 @@ public sealed class SharesPageTests : AdminUiComponentContext
         var page = Render<SharesPage>();
         Assert.Equal("2", page.Find("#admin-share-count").TextContent);
 
-        page.Find($"tr[data-share-id='{revoked.Id}'] .revoke-share").Click();
-        page.Find(".confirm-button").Click();
+        page.Click($"tr[data-share-id='{revoked.Id}'] .revoke-share");
+        page.Click(".confirm-button");
 
         Assert.Null(await Shares.GetAsync(revoked.Id, CancellationToken.None));
         Assert.NotNull(await Shares.GetAsync(kept.Id, CancellationToken.None));
@@ -39,10 +39,10 @@ public sealed class SharesPageTests : AdminUiComponentContext
         var page = Render<ServerSettingsPage>();
         Assert.False(page.Find("#shares-enabled").HasAttribute("checked"));
 
-        page.Find("#shares-enabled").Change(true);
-        page.Find("#share-max-lifetime").Change("30");
-        page.Find("#share-require-password").Change(true);
-        page.Find("#server-settings-form").Submit();
+        page.Change("#shares-enabled", true);
+        page.Change("#share-max-lifetime", "30");
+        page.Change("#share-require-password", true);
+        page.Submit("#server-settings-form");
 
         Assert.Equal(new ShareSettings { Enabled = true, MaxLifetimeDays = 30, RequirePassword = true }, Repository.ServerSettings.Shares);
     }

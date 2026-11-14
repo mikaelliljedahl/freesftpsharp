@@ -50,15 +50,15 @@ public sealed class StoragePagesTests : AdminUiComponentContext
     {
         AddUser("alice");
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
-        page.Find("#user-storage-provider").Change("s3");
+        page.Change("#user-storage-provider", "s3");
         Assert.Empty(page.FindAll("#root-directory"));
-        page.Find("#user-storage-Bucket").Change("files");
-        page.Find("#user-storage-Region").Change("eu-north-1");
-        page.Find("#user-storage-AccessKey").Change("AKIAUI");
-        page.Find("#user-storage-SecretKey").Change("ui-secret-value");
-        page.Find("#user-form").Submit();
+        page.Change("#user-storage-Bucket", "files");
+        page.Change("#user-storage-Region", "eu-north-1");
+        page.Change("#user-storage-AccessKey", "AKIAUI");
+        page.Change("#user-storage-SecretKey", "ui-secret-value");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal("s3", Repository.GetUser("alice").Storage?.Provider), SaveTimeout);
         var stored = Repository.GetUser("alice").Storage!;
@@ -69,7 +69,7 @@ public sealed class StoragePagesTests : AdminUiComponentContext
         page.WaitForAssertion(() => Assert.Equal("", page.Find("#user-storage-SecretKey").GetAttribute("value") ?? ""), SaveTimeout);
         Assert.DoesNotContain("ui-secret-value", page.Markup);
         Assert.Contains("A value is stored", page.Find("#user-storage-SecretKey").GetAttribute("placeholder"));
-        page.Find(".card-header .btn-close").Click(); // the list shows the storage column only without the form
+        page.Click(".card-header .btn-close"); // the list shows the storage column only without the form
         Assert.Contains("S3 (AWS or S3-compatible)", page.Find("#user-table").TextContent);
     }
 
@@ -78,10 +78,10 @@ public sealed class StoragePagesTests : AdminUiComponentContext
     {
         AddUser("bob", Codec.Encode("s3", new S3StorageOptions { Bucket = "b", AccessKey = "AK", SecretKey = "keep-me" }));
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
-        page.Find("#user-storage-Bucket").Change("b2");
-        page.Find("#user-form").Submit();
+        page.Change("#user-storage-Bucket", "b2");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal("b2", ((S3StorageOptions)Codec.Decode(Repository.GetUser("bob").Storage!)).Bucket), SaveTimeout);
         Assert.Equal("keep-me", ((S3StorageOptions)Codec.Decode(Repository.GetUser("bob").Storage!)).SecretKey);
@@ -92,11 +92,11 @@ public sealed class StoragePagesTests : AdminUiComponentContext
     {
         AddUser("carol");
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
-        page.Find("#user-storage-provider").Change("s3");
-        page.Find("#user-storage-AccessKey").Change("only-the-access-key");
-        page.Find("#user-form").Submit();
+        page.Change("#user-storage-provider", "s3");
+        page.Change("#user-storage-AccessKey", "only-the-access-key");
+        page.Submit("#user-form");
 
         Assert.Contains("The bucket is not set.", page.Find("#user-storage-problems").TextContent);
         Assert.Contains("access key", page.Find("#user-storage-problems").TextContent);
@@ -108,11 +108,11 @@ public sealed class StoragePagesTests : AdminUiComponentContext
     {
         AddUser("dave", Codec.Encode("local", new LocalDiskStorageOptions(_root.Path)));
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
-        page.Find("#user-storage-provider").Change("");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#user-form").Submit();
+        page.Change("#user-storage-provider", "");
+        page.Change("#root-directory", _root.Path);
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Null(Repository.GetUser("dave").Storage), SaveTimeout);
     }
@@ -123,16 +123,16 @@ public sealed class StoragePagesTests : AdminUiComponentContext
         File.WriteAllText(Path.Combine(_root.Path, "x.txt"), "x");
         AddUser("erin");
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
-        page.Find("#user-storage-provider").Change("local");
-        page.Find("#user-storage-RootDirectory").Change(_root.Path);
+        page.Click(".edit-user");
+        page.Change("#user-storage-provider", "local");
+        page.Change("#user-storage-RootDirectory", _root.Path);
 
-        page.Find("#user-storage-test").Click();
+        page.Click("#user-storage-test");
 
         page.WaitForAssertion(() => Assert.Contains("The storage works", page.Find("#user-storage-test-result").TextContent), SaveTimeout);
 
-        page.Find("#user-storage-RootDirectory").Change(Path.Combine(_root.Path, "missing"));
-        page.Find("#user-storage-test").Click();
+        page.Change("#user-storage-RootDirectory", Path.Combine(_root.Path, "missing"));
+        page.Click("#user-storage-test");
         page.WaitForAssertion(() => Assert.Contains("does not work", page.Find("#user-storage-test-result").TextContent), SaveTimeout);
     }
 
@@ -142,17 +142,17 @@ public sealed class StoragePagesTests : AdminUiComponentContext
         var folder = AddFolder("shared");
         AddUser("frank");
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
-        page.Find("#add-mount").Click();
+        page.Click("#add-mount");
         Assert.Equal("/shared", page.Find("#mount-path-0").GetAttribute("value"));
-        page.Find("#mount-path-0").Change("/");
-        page.Find("#user-form").Submit();
+        page.Change("#mount-path-0", "/");
+        page.Submit("#user-form");
         Assert.Contains("cannot be mounted at /", page.Find("#mount-problems").TextContent);
         Assert.Empty(Repository.GetUser("frank").VirtualFolders);
 
-        page.Find("#mount-path-0").Change("/in/shared/");
-        page.Find("#user-form").Submit();
+        page.Change("#mount-path-0", "/in/shared/");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Single(Repository.GetUser("frank").VirtualFolders), SaveTimeout);
         var mount = Repository.GetUser("frank").VirtualFolders.Single();
@@ -164,7 +164,7 @@ public sealed class StoragePagesTests : AdminUiComponentContext
     {
         AddUser("gina");
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
         Assert.NotNull(page.Find("#no-folders"));
         Assert.Empty(page.FindAll("#add-mount"));
@@ -176,22 +176,22 @@ public sealed class StoragePagesTests : AdminUiComponentContext
         var page = Render<VirtualFolders>();
         Assert.NotNull(page.Find("#no-folders"));
 
-        page.Find("#add-folder").Click();
-        page.Find("#folder-name").Change("incoming");
-        page.Find("#folder-description").Change("Uploads of the partners");
-        page.Find("#folder-storage-provider").Change("s3");
-        page.Find("#folder-storage-Bucket").Change("partners");
-        page.Find("#folder-storage-KeyPrefix").Change("incoming");
-        page.Find("#folder-storage-Region").Change("eu-north-1");
-        page.Find("#folder-form").Submit();
+        page.Click("#add-folder");
+        page.Change("#folder-name", "incoming");
+        page.Change("#folder-description", "Uploads of the partners");
+        page.Change("#folder-storage-provider", "s3");
+        page.Change("#folder-storage-Bucket", "partners");
+        page.Change("#folder-storage-KeyPrefix", "incoming");
+        page.Change("#folder-storage-Region", "eu-north-1");
+        page.Submit("#folder-form");
 
         var folder = Assert.Single(Repository.GetVirtualFolders());
         Assert.Equal(("incoming", "Uploads of the partners", "s3"), (folder.Name, folder.Description, folder.Storage.Provider));
         Assert.Equal("incoming", ((S3StorageOptions)Codec.Decode(folder.Storage)).KeyPrefix);
         Assert.Contains("incoming", page.Find("#folder-table").TextContent);
 
-        page.Find("#folder-name").Change("incoming-2");
-        page.Find("#folder-form").Submit();
+        page.Change("#folder-name", "incoming-2");
+        page.Submit("#folder-form");
         Assert.Equal("incoming-2", Repository.GetVirtualFolder(folder.Id)!.Name);
     }
 
@@ -201,15 +201,15 @@ public sealed class StoragePagesTests : AdminUiComponentContext
         AddFolder("taken");
         var page = Render<VirtualFolders>();
 
-        page.Find("#add-folder").Click();
-        page.Find("#folder-storage-provider").Change("local");
-        page.Find("#folder-form").Submit();
+        page.Click("#add-folder");
+        page.Change("#folder-storage-provider", "local");
+        page.Submit("#folder-form");
         Assert.Contains("Enter a name.", page.Find("#folder-name-problem").TextContent);
         Assert.Contains("root directory is not set", page.Find("#folder-storage-problems").TextContent);
 
-        page.Find("#folder-name").Change("TAKEN");
-        page.Find("#folder-storage-RootDirectory").Change(_root.Path);
-        page.Find("#folder-form").Submit();
+        page.Change("#folder-name", "TAKEN");
+        page.Change("#folder-storage-RootDirectory", _root.Path);
+        page.Submit("#folder-form");
         Assert.Contains("already used", page.Find("#folder-name-problem").TextContent);
         Assert.Single(Repository.GetVirtualFolders());
     }
@@ -222,9 +222,9 @@ public sealed class StoragePagesTests : AdminUiComponentContext
         var page = Render<VirtualFolders>();
         Assert.Contains("henry", page.Find("#folder-table").TextContent);
 
-        page.Find(".delete-folder").Click();
+        page.Click(".delete-folder");
         Assert.Contains("henry", page.Find(".modal").TextContent);
-        page.Find(".confirm-button").Click();
+        page.Click(".confirm-button");
 
         Assert.Empty(Repository.GetVirtualFolders());
         Assert.Empty(Repository.GetUser("henry").VirtualFolders);
