@@ -1,0 +1,554 @@
+@page "/eventrules"
+@attribute [Authorize(Policy = AdminPolicies.ManageEvents)]
+@using System.Globalization
+@using System.Threading
+@using SshServer.EventRules
+@using SshServer.Interfaces.EventRules
+@using SshServer.Interfaces.Events
+@inject EventRuleAdministrationService RuleService
+@inject CurrentAdmin Current
+@inject ToastService Toasts
+
+<PageTitle>Event rules - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Event rules</h1>
+        <p class="text-body-secondary mb-0">
+            Automations without code: when a file arrives, on a schedule or on demand, run actions such as move, copy,
+            email, webhook or data retention. A rule on a Pre* event runs before the operation and refuses it when an
+            action fails. Times are UTC.
+        </p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-rule" disabled="@(!RuleService.IsEnabled)"><i class="bi bi-plus-lg"></i> Add rule</button>
+</div>
+
+@if (!RuleService.IsEnabled)
+{
+    <div class="alert alert-info" id="rules-disabled">
+        Event rules need the SQLite settings database. They are off with <code>Settings:Provider=LiteDb</code>.
+    </div>
+}
+else
+{
+    <div class="small text-body-secondary mb-3" id="rules-configuration">
+        @if (!RuleService.IsEmailConfigured)
+        {
+            <div id="email-not-configured">Email actions are skipped: no mail server is configured (<code>EventRules:Smtp:Host</code>, <code>EventRules:Smtp:From</code>).</div>
+        }
+        @if (!RuleService.AllowCommands)
+        {
+            <div id="commands-disabled">Command actions are off. The operator turns them on with <code>EventRules:AllowCommands=true</code> and <code>EventRules:AllowedCommands</code>.</div>
+        }
+    </div>
+}
+
+<div class="row g-4">
+    <div class="@(form is null ? "col-12" : "col-xl-5")">
+        <div class="card">
+            <div class="card-header fw-semibold"><i class="bi bi-lightning-charge"></i> Rules <span class="badge text-bg-secondary">@rules.Count</span></div>
+            @if (rules.Count == 0)
+            {
+                <div class="card-body text-body-secondary" id="no-rules">No rules. Nothing runs until you add one.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="rule-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                @if (form is null)
+                                {
+                                    <th class="d-none d-md-table-cell">Trigger</th>
+                                    <th class="d-none d-lg-table-cell">Actions</th>
+                                }
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rule in rules)
+                            {
+                                <tr class="@(selected?.Id == rule.Id ? "table-active" : "")">
+                                    <td>
+                                        @rule.Name
+                                        @if (!rule.Enabled)
+                                        {
+                                            <span class="badge text-bg-secondary ms-1">disabled</span>
+                                        }
+                                    </td>
+                                    @if (form is null)
+                                    {
+                                        <td class="d-none d-md-table-cell small">
+                                            <span class="badge text-bg-light border">@rule.Trigger</span>
+                                            <span class="font-monospace-sm">@EventRuleForm.DescribeTrigger(rule)</span>
+                                        </td>
+                                        <td class="d-none d-lg-table-cell small">@string.Join(" → ", rule.Actions.Select(a => a.Type))</td>
+                                    }
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-secondary show-runs" title="Execution history" aria-label="Runs of @rule.Name" @onclick="() => ShowRunsAsync(rule)"><i class="bi bi-clock-history"></i></button>
+                                            @if (rule.Trigger != EventRuleTrigger.Event)
+                                            {
+                                                <button type="button" class="btn btn-outline-secondary run-rule" title="Run now" aria-label="Run @rule.Name now" disabled="@running" @onclick="() => RunNowAsync(rule)"><i class="bi bi-play"></i></button>
+                                            }
+                                            <button type="button" class="btn btn-outline-primary edit-rule" title="Edit" aria-label="Edit @rule.Name" @onclick="() => Edit(rule)"><i class="bi bi-pencil"></i></button>
+                                            <button type="button" class="btn btn-outline-danger delete-rule" title="Delete" aria-label="Delete @rule.Name" @onclick="() => AskDelete(rule)"><i class="bi bi-trash"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (form is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>@(form.IsNew ? "New rule" : $"Edit {form.Name}")</span>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseForm"></button>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="form" OnSubmit="SaveAsync" FormName="rule-form" id="rule-form">
+                        @if (errors.Count > 0)
+                        {
+                            <div class="alert alert-danger" id="rule-errors">
+                                <ul class="mb-0">
+                                    @foreach (var error in errors)
+                                    {
+                                        <li>@error</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" for="rule-name">Name</label>
+                                <InputText id="rule-name" class="form-control" @bind-Value="form.Name" autocomplete="off" />
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="rule-trigger">Trigger</label>
+                                <InputSelect id="rule-trigger" class="form-select" @bind-Value="form.Trigger">
+                                    <option value="@EventRuleTrigger.Event">On events</option>
+                                    <option value="@EventRuleTrigger.Schedule">On a schedule</option>
+                                    <option value="@EventRuleTrigger.OnDemand">On demand (Run now)</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="rule-description">Description</label>
+                                <InputText id="rule-description" class="form-control" @bind-Value="form.Description" />
+                            </div>
+                        </div>
+
+                        @if (form.Trigger == EventRuleTrigger.Event)
+                        {
+                            <fieldset class="border rounded p-3 mb-3">
+                                <legend class="float-none w-auto px-2 fs-6 mb-0">Events</legend>
+                                <div class="small text-body-secondary mb-2">A rule on Pre* events cannot have other events.</div>
+                                <div class="row g-2">
+                                    @foreach (var group in EventNames.Groups)
+                                    {
+                                        <div class="col-sm-6 col-lg-3">
+                                            <div class="fw-semibold small mb-1">@group.Category</div>
+                                            @foreach (var name in group.Names)
+                                            {
+                                                var id = "event-" + name.Replace('.', '-');
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="@id" checked="@form.EventTypes.Contains(name)"
+                                                           @onchange="e => Toggle(form.EventTypes, name, (bool)e.Value)" />
+                                                    <label class="form-check-label small" for="@id">@name[(name.IndexOf('.') + 1)..]</label>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </fieldset>
+                        }
+                        else if (form.Trigger == EventRuleTrigger.Schedule)
+                        {
+                            <fieldset class="border rounded p-3 mb-3">
+                                <legend class="float-none w-auto px-2 fs-6 mb-0">Schedule</legend>
+                                <div class="row g-3">
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="rule-cron">Cron expression</label>
+                                        <InputText id="rule-cron" class="form-control font-monospace" @bind-Value="form.CronExpression" />
+                                        <div class="form-text">Minute hour day month weekday, for example <code>0 3 * * *</code> (every day at 03:00) or <code>@@hourly</code>.</div>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="rule-timezone">Time zone</label>
+                                        <InputText id="rule-timezone" class="form-control" @bind-Value="form.TimeZone" placeholder="UTC" />
+                                        <div class="form-text">An IANA id such as Europe/Stockholm. Empty: UTC.</div>
+                                    </div>
+                                </div>
+                            </fieldset>
+                        }
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Conditions</legend>
+                            <div class="row g-3">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="rule-users">Users</label>
+                                    <InputTextArea id="rule-users" class="form-control" rows="2" @bind-Value="form.Users" placeholder="every user" />
+                                    <div class="form-text">One per line; <code>*</code> and <code>?</code> are wildcards. A scheduled rule runs its file actions for each of these users.</div>
+                                </div>
+                                @if (form.Trigger == EventRuleTrigger.Event)
+                                {
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="rule-path">Path</label>
+                                        <InputText id="rule-path" class="form-control font-monospace" @bind-Value="form.PathGlob" placeholder="/incoming/*" />
+                                        <div class="form-text"><code>*</code> within a directory, <code>**</code> over directories. Set: only file events.</div>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label class="form-label" for="rule-protocols">Protocols</label>
+                                        <InputText id="rule-protocols" class="form-control" @bind-Value="form.Protocols" placeholder="every protocol" />
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label class="form-label" for="rule-min-size">Smallest size (bytes)</label>
+                                        <InputNumber id="rule-min-size" class="form-control" @bind-Value="form.MinFileSize" min="0" />
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label class="form-label" for="rule-max-size">Largest size (bytes)</label>
+                                        <InputNumber id="rule-max-size" class="form-control" @bind-Value="form.MaxFileSize" min="0" />
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <div class="form-label">File results</div>
+                                        @foreach (var status in Enum.GetNames<FileEventStatus>())
+                                        {
+                                            var id = "status-" + status;
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox" id="@id" checked="@form.Statuses.Contains(status)"
+                                                       @onchange="e => Toggle(form.Statuses, status, (bool)e.Value)" />
+                                                <label class="form-check-label small" for="@id">@status</label>
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="rule-object-types">Object types (provider events)</label>
+                                        <InputText id="rule-object-types" class="form-control" @bind-Value="form.ObjectTypes" placeholder="User, Webhook" />
+                                    </div>
+                                }
+                            </div>
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3" id="rule-actions">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Actions</legend>
+                            <div class="small text-body-secondary mb-2">
+                                In this order. A failure action runs only when another action failed. The file actions work on the storage
+                                of the user, without its per-path permissions.
+                            </div>
+                            @for (var index = 0; index < form.Actions.Count; index++)
+                            {
+                                var position = index;
+                                var action = form.Actions[position];
+                                var plugin = RuleService.FindAction(action.Type);
+                                <div class="border rounded p-2 mb-2 rule-action">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="fw-semibold">@(position + 1). @(plugin?.DisplayName ?? action.Type)</span>
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-secondary" title="Up" aria-label="Move up" disabled="@(position == 0)" @onclick="() => Move(position, -1)"><i class="bi bi-arrow-up"></i></button>
+                                            <button type="button" class="btn btn-outline-secondary" title="Down" aria-label="Move down" disabled="@(position == form.Actions.Count - 1)" @onclick="() => Move(position, 1)"><i class="bi bi-arrow-down"></i></button>
+                                            <button type="button" class="btn btn-outline-danger remove-action" title="Remove" aria-label="Remove action" @onclick="() => form.Actions.RemoveAt(position)"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    </div>
+                                    @if (plugin is null)
+                                    {
+                                        <div class="text-danger small">This action type is not installed on this server.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="small text-body-secondary mb-2">@plugin.Description</div>
+                                        @foreach (var field in plugin.Fields)
+                                        {
+                                            var id = $"action-{position}-{field.Key}";
+                                            var key = field.Key;
+                                            <div class="mb-2">
+                                                @switch (field.Kind)
+                                                {
+                                                    case EventActionFieldKind.Boolean:
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="@id" checked="@action.Flag(key)" @onchange="e => action.Set(key, e.Value)" />
+                                                            <label class="form-check-label" for="@id">@field.Label</label>
+                                                        </div>
+                                                        break;
+                                                    case EventActionFieldKind.MultilineText:
+                                                        <label class="form-label small" for="@id">@field.Label</label>
+                                                        <textarea class="form-control font-monospace" rows="3" id="@id" value="@action.Value(key)" @onchange="e => action.Set(key, e.Value)"></textarea>
+                                                        break;
+                                                    case EventActionFieldKind.Choice:
+                                                        <label class="form-label small" for="@id">@field.Label</label>
+                                                        <select class="form-select" id="@id" value="@action.Value(key)" @onchange="e => action.Set(key, e.Value)">
+                                                            @if (field.Choices.Count == 0)
+                                                            {
+                                                                <option value="">(none configured)</option>
+                                                            }
+                                                            @foreach (var choice in field.Choices)
+                                                            {
+                                                                <option value="@choice">@choice</option>
+                                                            }
+                                                        </select>
+                                                        break;
+                                                    default:
+                                                        <label class="form-label small" for="@id">@field.Label</label>
+                                                        <input class="form-control @(field.Placeholders ? "font-monospace" : "")" type="@(field.Kind == EventActionFieldKind.Number ? "number" : "text")" id="@id" value="@action.Value(key)" @onchange="e => action.Set(key, e.Value)" />
+                                                        break;
+                                                }
+                                                @if (field.Help is not null)
+                                                {
+                                                    <div class="form-text">@field.Help</div>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                    <div class="d-flex gap-3">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="@($"action-{position}-failure")" checked="@action.IsFailureAction" @onchange="e => action.IsFailureAction = (bool)e.Value" />
+                                            <label class="form-check-label small" for="@($"action-{position}-failure")">Failure action</label>
+                                        </div>
+                                        @if (!action.IsFailureAction)
+                                        {
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="@($"action-{position}-stop")" checked="@action.StopOnFailure" @onchange="e => action.StopOnFailure = (bool)e.Value" />
+                                                <label class="form-check-label small" for="@($"action-{position}-stop")">Stop on failure</label>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            <div class="input-group">
+                                <select class="form-select" id="add-action-type" @bind="newActionType">
+                                    @foreach (var type in RuleService.ActionTypes)
+                                    {
+                                        <option value="@type.Type">@type.DisplayName</option>
+                                    }
+                                </select>
+                                <button type="button" class="btn btn-outline-primary" id="add-action" @onclick="AddAction"><i class="bi bi-plus-lg"></i> Add action</button>
+                            </div>
+                            <details class="small mt-2">
+                                <summary class="text-body-secondary">Placeholders</summary>
+                                <ul class="mb-0">
+                                    @foreach (var (name, description) in EventPlaceholders.Known)
+                                    {
+                                        <li><code>{{@name}}</code>: @description</li>
+                                    }
+                                    <li>Filters: <code>{{Name | urlencode}}</code>, <code>| lower</code>, <code>| upper</code>.</li>
+                                </ul>
+                            </details>
+                        </fieldset>
+
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox id="rule-enabled" class="form-check-input" @bind-Value="form.Enabled" />
+                            <label class="form-check-label" for="rule-enabled">Enabled</label>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                @if (!form.IsNew)
+                                {
+                                    <button type="button" class="btn btn-outline-danger" @onclick="() => AskDelete(rules.First(r => r.Id == form.Id))"><i class="bi bi-trash"></i> Delete</button>
+                                }
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="save-rule"><i class="bi bi-floppy"></i> @(form.IsNew ? "Create rule" : "Save rule")</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (selected is not null)
+    {
+        <div class="col-12">
+            <div class="card" id="runs">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-clock-history"></i> Runs of @selected.Name <span class="small text-body-secondary fw-normal">(newest @EventRuleAdministrationService.RunsPageSize)</span></span>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ShowRunsAsync(selected)" id="refresh-runs"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="() => selected = null"></button>
+                    </div>
+                </div>
+                @if (runs.Count == 0)
+                {
+                    <div class="card-body text-body-secondary" id="no-runs">No runs yet.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0" id="run-table">
+                            <thead>
+                                <tr>
+                                    <th>Started (UTC)</th>
+                                    <th>Trigger</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                    <th class="text-end">ms</th>
+                                    <th>Result</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var run in runs)
+                                {
+                                    <tr>
+                                        <td class="text-nowrap">@run.StartedUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                                        <td>@run.Trigger</td>
+                                        <td>@run.Username</td>
+                                        <td><span class="badge @(run.Status == EventRuleRunStatus.Ok ? "text-bg-success" : "text-bg-danger")">@run.Status</span></td>
+                                        <td class="text-end">@run.DurationMs</td>
+                                        <td><pre class="small mb-0 text-wrap">@run.Message</pre></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete rule" ConfirmText="Delete" OnConfirm="DeleteAsync">
+    Delete the rule <strong>@pendingDelete?.Name</strong> and its execution history?
+</ConfirmDialog>
+
+@code {
+    private List<EventRule> rules = new();
+    private EventRuleForm form;
+    private List<string> errors = new();
+    private EventRule selected;
+    private List<EventRuleRun> runs = new();
+    private EventRule pendingDelete;
+    private ConfirmDialog deleteDialog;
+    private string newActionType;
+    private bool running;
+
+    protected override async Task OnInitializedAsync()
+    {
+        newActionType = RuleService.ActionTypes.FirstOrDefault()?.Type;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => rules = (await RuleService.ListAsync(Current.Actor, CancellationToken.None)).ToList();
+
+    private void StartNew()
+    {
+        form = EventRuleForm.New();
+        errors.Clear();
+    }
+
+    private void Edit(EventRule rule)
+    {
+        form = EventRuleForm.From(rule);
+        errors.Clear();
+    }
+
+    private void CloseForm()
+    {
+        form = null;
+        errors.Clear();
+    }
+
+    private static void Toggle(HashSet<string> set, string name, bool on)
+    {
+        if (on)
+            set.Add(name);
+        else
+            set.Remove(name);
+    }
+
+    private void AddAction()
+    {
+        if (newActionType is not null && RuleService.FindAction(newActionType) is { } plugin)
+            form.Actions.Add(EventRuleActionForm.New(plugin));
+    }
+
+    private void Move(int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= form.Actions.Count)
+            return;
+        (form.Actions[index], form.Actions[target]) = (form.Actions[target], form.Actions[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        var input = form.ToInput();
+        var result = await RuleService.SaveAsync(Current.Actor, input, CancellationToken.None);
+        if (!result.Succeeded)
+        {
+            errors = result.Errors.ToList();
+            return;
+        }
+        Toasts.ShowSuccess($"The rule {input.Name.Trim()} was saved.");
+        await LoadAsync();
+        var saved = rules.FirstOrDefault(r => r.Id == result.Id);
+        form = saved is null ? null : EventRuleForm.From(saved);
+        errors.Clear();
+    }
+
+    private void AskDelete(EventRule rule)
+    {
+        pendingDelete = rule;
+        deleteDialog.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await RuleService.RemoveAsync(Current.Actor, pendingDelete.Id, CancellationToken.None))
+        {
+            Toasts.ShowSuccess($"The rule {pendingDelete.Name} was deleted.");
+            if (form?.Id == pendingDelete.Id)
+                form = null;
+            if (selected?.Id == pendingDelete.Id)
+                selected = null;
+        }
+        else
+        {
+            Toasts.ShowError($"The rule {pendingDelete.Name} could not be deleted.");
+        }
+        await LoadAsync();
+    }
+
+    private async Task RunNowAsync(EventRule rule)
+    {
+        running = true;
+        try
+        {
+            var result = await RuleService.RunNowAsync(Current.Actor, rule.Id, CancellationToken.None);
+            if (result is null)
+            {
+                Toasts.ShowError($"The rule {rule.Name} cannot run now.");
+            }
+            else if (result.Count == 0)
+            {
+                Toasts.ShowWarning($"The rule {rule.Name} has file actions, and no user matches its conditions.");
+            }
+            else if (result.All(r => r.Status == EventRuleRunStatus.Ok))
+            {
+                Toasts.ShowSuccess($"The rule {rule.Name} ran ({result.Count} runs).");
+            }
+            else
+            {
+                Toasts.ShowError($"The rule {rule.Name} failed. See its runs.");
+            }
+        }
+        finally
+        {
+            running = false;
+        }
+        await ShowRunsAsync(rule);
+    }
+
+    private async Task ShowRunsAsync(EventRule rule)
+    {
+        selected = rule;
+        runs = (await RuleService.ListRunsAsync(Current.Actor, rule.Id, CancellationToken.None)).ToList();
+    }
+}

@@ -80,6 +80,7 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
 | Audit (`/audit`) | The audit log: uploads, downloads, deletes, renames, directories, logins and failed logins, bans, changes of users and settings, with user, client address, path, size, duration and status; filters (user, type, status, date range) and a CSV export |
 | Webhooks (`/webhooks`) | The webhooks: add, edit and delete (URL, method, secret, static headers, events, user and path filters, synchronous or not, fail open, timeout); "Send test event"; the deliveries of each webhook with status, attempts and the start of the answer, and "Redeliver" |
+| Event rules (`/eventrules`) | The event rules: add, edit and delete (trigger on events, a cron schedule or on demand; user, path, protocol, size and result conditions; an ordered list of actions with stop on failure and failure actions); "Run now"; the execution history of each rule |
 | Admins (`/admins`) | The administrators: add, edit and delete; permissions, scope role, allowed networks, enabled, "must change the password at the next login" |
 | Roles (`/roles`) | The scope roles: add and delete roles, and add users to a role or remove them |
 | Change password (`/ChangePassword`) | The signed-in administrator sets a new password (with the current one) |
@@ -139,7 +140,7 @@ refused on the server also for a direct call.
 | --- | --- |
 | `SuperAdmin` | Everything, also every other permission |
 | `ManageUsers` | The Users page: add, change and delete SFTP users |
-| `ManageEvents` | The Webhooks page (later also event rules) |
+| `ManageEvents` | The Webhooks and Event rules pages |
 | `ManageGroups` | The Groups page: add, change and delete groups (a user manager may read them to give them to users) |
 | `ManageFolders` | The Virtual folders page |
 | `ViewConnections` | The Connections page |
@@ -665,6 +666,16 @@ An asynchronous webhook gets each event through an outbox in the settings databa
 with the `message` of the answer), and an error or a timeout refuses it unless the webhook is set to fail open.
 The payload, the signature check for a receiver and the options (`Webhooks:AllowInsecureWebhooks`,
 `Webhooks:DeliveryRetentionDays`, `Webhooks:MaxConcurrentDeliveries`) are in [docs/WEBHOOKS.md](docs/WEBHOOKS.md).
+
+### Event rules
+
+An event rule automates the server without code: "on an upload to `/incoming/*`, move the file to
+`/processed/{{Name}}` and send an email", or "every night at 03:00 remove the files older than 30 days in `/tmp`".
+Add rules on the Event rules page; nothing runs until you do. The actions are move, copy, delete, create directories,
+check that files exist, compress to zip, data retention, email (SMTP in `EventRules:Smtp`), a webhook of the Webhooks
+page, and a command, which is off unless the operator sets `EventRules:AllowCommands=true` and lists the executables
+in `EventRules:AllowedCommands`. A rule on a `Pre*` event runs before the operation and refuses it when an action fails.
+Triggers, conditions, placeholders and options are in [docs/EVENT-RULES.md](docs/EVENT-RULES.md).
 
 ### Upgrade from LiteDB (config.db)
 

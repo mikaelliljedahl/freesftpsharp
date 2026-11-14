@@ -37,6 +37,7 @@
     <ProjectReference Include="..\..\SshServer.Observability\SshServer.Observability.csproj" />
     <ProjectReference Include="..\..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
+    <ProjectReference Include="..\..\SshServer.EventRules\SshServer.EventRules.csproj" />
     <ProjectReference Include="..\..\FxSshSftpServer\FxSshSftpServer.csproj" />
     <!-- Built for ZeroConfigStartTests, which starts the real ServerConsoleApp as a process. Not referenced as an assembly. -->
     <ProjectReference Include="..\..\ServerConsoleApp\ServerConsoleApp.csproj" ReferenceOutputAssembly="false" />

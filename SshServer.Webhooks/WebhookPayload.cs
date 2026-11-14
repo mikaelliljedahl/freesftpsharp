@@ -30,7 +30,7 @@ public static class WebhookPayload
         {
             ["event_id"] = eventId.ToString(),
             ["attempt"] = 0,
-            ["event"] = WebhookEventNames.Of(@event),
+            ["event"] = EventNames.Of(@event),
             ["category"] = @event.Category.ToString().ToLowerInvariant(),
             ["action"] = Action(@event),
             ["timestamp"] = (@event.Timestamp - DateTimeOffset.UnixEpoch).Ticks * 100,
@@ -100,6 +100,14 @@ public static class WebhookPayload
     {
         var json = JsonNode.Parse(payload)!.AsObject();
         json["attempt"] = attempt;
+        return json.ToJsonString();
+    }
+
+    /// <summary>The payload with the field <c>rule</c>: the event rule that sent it (#68).</summary>
+    public static string WithRule(string payload, string ruleName)
+    {
+        var json = JsonNode.Parse(payload)!.AsObject();
+        json["rule"] = ruleName;
         return json.ToJsonString();
     }
 

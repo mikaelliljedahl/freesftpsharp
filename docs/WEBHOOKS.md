@@ -24,6 +24,12 @@ same for every attempt) to ignore a repeat. The deliveries page shows each deliv
 start of the last answer (at most 4 KiB); **Redeliver** sends one again. **Send test event** sends a
 `System.WebhookTest` event to one webhook.
 
+## Webhooks for event rules
+
+The **Webhook** action of an event rule ([EVENT-RULES.md](EVENT-RULES.md)) puts the event of the rule in the outbox of
+a webhook, with the field `rule` (the name of the rule) in the payload; the filters of the webhook are not used. A
+webhook with **Only for event rules** gets only these events and none of its own; it cannot be synchronous.
+
 ## Filters
 
 - **Events**: "Category.Type", for example `File.Upload`, `File.FirstUpload`, `Auth.LoginFailed`, `Provider.Update`.

@@ -1,4 +1,4 @@
-using SshServer.Webhooks;
+using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Webhooks;
 

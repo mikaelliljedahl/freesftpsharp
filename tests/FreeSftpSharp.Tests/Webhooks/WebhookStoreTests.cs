@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Admins;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Interfaces.Events;
@@ -105,10 +106,10 @@ public sealed class WebhookStoreTests : IAsyncLifetime
         var protectedSecret = (await _host.Store.GetAsync(id, Ct))!.ProtectedSecret;
         var input = WebhookInput.From((await _host.Store.GetAsync(id, Ct))!);
 
-        Assert.True((await _host.Admin.SaveAsync(input with { TimeoutSeconds = 5 }, Ct)).Succeeded);
+        Assert.True((await _host.Admin.SaveAsync(AdminActor.System, input with { TimeoutSeconds = 5 }, Ct)).Succeeded);
         Assert.Equal(protectedSecret, (await _host.Store.GetAsync(id, Ct))!.ProtectedSecret);
 
-        Assert.True((await _host.Admin.SaveAsync(input with { RemoveSecret = true }, Ct)).Succeeded);
+        Assert.True((await _host.Admin.SaveAsync(AdminActor.System, input with { RemoveSecret = true }, Ct)).Succeeded);
         Assert.Null((await _host.Store.GetAsync(id, Ct))!.ProtectedSecret);
     }
 
@@ -118,10 +119,10 @@ public sealed class WebhookStoreTests : IAsyncLifetime
         var id = await AddAsync("Hook");
         await EnqueueAsync(id);
 
-        var duplicate = await _host.Admin.SaveAsync(new WebhookInput { Name = "HOOK", Url = "https://hooks.example.com/x" }, Ct);
+        var duplicate = await _host.Admin.SaveAsync(AdminActor.System, new WebhookInput { Name = "HOOK", Url = "https://hooks.example.com/x" }, Ct);
         Assert.False(duplicate.Succeeded);
 
-        Assert.True(await _host.Admin.RemoveAsync(id, Ct));
+        Assert.True(await _host.Admin.RemoveAsync(AdminActor.System, id, Ct));
         Assert.Empty(await _host.Store.ListAsync(Ct));
         Assert.Empty(await _host.Store.ListDeliveriesAsync(id, 10, Ct));
     }
