@@ -43,16 +43,16 @@ public sealed class EventRulesPageTests : AdminUiComponentContext, IAsyncLifetim
     public async Task A_new_rule_with_a_move_action_is_created()
     {
         var page = Render<EventRulesPage>();
-        page.Find("#add-rule").Click();
-        page.Find("#rule-name").Change("process incoming");
-        page.Find("#event-File-Upload").Change(true);
-        page.Find("#rule-path").Change("/incoming/*");
-        page.Find("#add-action-type").Change("Move");
-        page.Find("#add-action").Click();
-        page.Find("#action-0-Target").Change("/processed/{{Name}}");
-        page.Find("#action-0-stop").Change(true);
+        page.Click("#add-rule");
+        page.Change("#rule-name", "process incoming");
+        page.Change("#event-File-Upload", true);
+        page.Change("#rule-path", "/incoming/*");
+        page.Change("#add-action-type", "Move");
+        page.Click("#add-action");
+        page.Change("#action-0-Target", "/processed/{{Name}}");
+        page.Change("#action-0-stop", true);
 
-        page.Find("#rule-form").Submit();
+        page.Submit("#rule-form");
 
         page.WaitForAssertion(() => Assert.Contains("process incoming", page.Find("#rule-table").TextContent));
         var stored = Assert.Single(await _host.Store.ListAsync(Ct));
@@ -70,11 +70,11 @@ public sealed class EventRulesPageTests : AdminUiComponentContext, IAsyncLifetim
     public async Task A_refused_rule_shows_the_errors_and_nothing_is_saved()
     {
         var page = Render<EventRulesPage>();
-        page.Find("#add-rule").Click();
-        page.Find("#rule-name").Change("no actions");
-        page.Find("#event-File-Upload").Change(true);
+        page.Click("#add-rule");
+        page.Change("#rule-name", "no actions");
+        page.Change("#event-File-Upload", true);
 
-        page.Find("#rule-form").Submit();
+        page.Submit("#rule-form");
 
         page.WaitForAssertion(() => Assert.Contains("Add one or more actions", page.Find("#rule-errors").TextContent));
         Assert.Empty(await _host.Store.ListAsync(Ct));
@@ -90,7 +90,7 @@ public sealed class EventRulesPageTests : AdminUiComponentContext, IAsyncLifetim
         });
         var page = Render<EventRulesPage>();
 
-        page.Find(".run-rule").Click();
+        page.Click(".run-rule");
 
         page.WaitForAssertion(() => Assert.Contains("OnDemand", page.Find("#run-table").TextContent));
         Assert.Contains("Sent to ops@example.com", page.Find("#run-table").TextContent);

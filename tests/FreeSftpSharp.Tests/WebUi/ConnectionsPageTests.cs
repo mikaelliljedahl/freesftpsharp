@@ -75,9 +75,9 @@ public sealed class ConnectionsPageTests : AdminUiComponentContext
         Connect("192.0.2.4:40003", "carol");
         var page = Render<ConnectionsPage>();
 
-        page.Find(".disconnect-button").Click();
+        page.Click(".disconnect-button");
         Assert.Contains("carol", page.Find(".modal").TextContent);
-        page.Find(".modal .btn-secondary").Click();
+        page.Click(".modal .btn-secondary");
 
         Assert.Empty(page.FindAll(".modal"));
         Assert.Empty(_disconnected);
@@ -91,8 +91,8 @@ public sealed class ConnectionsPageTests : AdminUiComponentContext
         var keep = Connect("192.0.2.6:40005", "erin");
         var page = Render<ConnectionsPage>();
 
-        page.FindAll(".disconnect-button")[0].Click();
-        page.Find(".confirm-button").Click();
+        page.Click(".disconnect-button", 0);
+        page.Click(".confirm-button");
 
         Assert.Equal(["192.0.2.5:40004 Disconnected by the administrator."], _disconnected);
         Assert.Equal(keep.Id, Assert.Single(Registry.GetAll()).Id);
