@@ -67,13 +67,14 @@ namespace FxSshSftpServer.WebClient
         /// Starts the session (with the session limit), records the login (throttle, log, time, events) and returns the
         /// principal of the login cookie; null when the session limit refused the login. <paramref name="identityProvider"/>
         /// is the scheme of an OpenID Connect sign-in (#73): it adds the claim for the logout at the provider and the
-        /// <see cref="AuthEventType.IdpLogin"/> event.
+        /// <see cref="AuthEventType.IdpLogin"/> event; <paramref name="oidc"/> is its session at the provider, for the
+        /// back-channel logout (#145).
         /// </summary>
         public async Task<System.Security.Claims.ClaimsPrincipal> StartAsync(HttpContext context, User user, string method, bool passwordExpired,
-            string identityProvider)
+            string identityProvider, Security.Oidc.OidcSession oidc = null)
         {
             var client = context.Connection.RemoteIpAddress;
-            var session = _sessions.Start(user, method, client, context.Connection.RemotePort);
+            var session = _sessions.Start(user, method, client, context.Connection.RemotePort, oidc);
             if (session is not { } id)
             {
                 await PublishAsync(context, AuthEventType.LoginFailed, user.Username, method, SshServer.Interfaces.Users.UserLoginRules.SessionLimitReason(user.MaxSessions), null);

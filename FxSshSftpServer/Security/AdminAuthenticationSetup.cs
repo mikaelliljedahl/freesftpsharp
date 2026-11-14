@@ -181,7 +181,10 @@ namespace FxSshSftpServer.Security
         {
             var validator = context.HttpContext.RequestServices.GetRequiredService<AdminSessionValidator>();
             IPAddress client = context.HttpContext.Connection.RemoteIpAddress;
-            if (await validator.IsValidAsync(context.Principal, client, context.HttpContext.RequestAborted))
+            // A session that the identity provider ended with a back-channel logout (#145) is not valid either.
+            var logouts = context.HttpContext.RequestServices.GetService<Oidc.AdminOidcLogouts>();
+            if (logouts?.IsEnded(context.Principal) != true
+                && await validator.IsValidAsync(context.Principal, client, context.HttpContext.RequestAborted))
                 return;
 
             context.RejectPrincipal();

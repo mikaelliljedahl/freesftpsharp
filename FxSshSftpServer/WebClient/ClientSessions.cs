@@ -22,7 +22,7 @@ namespace FxSshSftpServer.WebClient
     /// </summary>
     public sealed class ClientSessions : IDisposable
     {
-        private sealed record Session(string Username, string Method, string RemoteIp)
+        private sealed record Session(string Username, string Method, string RemoteIp, Security.Oidc.OidcSession Oidc)
         {
             public long LastSeenTicks;
         }
@@ -49,15 +49,16 @@ namespace FxSshSftpServer.WebClient
 
         /// <summary>
         /// Registers the session of a login and records the login. Null when the session limit of the user was reached
-        /// at the same time by another login (the registry checks it in one step with the count).
+        /// at the same time by another login (the registry checks it in one step with the count). <paramref name="oidc"/> is
+        /// the session at the identity provider of an OpenID Connect sign-in, for its back-channel logout (#145).
         /// </summary>
-        public Guid? Start(User user, string method, IPAddress remoteIp, int remotePort)
+        public Guid? Start(User user, string method, IPAddress remoteIp, int remotePort, Security.Oidc.OidcSession oidc = null)
         {
             var ip = remoteIp == null ? "?" : CidrNotation.Normalize(remoteIp).ToString();
             var endPoint = remoteIp == null ? "?" : new IPEndPoint(CidrNotation.Normalize(remoteIp), remotePort).ToString();
             // The registry removes the entry after the callback; the Changed event does the rest (OnConnectionChanged).
             var connection = _connections.Register(new ConnectionRegistration(ClientAuth.Protocol, endPoint, _ => Task.CompletedTask));
-            _sessions[connection.Id] = new Session(user.Username, method, ip) { LastSeenTicks = _time.GetUtcNow().UtcTicks };
+            _sessions[connection.Id] = new Session(user.Username, method, ip, oidc) { LastSeenTicks = _time.GetUtcNow().UtcTicks };
             if (!_connections.TrySetAuthenticated(connection.Id, user.Username, method, user.MaxSessions))
             {
                 _sessions.TryRemove(connection.Id, out _);
@@ -94,6 +95,25 @@ namespace FxSshSftpServer.WebClient
                 if (id != keep && string.Equals(session.Username, username, StringComparison.OrdinalIgnoreCase))
                     End(id);
             }
+        }
+
+        /// <summary>
+        /// Ends the sessions of the OpenID Connect sign-ins that a back-channel logout of the identity provider ended (#145):
+        /// the same sid, or without a sid in the logout, the same subject. Returns how many.
+        /// </summary>
+        public int EndOidc(Security.Oidc.OidcLogout logout)
+        {
+            ArgumentNullException.ThrowIfNull(logout);
+            var ended = 0;
+            foreach (var (id, session) in _sessions)
+            {
+                if (session.Oidc == null || !session.Oidc.IsEndedBy(logout))
+                    continue;
+                _logger.LogInformation("The web client session {SessionId} of {Username} ended by a logout at the identity provider.", id, session.Username);
+                End(id);
+                ended++;
+            }
+            return ended;
         }
 
         /// <summary>Ends the sessions without a request for <see cref="WebClientOptions.SessionIdleMinutes"/>. Returns how many.</summary>

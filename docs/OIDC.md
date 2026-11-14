@@ -9,10 +9,10 @@ It is **off by default**. Without an `Auth:Oidc` section no handler is registere
 the callback paths are not handled. The two areas have their own configuration, client and callback path, and they
 can be turned on separately:
 
-| Area | Section | Callback (redirect URI) | After the logout at the provider |
-| --- | --- | --- | --- |
-| Admin UI | `Auth:Oidc:Admin` | `https://<server>/signin-oidc-admin` | `https://<server>/signout-callback-oidc-admin` |
-| Web client | `Auth:Oidc:Client` (needs `WebClient:Enabled`) | `https://<server>/signin-oidc-client` | `https://<server>/signout-callback-oidc-client` |
+| Area | Section | Callback (redirect URI) | After the logout at the provider | Back-channel logout |
+| --- | --- | --- | --- | --- |
+| Admin UI | `Auth:Oidc:Admin` | `https://<server>/signin-oidc-admin` | `https://<server>/signout-callback-oidc-admin` | `https://<server>/signout-oidc-admin-backchannel` |
+| Web client | `Auth:Oidc:Client` (needs `WebClient:Enabled`) | `https://<server>/signin-oidc-client` | `https://<server>/signout-callback-oidc-client` | `https://<server>/signout-oidc-client-backchannel` |
 
 ## How it works
 
@@ -40,6 +40,24 @@ can be turned on separately:
 - **Logout.** The logout ends the local session. After a sign-in with the provider, it also ends the session at the
   provider when the provider publishes an `end_session_endpoint` (RP-initiated logout with `client_id` and
   `post_logout_redirect_uri`; there is no id_token to send as a hint).
+- **Logout at the provider** (back-channel, #145). When the session ends at the provider (the user logs out there, an
+  administrator of the provider ends it, or it expires), a provider with OpenID Connect Back-Channel Logout 1.0 posts a
+  `logout_token` to the back-channel URL of the area. The server checks the token: signed with a key of the discovery
+  document (not `alg: none`), the issuer, the client id as audience, `iat`, the expiry when it has one, the
+  back-channel logout event in `events`, a `sid` or a `sub`, and no `nonce`. It then ends the local sessions of that
+  provider session: the same `sid` (the id_token of the sign-in must have one; Keycloak sends it), or every session of
+  the `sub` when the token has no `sid`. It answers 200 (also when no session matched) or 400 `invalid_request`. A
+  password login is never ended by the provider.
+  - **Web client:** the browser session is removed from the session store (as "Disconnect" in the admin UI): the next
+    request of the browser goes to the login page, and the logout is an auth event.
+  - **Admin UI:** the admin login cookie has no session on the server. The cookie of a sign-in keeps the `sid`, the
+    `sub` and the time of the sign-in, and the server keeps each logout for 12 hours in memory (longer than an admin
+    cookie lives without a request); the cookie check of each request and the check of a Blazor circuit (every 30
+    seconds) reject a cookie of an ended session. **Limits:** the logouts are per node and in memory: with several
+    nodes only the node that got the logout ends the sessions (the provider calls one URL), and a restart forgets
+    them, so a cookie from before the restart works again until it expires (8 hours without a request). Where that
+    matters, also disable the administrator, which ends its sessions on every node.
+  - The `jti` of a token is not stored (a replayed logout only ends the same sessions again).
 - **SameSite cookies.** The provider posts the code from its own site, so the browser does not send the
   SameSite=Strict login cookie on the redirect that follows. The callback therefore ends on a small page
   (`/signin-done`, `/client/signin-done`) that continues with a same-site navigation.
@@ -164,9 +182,11 @@ The walkthrough uses Keycloak 26 and the server `https://sftp.example.org`.
    authentication* on, *Standard flow* on, *Direct access grants* off. *Valid redirect URIs*
    `https://sftp.example.org/signin-oidc-admin`, *Valid post logout redirect URIs*
    `https://sftp.example.org/signout-callback-oidc-admin`. Under *Advanced* > *Advanced settings* set *Proof Key for
-   Code Exchange Code Challenge Method* to `S256`. Copy the secret from the *Credentials* tab.
-4. **Client of the web client.** The same with client ID `freesftpsharp-client` and the `-client` paths. It can be a
-   public client (*Client authentication* off).
+   Code Exchange Code Challenge Method* to `S256`. For the back-channel logout set *Backchannel logout URL*
+   `https://sftp.example.org/signout-oidc-admin-backchannel` and keep *Backchannel logout session required* on (the
+   token then has the `sid`). Copy the secret from the *Credentials* tab.
+4. **Client of the web client.** The same with client ID `freesftpsharp-client` and the `-client` paths (also
+   `https://sftp.example.org/signout-oidc-client-backchannel`). It can be a public client (*Client authentication* off).
 5. **Roles in the id_token.** By default Keycloak puts the realm roles only in the access token. *Client scopes* >
    `roles` > *Mappers* > `realm roles`: turn on *Add to ID token*. Then use `"RoleClaim": "realm_access.roles"`. (Or add
    a mapper *User Realm Role* with the claim name `roles`, multivalued, to the dedicated scope of the client.)

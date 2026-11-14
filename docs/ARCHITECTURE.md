@@ -324,7 +324,10 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
   `ClientOidcAccounts`; the new users of the web client come from the `ExternalUserProvisioner` of the authentication
   providers (#64) with the provider name `oidc`. The administrators that the sign-in creates have the same owner
   (`Admin.AuthenticationProvider`, #145): `AdminAdministrationService` and `AdminCredentialValidator` refuse a local
-  password for them. Nothing is registered without configuration.
+  password for them. The back-channel logout of the provider (`OidcBackChannelLogout`, #145) checks the logout token
+  (`OidcLogoutTokenValidator`) and ends the sessions of the provider session: in `ClientSessions` for the web client,
+  through `AdminOidcLogouts` (per node, in memory; checked with the cookie and the circuit) for the admin UI. Nothing is
+  registered without configuration.
 - **One application layer for the UI and the API.** The claims, the policies, `CurrentAdmin` and the scoped views are in
   `SshServer.Administration`; the admin UI (`FxSshSftpServer`) and the REST API (`SshServer.Api`) both reference it.
 

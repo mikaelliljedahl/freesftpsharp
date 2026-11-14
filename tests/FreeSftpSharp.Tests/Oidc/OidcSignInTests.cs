@@ -588,5 +588,11 @@ public sealed class OidcZeroConfigTests : IClassFixture<WebClientFactory>
 
         Assert.NotEqual(HttpStatusCode.OK, admin.StatusCode);
         Assert.DoesNotContain("oidc_error", admin.Headers.Location?.OriginalString ?? "", StringComparison.Ordinal);
+        foreach (var path in new[] { OidcSignInSetup.AdminBackChannelLogoutPath, OidcSignInSetup.ClientBackChannelLogoutPath })
+        {
+            var logout = await browser.PostAsync(path, new FormUrlEncodedContent(new Dictionary<string, string> { ["logout_token"] = "x" }), Ct);
+            Assert.NotEqual(HttpStatusCode.OK, logout.StatusCode);
+            Assert.NotEqual(HttpStatusCode.BadRequest, logout.StatusCode);
+        }
     }
 }
