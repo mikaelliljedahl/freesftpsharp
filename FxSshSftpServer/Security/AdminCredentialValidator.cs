@@ -1,37 +1,40 @@
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
+using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Security;
-using System;
-using Microsoft.Extensions.Options;
 
 namespace FxSshSftpServer.Security
 {
+    /// <summary>Checks an admin login against the stored administrators (<see cref="IAdminStore"/>).</summary>
     public sealed class AdminCredentialValidator
     {
-        private readonly IOptions<AdminAuthOptions> _options;
+        private readonly IAdminStore _store;
 
-        public AdminCredentialValidator(IOptions<AdminAuthOptions> options)
+        public AdminCredentialValidator(IAdminStore store)
         {
-            _options = options;
+            _store = store;
         }
 
-        public bool IsConfigured => _options.Value.IsConfigured;
-
-        public string UserName => _options.Value.UserName?.Trim();
-
-        public bool Validate(string userName, string password)
+        /// <summary>
+        /// The administrator when the name and password are correct, the account is enabled and the client address is
+        /// allowed; otherwise null. An unknown name costs the same time as a wrong password.
+        /// </summary>
+        public async Task<Admin> ValidateAsync(string userName, string password, IPAddress client, CancellationToken ct)
         {
-            var options = _options.Value;
-            if (!options.IsConfigured)
-                return false;
-
-            var userMatches = string.Equals(userName?.Trim(), options.UserName.Trim(), StringComparison.OrdinalIgnoreCase);
-            if (!userMatches)
+            var name = userName?.Trim();
+            var admin = string.IsNullOrEmpty(name) ? null : await _store.GetAdminAsync(name, ct);
+            if (admin == null)
             {
-                // Same cost as a real check, so the response time does not tell whether the user name exists.
-                PasswordHasher.BurnEquivalentWork(options.PasswordHash);
-                return false;
+                PasswordHasher.BurnEquivalentWork();
+                return null;
             }
 
-            return PasswordHasher.Verify(password ?? "", options.PasswordHash);
+            if (!PasswordHasher.Verify(password ?? "", admin.PasswordHash))
+                return null;
+            if (admin.Status != AdminStatus.Enabled || !AdminClaims.IsAddressAllowed(admin, client))
+                return null;
+            return admin;
         }
     }
 }

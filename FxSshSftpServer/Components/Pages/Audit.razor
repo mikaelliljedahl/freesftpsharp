@@ -4,7 +4,8 @@
 @using System.Threading
 @using SshServer.Interfaces.Audit
 @using SshServer.Interfaces.Events
-@inject IAuditLog AuditLog
+@attribute [Authorize(Policy = AdminPolicies.ViewAudit)]
+@inject ScopedAuditLog AuditLog
 @inject IJSRuntime JS
 @inject ToastService Toasts
 
