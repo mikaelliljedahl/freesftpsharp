@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The REST API v1 (#67): minimal API endpoints under /api/v1 over the same application services as the admin UI,
+    bearer tokens (JWT) and API keys for administrators, and the OpenAPI document. The web host calls AddRestApi() and
+    MapRestApi(); the API stays off until Api:Enabled is true.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SshServer.Administration\SshServer.Administration.csproj" />
+    <ProjectReference Include="..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
+    <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
+    <ProjectReference Include="..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
+    <ProjectReference Include="..\SshServer.EventRules\SshServer.EventRules.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FreeSftpSharp.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -193,7 +193,7 @@ public sealed class EventRuleAdministrationService
         await _events.PublishAsync(new ProviderEvent(action, ProviderObjectType.EventRule, rule.Name)
         {
             Timestamp = _time.GetUtcNow(),
-            Actor = actor.Username,
+            Actor = actor.AuditName,
             Object = EventRuleSnapshot.From(rule),
             ChangedFields = changed,
         }, ct);

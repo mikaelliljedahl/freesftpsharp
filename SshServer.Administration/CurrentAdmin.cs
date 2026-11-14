@@ -3,13 +3,14 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Authorization;
 using SshServer.Interfaces.Admins;
 
-namespace FxSshSftpServer.Security
+namespace SshServer.Administration
 {
     /// <summary>
-    /// The administrator of the current Blazor circuit (scoped). The admin application services use it for their own
-    /// checks, so a missing permission is refused on the server also when a page shows a button by mistake. It follows
-    /// the authentication state: when the circuit loses its login (<see cref="AdminRevalidatingAuthenticationStateProvider"/>),
-    /// the actor becomes anonymous.
+    /// The administrator of the current Blazor circuit or REST API request (scoped). The admin application services use
+    /// it for their own checks, so a missing permission is refused on the server also when a page shows a button by
+    /// mistake. It follows the authentication state: when the circuit loses its login
+    /// (<c>AdminRevalidatingAuthenticationStateProvider</c>), the actor becomes anonymous. The REST API sets the
+    /// authentication state of its request from the bearer token or API key.
     /// </summary>
     public sealed class CurrentAdmin : IDisposable
     {

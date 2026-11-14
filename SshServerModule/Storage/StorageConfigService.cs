@@ -184,6 +184,63 @@ namespace SshServerModule.Storage
             }
         }
 
+        /// <summary>
+        /// Every option of a stored configuration as plain JSON, for an export (the REST API dump, #67): also the options
+        /// that the form does not show. Each secret is decrypted and given to <paramref name="exportSecret"/> (option name,
+        /// plain text), which returns the value to export (for example encrypted with a passphrase), or null to leave it out.
+        /// Throws <see cref="ArgumentException"/> when the provider is not registered or a secret cannot be decrypted.
+        /// </summary>
+        public JsonObject Export(StorageConfig stored, Func<string, string, string?> exportSecret)
+        {
+            var provider = _codec.ProviderOf(stored);
+            var node = _codec.DecodeNode(provider, stored);
+            foreach (var field in StorageOptionField.Of(provider.OptionsType).Where(f => f.IsSecret))
+            {
+                if (node[field.Name] is not JsonValue value || !value.TryGetValue<string>(out var text) || text.Length == 0)
+                    continue;
+                var exported = exportSecret(field.Name, text);
+                if (exported is null)
+                    node.Remove(field.Name);
+                else
+                    node[field.Name] = exported;
+            }
+            return node;
+        }
+
+        /// <summary>
+        /// The configuration to store from the plain JSON options of an export (<see cref="Export"/>): each secret is
+        /// given to <paramref name="importSecret"/> for its plain text, and is encrypted again with the keys of this
+        /// server. The provider validates the options.
+        /// </summary>
+        public StorageBuildResult Import(string provider, JsonObject options, Func<string, string> importSecret)
+        {
+            var storageProvider = _registry.Providers.FirstOrDefault(p => string.Equals(p.Name, provider, StringComparison.OrdinalIgnoreCase));
+            if (storageProvider is null)
+                return new StorageBuildResult(null, [$"The storage provider '{provider}' is not registered."]);
+
+            var node = (JsonObject)options.DeepClone();
+            object parsed;
+            try
+            {
+                foreach (var field in StorageOptionField.Of(storageProvider.OptionsType).Where(f => f.IsSecret))
+                {
+                    var key = node.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, field.Name, StringComparison.OrdinalIgnoreCase));
+                    if (key != null && node[key] is JsonValue value && value.TryGetValue<string>(out var text) && text.Length > 0)
+                        node[key] = importSecret(text);
+                }
+                parsed = StorageOptionsCodec.FromNode(storageProvider, node);
+            }
+            catch (ArgumentException ex)
+            {
+                return new StorageBuildResult(null, [ex.Message]);
+            }
+
+            var problems = storageProvider.Validate(parsed).ToList();
+            return problems.Count > 0
+                ? new StorageBuildResult(null, problems)
+                : new StorageBuildResult(_codec.Encode(storageProvider.Name, parsed), []);
+        }
+
         private (IStorageProvider? Provider, object? Options, List<string> Problems) BuildOptions(StorageSettings settings)
         {
             var problems = new List<string>();

@@ -186,6 +186,12 @@ The login form has an antiforgery token. After 5 failed logins from one IP addre
 for 15 minutes (`AdminAuth:MaxFailedLogins`, `AdminAuth:LockoutMinutes`). Use "Log out" in the menu to end the
 session; a session expires after 8 hours without use.
 
+### REST API
+
+The admin web host has a REST API under `/api/v1` with an OpenAPI document, bearer tokens for administrators and API
+keys for automation. It is off until `Api:Enabled` is true, and it uses the same permissions and scope roles as the
+UI. See [docs/REST-API.md](docs/REST-API.md).
+
 ### Expose the UI
 
 By default the UI listens only on `http://localhost:5000` (`Kestrel:Endpoints:Http:Url` in `appsettings.json`).
@@ -255,7 +261,7 @@ OpenSSH connects with its default settings.
 
 The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub issue for each feature. For
 example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, groups, quotas,
-an audit log, webhooks, a REST API, WebDAV and FTP, and more settings databases.
+an audit log, webhooks, WebDAV and FTP, and more settings databases.
 
 ## Log files
 
