@@ -9,13 +9,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Admins;
 
 namespace FreeSftpSharp.Tests.WebUi;
 
 /// <summary>
 /// Hosts the FxSshSftpServer admin UI in memory (TestServer). The SSH <see cref="HostedServer"/> is removed, and
-/// the LiteDB settings repository is replaced by <see cref="InMemorySettingsRepository"/>, so no port is opened
-/// and no config.db is created.
+/// the settings repository, the audit log and the admin store are in memory (<see cref="AdminStore"/>), so no port
+/// is opened and no database is created. The configured admin account is imported into the store at the start.
 /// </summary>
 public class AdminUiFactory : WebApplicationFactory<Program>
 {
@@ -27,6 +28,9 @@ public class AdminUiFactory : WebApplicationFactory<Program>
         PasswordHasher.Hash(AdminPassword, PasswordHasher.MinimumIterations);
 
     protected virtual bool ConfigureAdminCredential => true;
+
+    /// <summary>The administrators and roles of the host. Seed it before the first request.</summary>
+    public InMemoryAdminStore AdminStore { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -48,6 +52,8 @@ public class AdminUiFactory : WebApplicationFactory<Program>
             // The same for the webhooks: no store, so the webhook dispatcher does nothing.
             services.RemoveAll<SshServer.Interfaces.Webhooks.IWebhookStore>();
             services.AddSingleton<SshServer.Interfaces.Webhooks.IWebhookStore>(new SshServer.Settings.Sql.Webhooks.DisabledWebhookStore());
+            services.RemoveAll<IAdminStore>();
+            services.AddSingleton<IAdminStore>(AdminStore);
 
             var sshServer = services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(HostedServer)).ToList();
             foreach (var descriptor in sshServer)

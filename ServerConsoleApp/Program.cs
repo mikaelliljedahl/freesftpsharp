@@ -12,6 +12,7 @@ using FxSsh.SshServerModule;
 
 using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Filesystem.AzureBlob;
 using SshServer.Filesystem.Gcs;
 using SshServer.Filesystem.S3;
 using SshServer.Filesystem.Encrypted;
@@ -64,6 +65,7 @@ await new HostBuilder()
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
     services.AddS3Storage();
+    services.AddAzureBlobStorage();
     services.AddGcsStorage();
     services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
     services.AddHostedService<HostedServer>();

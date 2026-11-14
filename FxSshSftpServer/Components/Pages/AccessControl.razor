@@ -1,7 +1,9 @@
 @page "/access"
 @using System.Globalization
-@inject ISettingsRepository SettingsRepository
+@attribute [Authorize(Policy = AdminPolicies.ManageSettings)]
+@inject AdminScopedSettingsRepository SettingsRepository
 @inject IIpBanService BanService
+@inject CurrentAdmin Current
 @inject TimeProvider Clock
 @inject ToastService Toasts
 
@@ -156,6 +158,8 @@
 
     private void Unban(IpBan ban)
     {
+        // The ban service is shared with the SSH server; the permission is checked here, not only by the page policy.
+        Current.Actor.Demand(AdminPermissions.ManageSettings);
         if (BanService.Unban(ban.Address))
             Toasts.ShowSuccess($"The ban of {ban.Address} was lifted.");
         else

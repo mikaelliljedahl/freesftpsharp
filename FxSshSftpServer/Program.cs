@@ -12,6 +12,7 @@ using FxSsh.SshServerModule;
 
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Filesystem.AzureBlob;
 using SshServer.Filesystem.Gcs;
 using SshServer.Filesystem.S3;
 using SshServer.Filesystem.Encrypted;
@@ -26,6 +27,11 @@ using FxSshSftpServer.Security;
 if (AdminPasswordCommand.IsRequested(args))
 {
     return AdminPasswordCommand.RunOnConsole();
+}
+
+if (AdminCreateCommand.IsRequested(args))
+{
+    return AdminCreateCommand.RunOnConsole(args);
 }
 
 // The bootstrap logger reports errors that happen before the real logger is configured from appsettings.json.
@@ -69,6 +75,7 @@ Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
 builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (used only when a user or virtual folder selects it)
 builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a user or virtual folder selects it)
 builder.Services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
 

@@ -158,6 +158,23 @@ to `IFileSystemFactory.CreateAsync`.
 The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
 groups, #61). No protocol and no backend reads `User.Permissions` itself.
 
+## Administrators and authorization
+
+The administrators and the scope roles are in the settings database (`IAdminStore`, `SshServer.Interfaces.Admins`).
+`AdminAdministrationService` is the one place for their rules (validation, no privilege escalation, provider events with
+the actor); the admin UI and the command line (`--create-admin`) use it.
+
+- **Permissions are policies.** Each `AdminPermissions` flag is an ASP.NET Core authorization policy with the same name
+  (`AdminPolicies`). Every page has `[Authorize(Policy = ...)]`; the endpoint checks it for the first request and
+  `AuthorizeRouteView` for the navigation in the circuit. The REST API (#67) uses the same policies.
+- **Services check again.** The pages do not use the shared singletons for admin work: they use scoped views of them
+  (`AdminScopedSettingsRepository`, `ScopedConnections`, `ScopedAuditLog`) that check the permission and the scope of
+  the signed-in administrator (`CurrentAdmin`) themselves. A hidden button is never the only check.
+- **The scope is applied in one place.** A scoped administrator sees only the users of its role; the scoped views
+  filter by it, so the users, connections and audit entries of another role are "not found".
+- **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
+  request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
+
 ## General rules
 
 - **Dependencies point inwards.** `SshServer.Interfaces` references no other project and no SDK. Backends

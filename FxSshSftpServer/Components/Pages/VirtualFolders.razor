@@ -1,4 +1,5 @@
 @page "/virtual-folders"
+@attribute [Authorize(Policy = AdminPolicies.ManageFolders)]
 @using SshServer.Interfaces.Storage
 @using SshServerModule.Storage
 @inject VirtualFolderService FolderService

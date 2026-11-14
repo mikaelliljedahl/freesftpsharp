@@ -1,8 +1,9 @@
 @page "/users"
+@attribute [Authorize(Policy = AdminPolicies.ManageUsers)]
 @using FxSsh.SshServerModule
 @using System.Globalization
 @using SshServer.Interfaces.Permissions
-@inject ISettingsRepository SettingsRepository
+@inject AdminScopedSettingsRepository SettingsRepository
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject SshServerModule.Storage.StorageConfigService StorageService
 @inject SshServerModule.Storage.VirtualFolderService FolderService

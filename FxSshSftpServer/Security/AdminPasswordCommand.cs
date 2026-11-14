@@ -57,7 +57,7 @@ namespace FxSshSftpServer.Security
             return 0;
         }
 
-        private static string ReadHidden(TextWriter prompt, string text)
+        internal static string ReadHidden(TextWriter prompt, string text)
         {
             prompt.Write(text);
             var builder = new StringBuilder();

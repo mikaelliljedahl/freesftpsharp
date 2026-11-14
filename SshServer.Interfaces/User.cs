@@ -43,4 +43,10 @@ public class User
 
     /// <summary>The virtual folders mounted into the file system of the user (issue #56).</summary>
     public List<VirtualFolderMount> VirtualFolders { get; set; } = new();
+
+    /// <summary>
+    /// The scope role (issue #60, <see cref="Admins.Role"/>): an administrator with this role as its scope manages the
+    /// user. Null: only administrators without a scope see the user.
+    /// </summary>
+    public int? RoleId { get; set; }
 }

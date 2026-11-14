@@ -53,7 +53,8 @@ Exit codes: 0 = done, 1 = the operation failed (the reason is on stderr), 2 = wr
 ## Admin web UI (FxSshSftpServer)
 
 `FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
-The UI has one local admin account. It is separate from the SFTP users.
+The UI has its own administrator accounts with permissions and optional scope roles (see
+[Administrators, permissions and roles](#administrators-permissions-and-roles)). They are separate from the SFTP users.
 
 The UI is a Blazor Web App (interactive server rendering) with Bootstrap 5.3 and Bootstrap Icons. All CSS, fonts and
 scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It has these pages:
@@ -67,10 +68,26 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
 | Audit (`/audit`) | The audit log: uploads, downloads, deletes, renames, directories, logins and failed logins, bans, changes of users and settings, with user, client address, path, size, duration and status; filters (user, type, status, date range) and a CSV export |
 | Webhooks (`/webhooks`) | The webhooks: add, edit and delete (URL, method, secret, static headers, events, user and path filters, synchronous or not, fail open, timeout); "Send test event"; the deliveries of each webhook with status, attempts and the start of the answer, and "Redeliver" |
+| Admins (`/admins`) | The administrators: add, edit and delete; permissions, scope role, allowed networks, enabled, "must change the password at the next login" |
+| Roles (`/roles`) | The scope roles: add and delete roles, and add users to a role or remove them |
+| Change password (`/ChangePassword`) | The signed-in administrator sets a new password (with the current one) |
 
 The UI has a dark mode (the half-circle button in the top bar; it follows the OS by default) and works on phone widths.
 
-### Set the admin password
+### The first administrator
+
+The administrators are stored in the settings database. There are two ways to create the first one:
+
+- **On the command line** (new installations): `FxSshSftpServer --create-admin <name>` creates a super admin in the
+  same database as the server (same configuration) and exits. It asks for the password twice, or reads one line from
+  stdin when the input is redirected (`echo "..." | FxSshSftpServer --create-admin alice`). Then start the server.
+- **From the configuration** (`AdminAuth`, as in older versions): when the database has no administrator yet, the
+  configured `AdminAuth:UserName` / `AdminAuth:PasswordHash` account is imported **once** as a super admin at the
+  start, and the log says so. An existing installation therefore keeps its login after the upgrade.
+  After the import the stored administrators are used; a later change of `AdminAuth:UserName` or
+  `AdminAuth:PasswordHash` is ignored (the log says so). Change the password on the "Change password" page instead.
+
+To set the configured account:
 
 1. Create a password hash (salted PBKDF2-SHA256, 600,000 iterations). The command asks for the password twice
    and prints the configuration value; the password itself is not stored or printed:
@@ -92,10 +109,58 @@ The UI has a dark mode (the half-circle button in the top bar; it follows the OS
 
 3. Restart the server. A plaintext password in `AdminAuth:PasswordHash` is not accepted.
 
-If no valid admin credential is configured, the UI is closed: every request gets `503 Service Unavailable` with a
-short help text, and the log has an error that tells what is missing. The SSH server still runs.
+If no administrator is stored and no valid admin credential is configured, the UI is closed: every request gets
+`503 Service Unavailable` with a short help text, and the log has an error that tells what is missing. The SSH server
+still runs.
 
-All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy).
+All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy), and
+each page needs the permission of its policy (see below).
+
+### Administrators, permissions and roles
+
+Each administrator has a set of permissions. Each permission is an ASP.NET Core authorization policy with the same
+name; a page that needs a permission answers `403 Forbidden` without it, and the menu shows only the pages the
+administrator may open. The services behind the pages check the same permissions again, so a missing permission is
+refused on the server also for a direct call.
+
+| Permission | What it allows |
+| --- | --- |
+| `SuperAdmin` | Everything, also every other permission |
+| `ManageUsers` | The Users page: add, change and delete SFTP users |
+| `ManageEvents` | The Webhooks page (later also event rules) |
+| `ManageGroups`, `ManageFolders` | Reserved for groups and virtual folders (later roadmap items) |
+| `ViewConnections` | The Connections page |
+| `DisconnectConnections` | The "Disconnect" action on the Connections page |
+| `ViewAudit` | The Audit page |
+| `ManageSettings` | The Server settings and IP access and bans pages |
+| `ManageAdmins` | The Admins and Roles pages |
+
+Rules:
+
+- An administrator never grants a permission that it does not have, and it cannot change or delete an administrator
+  that has more permissions than itself. So only a super admin creates or changes super admins.
+- Nobody changes its own permissions, status or scope, or deletes itself, so the last super admin always stays.
+- A change of the password, the permissions, the scope, the status or the allowed networks of an administrator ends
+  its other sessions at the next request (an open page within 30 seconds).
+- "Allowed networks" (CIDR, like the user whitelist) limit the addresses an administrator may log in from.
+- An administrator with "must change the password" gets the Change password page after the login and has no
+  permission until it has set a new password.
+
+**Scope roles** separate tenants inside one server (like the roles of SFTPGo). Create a role on the Roles page and add
+users to it. An administrator with a role as its *scope*:
+
+- sees and manages only the users of the role (another user is "not found", also by its name),
+- creates users that always get the role, and cannot move a user to another role,
+- sees and closes only the connections of these users, and reads only their audit entries,
+- can only have the permissions `ManageUsers`, `ManageGroups`, `ManageFolders`, `ViewConnections`,
+  `DisconnectConnections` and `ViewAudit`: the server settings and the administrators are global.
+
+An administrator without a scope sees every user. A role that users or administrators have cannot be deleted.
+
+Admin logins (also failed ones) and every change of an administrator or a role are in the audit log, with the
+administrator that made the change. Admin passwords are salted PBKDF2-SHA256 hashes, like the SFTP user passwords.
+With the obsolete LiteDB settings provider the administrators are kept in memory only (the configured account is
+imported at every start).
 
 The login cookie, the antiforgery tokens and the secrets of the storage configurations are protected with ASP.NET Core data protection keys. The keys are
 stored in `DataProtection:KeysPath` (default: `keys/` in the app directory), so a login survives a restart. On
@@ -381,6 +446,78 @@ docker stop fakegcs
 
 Verification against a real bucket with a service account is a manual step: set `Bucket` and `CredentialsFile`, run the
 same suite by pointing a test at it, and check that the role above is enough.
+
+
+## Azure Blob storage backend
+
+`SshServer.Filesystem.AzureBlob` stores the files of a user in an Azure Blob Storage container, or below a name prefix
+in it. Both hosts register it with `services.AddAzureBlobStorage()` under the provider name `azure-blob`. Nothing
+changes for a server that does not use it: no client is created and no setting is needed.
+
+> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
+> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+
+### Options (`AzureBlobStorageOptions`)
+
+Set exactly one of `ConnectionString`, `SasUrl` and `AccountName`. The provider checks the options itself.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `Container` | (required) | The container. It must exist; the server never creates or removes a container. Empty only with a `SasUrl` of the container. |
+| `KeyPrefix` | empty | The blob name prefix that is `/` for the user, for example `users/alice`. Empty: the whole container. |
+| `ConnectionString` | empty | A connection string of the account (also Azurite). A secret, never shown by `ToString()`. |
+| `SasUrl` | empty | A SAS URL of the container (or of the account, with `Container`). A secret, never shown by `ToString()`. |
+| `AccountName` | empty | The account; the server signs in with `DefaultAzureCredential` (managed identity, environment variables, Azure CLI). |
+| `Endpoint` | `https://ACCOUNT.blob.core.windows.net` | The blob service address for `AccountName`, for a sovereign cloud or Azurite. |
+| `AccessTier` | account default | `Hot`, `Cool` or `Cold` for new blobs. |
+| `UploadBlockSize` | 4 MiB | The size of one block of an upload (64 KiB to 256 MiB), held in memory. The largest file is 50,000 blocks (195 GiB with 4 MiB). |
+| `UploadConcurrency` | 2 | The blocks of one upload that are sent while the next block fills (1 to 64). |
+| `ReadAheadSize` | 4 MiB | The bytes that one ranged download reads ahead (64 KiB to 512 MiB). |
+
+### Behaviour
+
+- **Directories are virtual.** A directory exists when a blob name starts with its prefix (`dir/`). `mkdir` writes a
+  zero-length marker blob `dir` with the metadata `hdi_isfolder=true` (the convention of Storage Explorer and Data
+  Lake), so an empty directory stays. A listing is the hierarchy listing with the delimiter `/`, page by page.
+  Directories have the time of their marker, or 1970-01-01 in a listing without one. A file name cannot end with a dot
+  (Azure removes it), and a name has at most 1,024 characters and 254 segments.
+- **Reads** are ranged downloads through a read-ahead buffer: a sequential download is one request per `ReadAheadSize`.
+  A file that another writer replaces while it is open gives a failure (If-Match on the ETag), never mixed content.
+- **Writes** are sequential (no `RandomAccessWrite`). A file smaller than one block is one Put Blob; a larger file is a
+  block blob (Put Block per block, Put Block List when the file is closed), so the blob appears when the file is
+  closed. A write at the end of an existing file (a resumed upload, `reput`, or `Append`) keeps the blocks that the
+  server wrote and adds new ones; a blob that another tool wrote is read through the server into new blocks.
+- **Rename** is Copy Blob (inside one account, done by the service) and Delete Blob; a directory rename copies every
+  blob below it, then removes the sources. It is not atomic, and its cost grows with the size. The capabilities are
+  `Append`, `Rename` and `ServerSideCopy`.
+- **No permissions, no times, no links.** SETSTAT of permissions or times and size changes give `SSH_FX_OP_UNSUPPORTED`
+  (the last modified time of a blob cannot be set); an update that changes nothing works. statvfs (`df`) fails.
+- **Errors**: 404 is `NoSuchFile` (a missing container is a failure), 403 is `PermissionDenied`, 409 `BlobAlreadyExists`
+  is `AlreadyExists`, every other error is `Failure`; the log has the status, the Azure error code and the request id,
+  never the account or the container.
+- **Lost connection**: a session that ends without an SSH_FXP_CLOSE for an open file drops the upload: the block list
+  is never committed, so no blob appears and the old blob stays. The staged blocks are invisible, and Azure removes
+  them after seven days.
+
+### Permissions
+
+With `AccountName` the identity needs the role **Storage Blob Data Contributor** on the container (or the account).
+Reading needs only Storage Blob Data Reader. A SAS URL needs the permissions read, add, create, write, delete and
+list (`racwdl`). `DefaultAzureCredential` is checked by hand against a real account, as there is no emulator for it:
+run the server with a managed identity (or `az login`), set `AccountName` and `Container`, and upload, download, list,
+rename and delete through `sftp`.
+
+### Tests
+
+The conformance suite and the end-to-end tests run against Azurite when `FREESFTPSHARP_TEST_AZURITE` is set to the
+address of its blob service (CI: Azurite on the Ubuntu job); without it they are skipped. The Azure SDK is newer than
+Azurite, so start Azurite with `--skipApiVersionCheck`. Locally:
+
+```sh
+docker run -d --rm --name azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.37.0 azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+FREESFTPSHARP_TEST_AZURITE=http://127.0.0.1:10000 dotnet test FreeSftpSharp.sln --filter "Category=Azure"
+docker stop azurite
+```
 
 ## Encrypted storage
 

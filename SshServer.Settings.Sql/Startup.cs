@@ -6,8 +6,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Events;
+using SshServer.Settings.Sql.Admins;
 using SshServer.Settings.Sql.Audit;
 using SshServer.Settings.Sql.Webhooks;
 using SshServer.Interfaces.Webhooks;
@@ -24,6 +26,8 @@ namespace SshServer.Settings.Sql
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>),
         /// and the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it).
         /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
+        /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
+        /// provider keeps them in memory only.
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -45,6 +49,12 @@ namespace SshServer.Settings.Sql
                     // Like the audit log: the repository creates and migrates the database when the host starts. The store
                     // does not resolve the repository (that would be a cycle: repository, event bus, webhook sink, store).
                     services.TryAddSingleton<IWebhookStore>(_ => new SqlWebhookStore(dbOptions));
+                    services.TryAddSingleton<IAdminStore>(sp =>
+                    {
+                        // The repository creates and migrates the database; the store only uses the tables.
+                        sp.GetRequiredService<ISettingsRepository>();
+                        return new SqlAdminStore(dbOptions);
+                    });
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -56,6 +66,7 @@ namespace SshServer.Settings.Sql
                     services.AddSingleton<ISettingsRepository>(_ => new SettingsRepository(options.LiteDbPath));
                     services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
                     services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
+                    services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
                     break;
 
                 default:
@@ -63,6 +74,11 @@ namespace SshServer.Settings.Sql
             }
 
             services.TryAddSingleton<UserAdministrationService>();
+            services.TryAddSingleton(sp => new AdminAdministrationService(
+                sp.GetRequiredService<IAdminStore>(),
+                sp.GetRequiredService<ISettingsRepository>(),
+                sp.GetService<IEventBus>(),
+                sp.GetService<TimeProvider>()));
             return services;
         }
 

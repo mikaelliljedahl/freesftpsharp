@@ -11,14 +11,90 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114114419_AddUserStorageAndVirtualFolders")]
-partial class _20261114114419_AddUserStorageAndVirtualFolders
+[Migration("20261114114842_AddUserStorageAndVirtualFolders")]
+partial class _20261114114842_AddUserStorageAndVirtualFolders
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder.HasAnnotation("ProductVersion", "11.0.0");
+
+        modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("AllowedIps")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Email")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastLoginAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("MustChangePassword")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("PasswordHash")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Permissions")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("ScopeRoleId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ScopeRoleId");
+
+                b.HasIndex("Username")
+                    .IsUnique();
+
+                b.ToTable("Admins");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Admins.Role", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("Roles");
+            });
 
         modelBuilder.Entity("SshServer.Interfaces.Audit.AuditEntry", b =>
             {
@@ -195,6 +271,9 @@ partial class _20261114114419_AddUserStorageAndVirtualFolders
                 b.Property<string>("Permissions")
                     .HasColumnType("TEXT");
 
+                b.Property<int?>("RoleId")
+                    .HasColumnType("INTEGER");
+
                 b.Property<string>("RsaPublicKey")
                     .HasColumnType("TEXT");
 
@@ -214,6 +293,8 @@ partial class _20261114114419_AddUserStorageAndVirtualFolders
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
+
+                b.HasIndex("RoleId");
 
                 b.HasIndex("Username")
                     .IsUnique();
@@ -354,8 +435,21 @@ partial class _20261114114419_AddUserStorageAndVirtualFolders
                 b.ToTable("WebhookDeliveries");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
+            {
+                b.HasOne("SshServer.Interfaces.Admins.Role", null)
+                    .WithMany()
+                    .HasForeignKey("ScopeRoleId")
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
             {
+                b.HasOne("SshServer.Interfaces.Admins.Role", null)
+                    .WithMany()
+                    .HasForeignKey("RoleId")
+                    .OnDelete(DeleteBehavior.Restrict);
+
                 b.OwnsMany("SshServer.Interfaces.Storage.VirtualFolderMount", "VirtualFolders", b1 =>
                     {
                         b1.Property<int>("Id")

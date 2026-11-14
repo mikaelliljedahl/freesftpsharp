@@ -35,6 +35,11 @@ public sealed class SqlAuditLog : IAuditLog
             var username = query.Username.Trim().ToLowerInvariant();
             rows = rows.Where(a => a.Username != null && a.Username.ToLower() == username);
         }
+        if (query.Usernames != null)
+        {
+            var usernames = query.Usernames.Select(u => u.Trim().ToLowerInvariant()).Distinct().ToList();
+            rows = rows.Where(a => a.Username != null && usernames.Contains(a.Username.ToLower()));
+        }
         if (!string.IsNullOrWhiteSpace(query.Type))
             rows = rows.Where(a => a.Type == query.Type);
         if (!string.IsNullOrWhiteSpace(query.Status))

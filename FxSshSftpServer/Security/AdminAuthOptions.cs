@@ -3,8 +3,10 @@ using SshServer.Interfaces.Security;
 namespace FxSshSftpServer.Security
 {
     /// <summary>
-    /// The single local admin account of the web UI (configuration section "AdminAuth").
-    /// It is separate from the SFTP users in the settings repository.
+    /// The configuration section "AdminAuth": the login throttle, and the bootstrap admin account. When the settings
+    /// database has no administrator yet, <see cref="UserName"/> and <see cref="PasswordHash"/> are imported once as the
+    /// first super admin (see <see cref="AdminAuthenticationSetup.UseAdminUiRequiresCredential"/>); after that the
+    /// stored administrators are used and these two values are not read again.
     /// </summary>
     public sealed class AdminAuthOptions
     {
