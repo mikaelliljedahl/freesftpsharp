@@ -1,0 +1,139 @@
+@page
+@model IndexModel
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    ViewData["Title"] = "Files";
+    var token = Antiforgery.GetAndStoreTokens(HttpContext).RequestToken;
+    var a = Model.Actions;
+}
+<div id="file-browser" data-path="@Model.Directory" data-chunk="@Model.ChunkBytes" data-token="@token"
+     data-can-overwrite="@(a.Overwrite ? "true" : "false")">
+    <nav aria-label="Folder" class="mb-3">
+        <ol class="breadcrumb mb-0" id="breadcrumb">
+            @foreach (var (name, path) in Model.Breadcrumb())
+            {
+                <li class="breadcrumb-item"><a href="/client?path=@Uri.EscapeDataString(path)">@name</a></li>
+            }
+        </ol>
+    </nav>
+
+    <div class="alert d-none" role="alert" id="client-message"></div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3" id="toolbar">
+        @if (a.Upload || a.Overwrite)
+        {
+            <label class="btn btn-primary mb-0" for="upload-input" id="upload-button"><i class="bi bi-upload"></i> Upload</label>
+            <input type="file" id="upload-input" class="d-none" multiple />
+        }
+        @if (a.CreateDirectory)
+        {
+            <button type="button" class="btn btn-outline-primary" id="new-folder"><i class="bi bi-folder-plus"></i> New folder</button>
+        }
+        @if (Model.CanSelect)
+        {
+            <span class="vr mx-1"></span>
+            @if (a.Download)
+            {
+                <form method="post" action="/client/api/zip" id="zip-form" class="d-inline">
+                    <input type="hidden" name="__RequestVerificationToken" value="@token" />
+                    <button type="submit" class="btn btn-outline-secondary" id="zip-selected" disabled><i class="bi bi-file-zip"></i> Download as zip</button>
+                </form>
+            }
+            @if (a.Delete)
+            {
+                <button type="button" class="btn btn-outline-danger" id="delete-selected" disabled><i class="bi bi-trash"></i> Delete</button>
+            }
+        }
+        @if (Model.Space is { } space)
+        {
+            <span class="ms-auto small text-body-secondary" id="free-space">@ClientStorage.Format((long)space.AvailableBytes) free</span>
+        }
+    </div>
+
+    @if (a.Upload || a.Overwrite)
+    {
+        <div class="drop-zone mb-3 text-body-secondary small" id="drop-zone">Drop files here to upload them to this folder.</div>
+        <ul class="list-unstyled mb-3" id="uploads"></ul>
+    }
+
+    @if (Model.ListProblem != null)
+    {
+        <div class="alert alert-secondary" id="list-problem">@Model.ListProblem</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" id="entries">
+                <thead>
+                    <tr>
+                        @if (Model.CanSelect)
+                        {
+                            <th class="col-check"><input type="checkbox" class="form-check-input" id="select-all" aria-label="Select all" /></th>
+                        }
+                        <th><a href="@Model.SortLink("name")">Name <i class="bi @Model.SortIcon("name")"></i></a></th>
+                        <th class="text-end"><a href="@Model.SortLink("size")">Size <i class="bi @Model.SortIcon("size")"></i></a></th>
+                        <th><a href="@Model.SortLink("modified")">Modified (UTC) <i class="bi @Model.SortIcon("modified")"></i></a></th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Entries.Count == 0)
+                    {
+                        <tr><td colspan="5" class="text-body-secondary" id="empty-folder">This folder is empty.</td></tr>
+                    }
+                    @foreach (var entry in Model.Entries)
+                    {
+                        var path = Model.PathOf(entry);
+                        <tr class="entry" data-path="@path" data-name="@entry.Name" data-dir="@(entry.IsDirectory ? "true" : "false")">
+                            @if (Model.CanSelect)
+                            {
+                                <td><input type="checkbox" class="form-check-input select-entry" aria-label="Select @entry.Name" /></td>
+                            }
+                            <td class="text-break">
+                                @if (entry.IsDirectory)
+                                {
+                                    <a href="/client?path=@Uri.EscapeDataString(path)" class="entry-name"><i class="bi bi-folder-fill text-warning"></i> @entry.Name</a>
+                                }
+                                else
+                                {
+                                    <span class="entry-name"><i class="bi bi-file-earmark"></i> @entry.Name</span>
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">@(entry.IsDirectory ? "" : ClientStorage.Format(entry.Size))</td>
+                            <td class="text-nowrap">@entry.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="text-end text-nowrap">
+                                @if (a.Download && !entry.IsDirectory)
+                                {
+                                    <a class="btn btn-sm btn-outline-secondary action-download" href="/client/api/download?path=@Uri.EscapeDataString(path)" title="Download"><i class="bi bi-download"></i></a>
+                                }
+                                @if (a.Rename)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary action-rename" title="Rename"><i class="bi bi-pencil"></i></button>
+                                }
+                                @if (a.Delete)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger action-delete" title="Delete"><i class="bi bi-trash"></i></button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <dialog id="name-dialog" class="client-dialog">
+        <form method="dialog" id="name-form">
+            <h2 class="h6" id="name-title">Name</h2>
+            <input type="text" class="form-control mb-3" id="name-input" maxlength="255" required />
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" id="name-cancel">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="name-ok">OK</button>
+            </div>
+        </form>
+    </dialog>
+</div>
+
+@section Scripts {
+    <script src="~/js/client.js"></script>
+}

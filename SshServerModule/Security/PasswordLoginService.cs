@@ -35,7 +35,27 @@ namespace FxSsh.SshServerModule.Security
     /// <param name="User">The user, for <see cref="PasswordLoginStatus.Ok"/>; otherwise null.</param>
     /// <param name="Method">"password" or "app-password", for <see cref="PasswordLoginStatus.Ok"/>.</param>
     /// <param name="Reason">Why the login failed, for the log and the events (never for the client).</param>
-    public sealed record PasswordLoginResult(PasswordLoginStatus Status, User? User, string? Method, string? Reason);
+    /// <param name="SecondFactorRequired">With <see cref="PasswordLoginOptions.Interactive"/>: the user has a TOTP second factor, the caller asks for the code next.</param>
+    /// <param name="PasswordExpired">With <see cref="PasswordLoginOptions.Interactive"/>: the password is older than the server allows; the caller lets the user set a new one first.</param>
+    public sealed record PasswordLoginResult(PasswordLoginStatus Status, User? User, string? Method, string? Reason,
+        bool SecondFactorRequired = false, bool PasswordExpired = false);
+
+    /// <summary>How <see cref="PasswordLoginService.LoginAsync"/> treats a login.</summary>
+    public sealed record PasswordLoginOptions
+    {
+        /// <summary>The login of a protocol that cannot ask for more (WebDAV): a second factor or an expired password refuses it.</summary>
+        public static PasswordLoginOptions NonInteractive { get; } = new();
+
+        /// <summary>
+        /// A login with a person at a form (the web client, #69). The caller asks for the TOTP code itself and lets a user
+        /// with an expired password set a new one, so neither refuses the login; the result tells them
+        /// (<see cref="PasswordLoginResult.SecondFactorRequired"/>, <see cref="PasswordLoginResult.PasswordExpired"/>).
+        /// App passwords are not accepted: they are for programs, and would skip the second factor.
+        /// </summary>
+        public static PasswordLoginOptions Interactive { get; } = new() { IsInteractive = true };
+
+        public bool IsInteractive { get; init; }
+    }
 
     /// <summary>
     /// The user name and password login of the protocols that are not SSH (WebDAV #71, later FTP #72): the same rules as
@@ -47,6 +67,8 @@ namespace FxSsh.SshServerModule.Security
     /// effective login methods must allow the password; a user with a multi-step login or a TOTP second factor (#63)
     /// cannot log in with the password alone, because these protocols cannot ask for a second step), or an app password
     /// of the user for the protocol (<see cref="User.AppPasswords"/>).</item>
+    /// <item>With <see cref="PasswordLoginOptions.Interactive"/> (the web client, #69) a second factor and an expired
+    /// password do not refuse the login: the caller asks for the code and for a new password.</item>
     /// <item>The password itself goes through the authentication providers (#64, <see cref="IUserAuthenticator"/>): the
     /// stored hash for a local user, the directory or the HTTP hook for their users, which are created at their first
     /// login and checked again with the settings of their groups.</item>
@@ -98,9 +120,11 @@ namespace FxSsh.SshServerModule.Security
 
         /// <summary>Checks a user name and password for <paramref name="protocol"/>, from <paramref name="remote"/>.</summary>
         /// <param name="protocolName">The protocol for the events and the log, for example "WebDAV".</param>
+        /// <param name="options">Null: <see cref="PasswordLoginOptions.NonInteractive"/>.</param>
         public async ValueTask<PasswordLoginResult> LoginAsync(string protocolName, UserProtocols protocol, string? username, string? password,
-            IPAddress remote, CancellationToken ct)
+            IPAddress remote, CancellationToken ct, PasswordLoginOptions? options = null)
         {
+            options ??= PasswordLoginOptions.NonInteractive;
             ArgumentNullException.ThrowIfNull(remote);
             var address = CidrNotation.Normalize(remote);
             var filter = CheckAddress(address);
@@ -113,7 +137,8 @@ namespace FxSsh.SshServerModule.Security
             var user = string.IsNullOrEmpty(username) ? null : _repository.GetUser(username);
             string? method;
             string? failure;
-            (user, method, failure) = await VerifyAsync(user, username, password, protocol, protocolName, address, ct);
+            bool totp, expired;
+            (user, method, failure, totp, expired) = await VerifyAsync(user, username, password, protocol, protocolName, address, options, ct);
             if (failure != null)
             {
                 _logger.LogInformation("{Protocol} login of {Username} from {Address} failed: {Reason}.", protocolName, LogText.Clean(username), address, failure);
@@ -139,15 +164,16 @@ namespace FxSsh.SshServerModule.Security
             }
 
             _logger.LogInformation("{Protocol} login of {Username} from {Address} with {Method} succeeded.", protocolName, LogText.Clean(user.Username), address, method);
-            return new PasswordLoginResult(PasswordLoginStatus.Ok, user, method, null);
+            return new PasswordLoginResult(PasswordLoginStatus.Ok, user, method, null, totp, expired);
         }
 
         /// <summary>
         /// Returns the user and the method that succeeded, or the reason of the failure. Every failure costs the time of a
         /// wrong password (a key derivation, or the time of the provider of the user).
         /// </summary>
-        private async ValueTask<(User? User, string? Method, string? Failure)> VerifyAsync(User? user, string? username, string? password,
-            UserProtocols protocol, string protocolName, IPAddress address, CancellationToken ct)
+        private async ValueTask<(User? User, string? Method, string? Failure, bool Totp, bool PasswordExpired)> VerifyAsync(User? user,
+            string? username, string? password, UserProtocols protocol, string protocolName, IPAddress address, PasswordLoginOptions options,
+            CancellationToken ct)
         {
             var request = string.IsNullOrEmpty(username) ? null : new AuthRequest
             {
@@ -157,37 +183,45 @@ namespace FxSsh.SshServerModule.Security
             if (user == null && (request == null || !_authenticator.HasExternalProviders))
             {
                 UserLogics.SimulatePasswordCheck();
-                return (null, null, "unknown user");
+                return (null, null, "unknown user", false, false);
             }
 
+            var totp = false;
+            var expired = false;
             if (user != null)
             {
                 if (Refusal(user, address) is { } refusal)
                 {
                     await _authenticator.SpendFailureTimeAsync(request!, ct);
-                    return (null, null, refusal);
+                    return (null, null, refusal, false, false);
                 }
-                if (AppPasswordGenerator.Find(user, password, protocol, Time.GetUtcNow().UtcDateTime) != null)
-                    return (user, AppPasswordMethod, null);
-                if (await PasswordRefusalAsync(user, ct) is { } passwordRefusal)
+                if (!options.IsInteractive && AppPasswordGenerator.Find(user, password, protocol, Time.GetUtcNow().UtcDateTime) != null)
+                    return (user, AppPasswordMethod, null, false, false);
+                string? passwordRefusal;
+                (passwordRefusal, totp, expired) = await PasswordRefusalAsync(user, options, ct);
+                if (passwordRefusal != null)
                 {
                     await _authenticator.SpendFailureTimeAsync(request!, ct);
-                    return (null, null, passwordRefusal);
+                    return (null, null, passwordRefusal, false, false);
                 }
             }
 
             var check = await _authenticator.VerifyAsync(request!, ct);
             if (!check.Succeeded)
-                return (null, null, check.Reason);
+                return (null, null, check.Reason, false, false);
             if (check.NeedsSave)
             {
                 // A user of a provider, new or with new groups: the same checks with it (the credential time is spent).
-                if ((Refusal(check.User!, address) ?? await PasswordRefusalAsync(check.User!, ct)) is { } refusal)
-                    return (null, null, refusal);
+                if (Refusal(check.User!, address) is { } refusal)
+                    return (null, null, refusal, false, false);
+                string? passwordRefusal;
+                (passwordRefusal, totp, expired) = await PasswordRefusalAsync(check.User!, options, ct);
+                if (passwordRefusal != null)
+                    return (null, null, passwordRefusal, false, false);
                 if (!_authenticator.Save(check))
-                    return (null, null, "the user of the authentication provider cannot be saved");
+                    return (null, null, "the user of the authentication provider cannot be saved", false, false);
             }
-            return (check.User, PasswordMethod, null);
+            return (check.User, PasswordMethod, null, totp, expired);
         }
 
         /// <summary>Status, expiry and the allowed networks of the user (with its groups).</summary>
@@ -201,16 +235,25 @@ namespace FxSsh.SshServerModule.Security
                 : "the address is not in the whitelist of the user";
         }
 
-        /// <summary>Whether the password alone may log the user in: the method, the password age, no multi-step login, no second factor.</summary>
-        private async ValueTask<string?> PasswordRefusalAsync(User user, CancellationToken ct)
+        /// <summary>
+        /// Whether the password may log the user in: the method, the password age, no multi-step login, and (not
+        /// interactive) no second factor. Also whether it has a second factor and an expired password (interactive).
+        /// </summary>
+        private async ValueTask<(string? Refusal, bool Totp, bool PasswordExpired)> PasswordRefusalAsync(User user, PasswordLoginOptions options,
+            CancellationToken ct)
         {
+            var now = Time.GetUtcNow().UtcDateTime;
             var settings = _userSettings.Resolve(user);
             if ((settings.AllowedAuthMethods & AuthMethods.Password) == 0)
-                return "the password is not allowed for the user";
-            if (UserLoginRules.Refusal(user, AuthMethods.Password, Time.GetUtcNow().UtcDateTime, _repository.ServerSettings.PasswordMaxAgeDays) is { } passwordAge)
-                return passwordAge;
+                return ("the password is not allowed for the user", false, false);
+
+            var maxAge = _repository.ServerSettings.PasswordMaxAgeDays;
+            var expired = options.IsInteractive && UserLoginRules.IsPasswordExpired(user, now, maxAge);
+            if (!expired && UserLoginRules.Refusal(user, AuthMethods.Password, now, maxAge) is { } passwordAge)
+                return (passwordAge, false, false);
+
             if (AuthMethodRules.RequiredSteps(user).Count > 0)
-                return "the user has a multi-step login; use an app password";
+                return (options.IsInteractive ? "the user has a multi-step login, which the web client cannot do" : "the user has a multi-step login; use an app password", false, false);
 
             bool totp;
             try
@@ -220,9 +263,11 @@ namespace FxSsh.SshServerModule.Security
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "The second factor of user {Username} cannot be read; the login is refused.", LogText.Clean(user.Username));
-                return "the second factor cannot be checked";
+                return ("the second factor cannot be checked", false, false);
             }
-            return totp ? "the user has a second factor; use an app password" : null;
+            if (totp && !options.IsInteractive)
+                return ("the user has a second factor; use an app password", false, false);
+            return (null, totp, expired);
         }
 
         private async ValueTask RecordFailureAsync(IPAddress address, string protocolName, CancellationToken ct)

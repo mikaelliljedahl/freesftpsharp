@@ -1,0 +1,42 @@
+@{
+    var signedIn = ClientClaims.Session(User) != null;
+    var mustChange = ClientClaims.MustChangePassword(User);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <title>@ViewData["Title"] - FreeSftpSharp</title>
+    <script src="~/js/theme.js"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/client.css" />
+</head>
+<body class="client-body">
+    @if (signedIn)
+    {
+        <nav class="navbar navbar-expand border-bottom bg-body-tertiary">
+            <div class="container">
+                <a class="navbar-brand d-flex align-items-center gap-2" href="/client"><i class="bi bi-hdd-network text-primary"></i> FreeSftpSharp</a>
+                <ul class="navbar-nav me-auto">
+                    @if (!mustChange)
+                    {
+                        <li class="nav-item"><a class="nav-link" href="/client" id="nav-files"><i class="bi bi-folder2"></i> Files</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/client/account" id="nav-account"><i class="bi bi-person-gear"></i> Account</a></li>
+                    }
+                </ul>
+                <span class="navbar-text me-3 small" id="signed-in-user"><i class="bi bi-person"></i> @User.Identity?.Name</span>
+                <form method="post" action="/client/logout" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" id="logout"><i class="bi bi-box-arrow-right"></i> Log out</button>
+                </form>
+            </div>
+        </nav>
+    }
+    <main class="container py-4">
+        @RenderBody()
+    </main>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

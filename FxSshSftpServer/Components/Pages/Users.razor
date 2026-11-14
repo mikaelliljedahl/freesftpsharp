@@ -467,8 +467,12 @@
                                 <InputCheckbox id="allow-webdav" class="form-check-input" @bind-Value="form.AllowWebDav" />
                                 <label class="form-check-label" for="allow-webdav">WebDAV</label>
                             </div>
+                            <div class="form-check form-check-inline">
+                                <InputCheckbox id="allow-web" class="form-check-input" @bind-Value="form.AllowWeb" />
+                                <label class="form-check-label" for="allow-web">Web client</label>
+                            </div>
                             <ValidationMessage For="() => form.AllowSftp" />
-                            <div class="form-text">SFTP refuses a protocol that is not allowed like a wrong password; WebDAV answers 403 after a correct password. WebDAV must also be turned on for the server (<code>WebDav:Enabled</code>).</div>
+                            <div class="form-text">SFTP refuses a protocol that is not allowed like a wrong password; WebDAV answers 403 after a correct password. WebDAV and the web client must also be turned on for the server (<code>WebDav:Enabled</code>, <code>WebClient:Enabled</code>).</div>
                         </fieldset>
 
                         <fieldset class="border rounded p-3 mb-3">

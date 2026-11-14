@@ -61,6 +61,14 @@ the user, the password (`AllowedAuthMethods`; not alone for a multi-step login o
 (`User.AppPasswords`, per protocol) and the protocol flags (`User.AllowedProtocols`). The SFTP login of `HostedServer`
 checks the same flags. A protocol never repeats a storage rule.
 
+The web client of the users (#69, [WEB-CLIENT.md](WEB-CLIENT.md)) is a branch of the web host (`FxSshSftpServer/WebClient`,
+`AddWebClient()`, `UseWebClient()` and `MapWebClient()`, Razor Pages in `Pages/Client`), off unless `WebClient:Enabled`.
+It logs in with `PasswordLoginService` in its interactive mode (`PasswordLoginOptions.Interactive`: the caller asks for the
+TOTP code and lets an expired password be changed; no app passwords), with its own cookie scheme (`UserAuth`, path
+`/client`), and registers one connection per browser login (protocol `HTTP`, `ClientSessions`), which is also the store of
+the sessions. Every file action uses `IFileSystemFactory` with that connection; the page only maps the effective
+permissions to its buttons (`ClientPermissionMap`, the same `PathRuleResolver` as the permission decorator).
+
 ## Events
 
 Everything that happens in the server is an `IEvent` (`SshServer.Interfaces.Events`): `FileEvent`, `AuthEvent`,
@@ -217,7 +225,7 @@ plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Au
   expiry stay local.
 - **Every protocol** does the same steps: read the stored user, check `UserLoginRules` and the effective settings
   (refusal: `SpendFailureTimeAsync`, the time of a wrong password), `VerifyAsync`, check again with a returned user,
-  `Save`. `HostedServer` does it for SSH, `PasswordLoginService` for WebDAV and the later password protocols.
+  `Save`. `HostedServer` does it for SSH, `PasswordLoginService` for WebDAV, the web client and the later password protocols.
 
 ## Quotas and bandwidth
 

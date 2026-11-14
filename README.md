@@ -256,6 +256,8 @@ OpenSSH connects with its default settings.
 - Global IP blacklist, optional global IP whitelist, auto-ban after failed logins, and `BindToAddress`. See [Network access settings](#network-access-settings).
 - WebDAV (issue #71, opt-in): the same users and storage over WebDAV class 1 and 2 for Windows Explorer, macOS
   Finder and Linux clients, with Basic over HTTPS, per-user protocol flags and app passwords. See [docs/WEBDAV.md](docs/WEBDAV.md).
+- Web client (issue #69, opt-in): the users browse, upload, download and manage their account in the browser at `/client`,
+  with the same permissions, quotas and audit events as SFTP. See [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md).
 
 
 ### Features planned for the future

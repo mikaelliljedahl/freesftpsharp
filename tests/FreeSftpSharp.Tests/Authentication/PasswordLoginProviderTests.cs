@@ -6,6 +6,8 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Groups;
 using SshServerModule.Authentication;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FreeSftpSharp.Tests.Authentication;
 
@@ -75,5 +77,30 @@ public sealed class PasswordLoginProviderTests
         Assert.Equal(PasswordLoginStatus.Ok, (await Login("local", "local-password")).Status);
         Assert.Equal(PasswordLoginStatus.Failed, (await Login("local", "directory-password")).Status);
         Assert.Empty(_external.Calls);
+    }
+
+    [Fact]
+    public async Task The_web_client_login_of_the_hosts_uses_the_providers_and_their_ownership()
+    {
+        // The registration of the hosts: PasswordLoginService (AddSshServerSecurity) gets the chain of AddSshServerAuthentication.
+        var services = new ServiceCollection().AddLogging().AddSingleton<ISettingsRepository>(_repository);
+        services.AddSshServerSecurity();
+        services.AddSshServerAuthentication(new ConfigurationBuilder().Build());
+        services.AddSingleton<IAuthenticationProvider>(_external);
+        await using var provider = services.BuildServiceProvider();
+        var logins = provider.GetRequiredService<PasswordLoginService>();
+        ValueTask<PasswordLoginResult> Web(string username, string password) => logins.LoginAsync("Web", UserProtocols.Web, username, password,
+            IPAddress.Parse("192.0.2.1"), TestContext.Current.CancellationToken, PasswordLoginOptions.Interactive);
+
+        var created = await Web("web-user", "directory-password");
+        var local = await Web("local", "directory-password");
+
+        Assert.Equal(PasswordLoginStatus.Ok, created.Status);
+        Assert.False(created.SecondFactorRequired);
+        Assert.False(created.PasswordExpired);
+        Assert.Equal("ldap", _repository.GetUser("web-user").AuthenticationProvider);
+        Assert.Equal(PasswordLoginStatus.Failed, local.Status); // a local user is checked by the database only
+        Assert.DoesNotContain(_external.Calls, c => c.Username == "local");
+        Assert.Equal("Web", _external.Calls.Single().Protocol);
     }
 }
