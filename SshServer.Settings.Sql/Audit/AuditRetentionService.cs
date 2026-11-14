@@ -31,6 +31,12 @@ public sealed class AuditRetentionService : BackgroundService
         _events = events;
     }
 
+    /// <summary>
+    /// Test seam: called when a run of the loop has ended, after a result or a failure, before the job waits for the next
+    /// interval. A test waits for this signal instead of polling the clock. It is not configurable.
+    /// </summary>
+    internal Action? RunEnded { get; set; }
+
     /// <summary>One run: removes the old entries; returns how many.</summary>
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
@@ -70,6 +76,7 @@ public sealed class AuditRetentionService : BackgroundService
             {
                 _logger.LogError(ex, "The audit retention job failed; it runs again in {Interval}.", Interval);
             }
+            RunEnded?.Invoke();
 
             try
             {
