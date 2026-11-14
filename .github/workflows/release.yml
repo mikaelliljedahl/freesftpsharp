@@ -1,0 +1,183 @@
+name: "Release"
+
+# Runs only when a version tag is pushed (vX.Y.Z or vX.Y.Z-suffix). It never runs for a pull request.
+on:
+  push:
+    tags: [ 'v[0-9]+.[0-9]+.[0-9]+*' ]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  IMAGE: ghcr.io/mikaelliljedahl/freesftpsharp
+
+jobs:
+  version:
+    name: Version from the tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The tag '$GITHUB_REF_NAME' is not a version (vX.Y.Z)."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  archives:
+    name: Archive (${{ matrix.rid }})
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        rid: [ linux-x64, linux-arm64, win-x64, osx-arm64 ]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '11.0.x'
+
+      # The lock files are checked once with a normal restore. A restore for a runtime identifier has another
+      # package graph, so the publish below cannot run in locked mode.
+      - name: Restore (locked mode)
+        run: dotnet restore FreeSftpSharp.sln --locked-mode
+
+      # Self-contained, single file. The web host keeps its wwwroot next to the executable. The console server is
+      # published beside it, so one archive has both: FxSshSftpServer (admin UI + server) and ServerConsoleApp.
+      - name: Publish
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="freesftpsharp-${VERSION}-${{ matrix.rid }}"
+          for project in FxSshSftpServer ServerConsoleApp; do
+            dotnet publish "$project/$project.csproj" -c Release -r "${{ matrix.rid }}" --self-contained \
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none \
+              -p:Version="$VERSION" -o "dist/$name/$project"
+          done
+          cp README.md LICENSE.md "dist/$name/"
+          cp -r deploy "dist/$name/deploy"
+          cd dist
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            zip -qr "$name.zip" "$name"
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          rm -rf "$name"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: archive-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+
+  image:
+    name: Container image (linux/amd64, linux/arm64)
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(needs.version.outputs.version, '-') }}
+            type=sha,prefix=sha-
+
+      # Test before anything is pushed: build one architecture into the local daemon, smoke test it and scan it.
+      - name: Build for the smoke test and the scan
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          build-args: VERSION=${{ needs.version.outputs.version }}
+          tags: freesftpsharp:release-check
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: deploy/docker/smoke-test.sh freesftpsharp:release-check "${{ needs.version.outputs.version }}"
+
+      - name: Scan the image (no critical findings)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: freesftpsharp:release-check
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ needs.version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+
+      - name: Attest the image provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    name: GitHub Release
+    needs: [ version, archives, image ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          prerelease=""
+          if [[ "$VERSION" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --generate-notes --verify-tag $prerelease

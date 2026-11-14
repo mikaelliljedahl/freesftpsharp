@@ -26,6 +26,12 @@ using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
 
+if (VersionCommand.IsRequested(args))
+{
+    Console.WriteLine(VersionCommand.Describe(System.Reflection.Assembly.GetExecutingAssembly()));
+    return 0;
+}
+
 // "user add|list|remove" manages the users in the settings database and exits. It does not start the server.
 if (UserCommand.IsRequested(args))
     return RunUserCommand(args);
