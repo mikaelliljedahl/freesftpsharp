@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114132148_AddApiKeys";
+    public override string LastMigrationId => "20261114135659_AddShares";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -419,12 +419,79 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("ServerRsaKey")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Shares")
+                    .HasColumnType("TEXT");
+
                 b.PrimitiveCollection<string>("WhitelistedIps")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
 
                 b.ToTable("ServerSettings");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Shares.Share", b =>
+            {
+                b.Property<string>("Id")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("AllowOverwrite")
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("AllowedIps")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("ExpiresAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastUsedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("MaxUses")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("PasswordHash")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("Paths")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Scope")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("UsedCount")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Username")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("Shares");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Storage.VirtualFolder", b =>
@@ -867,6 +934,15 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     });
 
                 b.Navigation("VirtualFolders");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.Shares.Share", b =>
+            {
+                b.HasOne("SshServer.Interfaces.User", null)
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("SshServer.Interfaces.User", b =>

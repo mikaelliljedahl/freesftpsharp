@@ -57,6 +57,9 @@ namespace SshServer.Interfaces
         public bool EnableCommand { get; set; }
         public bool EnableDirectTcpIp { get; set; }
 
+        /// <summary>The share links of the web client (#70). Null: off.</summary>
+        public Shares.ShareSettings? Shares { get; set; }
+
 
     }
 }

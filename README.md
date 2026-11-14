@@ -257,6 +257,9 @@ OpenSSH connects with its default settings.
   Finder and Linux clients, with Basic over HTTPS, per-user protocol flags and app passwords. See [docs/WEBDAV.md](docs/WEBDAV.md).
 - Web client (issue #69, opt-in): the users browse, upload, download and manage their account in the browser at `/client`,
   with the same permissions, quotas and audit events as SFTP. See [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md).
+- Share links (issue #70, opt-in): a user of the web client shares files or folders with people without an account, as a
+  download link or an upload folder ("inbox"), with an optional password, expiry, use limit and client networks. See
+  [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md#share-links).
 
 
 ### Features planned for the future

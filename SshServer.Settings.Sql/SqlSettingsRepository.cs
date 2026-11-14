@@ -183,6 +183,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.IdleTimeout = updatedSettings.IdleTimeout;
         stored.EnableCommand = updatedSettings.EnableCommand;
         stored.EnableDirectTcpIp = updatedSettings.EnableDirectTcpIp;
+        stored.Shares = updatedSettings.Shares;
         db.SaveChanges();
 
         var changed = ChangedFields(before, ServerSettingsSnapshot.From(stored));

@@ -29,6 +29,14 @@ namespace FxSshSftpServer.Models
 
         public bool EnableDirectTcpIp { get; set; }
 
+        /// <summary>The users of the web client may create share links (#70).</summary>
+        public bool SharesEnabled { get; set; }
+
+        [Range(0, SshServer.Interfaces.Shares.ShareSettings.MaxLifetimeDaysLimit, ErrorMessage = "The maximum lifetime must be from 0 to 3650 days.")]
+        public int ShareMaxLifetimeDays { get; set; }
+
+        public bool ShareRequirePassword { get; set; }
+
         public static ServerSettingsForm From(ServerSettings settings) => new()
         {
             ListenToPort = settings.ListenToPort,
@@ -38,6 +46,9 @@ namespace FxSshSftpServer.Models
             PasswordMaxAgeDays = settings.PasswordMaxAgeDays,
             EnableCommand = settings.EnableCommand,
             EnableDirectTcpIp = settings.EnableDirectTcpIp,
+            SharesEnabled = settings.Shares?.Enabled == true,
+            ShareMaxLifetimeDays = settings.Shares?.MaxLifetimeDays ?? 0,
+            ShareRequirePassword = settings.Shares?.RequirePassword == true,
         };
 
         public void ApplyTo(ServerSettings settings)
@@ -49,6 +60,14 @@ namespace FxSshSftpServer.Models
             settings.PasswordMaxAgeDays = PasswordMaxAgeDays;
             settings.EnableCommand = EnableCommand;
             settings.EnableDirectTcpIp = EnableDirectTcpIp;
+            settings.Shares = !SharesEnabled && ShareMaxLifetimeDays == 0 && !ShareRequirePassword
+                ? null
+                : new SshServer.Interfaces.Shares.ShareSettings
+                {
+                    Enabled = SharesEnabled,
+                    MaxLifetimeDays = ShareMaxLifetimeDays,
+                    RequirePassword = ShareRequirePassword,
+                };
         }
     }
 

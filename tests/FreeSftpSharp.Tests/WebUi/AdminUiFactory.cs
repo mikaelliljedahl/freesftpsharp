@@ -60,6 +60,9 @@ public class AdminUiFactory : WebApplicationFactory<Program>
             services.AddSingleton<SshServer.Interfaces.EventRules.IEventRuleStore>(new SshServer.Settings.Sql.EventRules.DisabledEventRuleStore());
             services.RemoveAll<IAdminStore>();
             services.AddSingleton<IAdminStore>(AdminStore);
+            // The share links (#70) in memory too.
+            services.RemoveAll<SshServer.Interfaces.Shares.IShareStore>();
+            services.AddSingleton<SshServer.Interfaces.Shares.IShareStore>(new SshServer.Interfaces.Shares.InMemoryShareStore());
             services.RemoveAll<SshServer.Interfaces.TwoFactor.ITwoFactorStore>();
             services.AddSingleton<SshServer.Interfaces.TwoFactor.ITwoFactorStore>(TwoFactorStore);
 
