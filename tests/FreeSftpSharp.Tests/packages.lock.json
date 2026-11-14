@@ -1025,12 +1025,20 @@
           "xunit.v3.runner.common": "[4.0.3]"
         }
       },
+      "freesftpsharp.webdav": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServerModule": "[1.0.0, )"
+        }
+      },
       "fxssh": {
         "type": "Project"
       },
       "fxsshsftpserver": {
         "type": "Project",
         "dependencies": {
+          "FreeSftpSharp.WebDav": "[1.0.0, )",
           "Microsoft.AspNetCore.Components.QuickGrid": "[11.0.0, )",
           "Serilog.AspNetCore": "[10.0.0, )",
           "Serilog.Settings.Configuration": "[10.0.1, )",

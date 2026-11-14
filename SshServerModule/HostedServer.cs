@@ -328,14 +328,14 @@ namespace FxSsh.SshServerModule
             {
                 // The next step finds no stored user and asks the provider again; the login is complete only when it is saved.
                 _logger.LogWarning("User {Username} of the authentication provider {Provider} could not be saved after step {Step}.",
-                    e.Username, attempt.Provisioned.Provider, attempt.Progress.Completed.Count + 1);
+                    LogText.Clean(e.Username), attempt.Provisioned.Provider, attempt.Progress.Completed.Count + 1);
             }
             attempt.Provisioned = null;
             attempt.Progress.CompleteStep(user, attempt.PendingMethod, attempt.PendingTotp);
             var next = attempt.Progress.MethodsThatCanContinue(user, attempt.PendingTotp) ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
             service.AuthenticationsThatCanContinue = next;
             _logger.LogInformation("Step {Step} of the login of {Username} ({Method}) succeeded; the next step is {Next}.",
-                attempt.Progress.Completed.Count, e.Username, e.AuthMethod, string.Join(",", next));
+                attempt.Progress.Completed.Count, LogText.Clean(e.Username), LogText.Clean(e.AuthMethod), string.Join(",", next));
         }
 
         /// <summary>
@@ -374,7 +374,7 @@ namespace FxSsh.SshServerModule
             {
                 // Banned while this session was open: no more attempts on it.
                 _logger.LogInformation("Authentication ({Method}) of {Username} refused: {RemoteEndPoint} is banned.",
-                    e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
+                    LogText.Clean(e.AuthMethod), LogText.Clean(e.Username), e.Session.RemoteEndPoint);
                 return "the address is banned";
             }
 
@@ -386,7 +386,7 @@ namespace FxSsh.SshServerModule
                 if (passwordLike)
                     UserLogics.SimulatePasswordCheck(); // same time as for a real user
                 _logger.LogInformation("Authentication ({Method}) failed for unknown user {Username} from {RemoteEndPoint}.",
-                    e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
+                    LogText.Clean(e.AuthMethod), LogText.Clean(e.Username), e.Session.RemoteEndPoint);
                 return "unknown user";
             }
 
@@ -410,7 +410,7 @@ namespace FxSsh.SshServerModule
                 case AuthMethods.KeyboardInteractive:
                     return VerifyKeyboardInteractive(e, attempt, connectionId, request, ref user, ref totp);
                 default:
-                    _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
+                    _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", LogText.Clean(e.AuthMethod), LogText.Clean(e.Username));
                     return "the method is not supported";
             }
         }
@@ -446,7 +446,7 @@ namespace FxSsh.SshServerModule
             if (lifecycle != null)
             {
                 _logger.LogInformation("Authentication ({Method}) of {Username} from {RemoteEndPoint} refused: {Reason}.",
-                    e.AuthMethod, e.Username, e.Session.RemoteEndPoint, lifecycle);
+                    LogText.Clean(e.AuthMethod), LogText.Clean(e.Username), e.Session.RemoteEndPoint, lifecycle);
                 return lifecycle;
             }
 
@@ -454,8 +454,16 @@ namespace FxSsh.SshServerModule
             if (!UserLogics.VerifyUserIpWhitelisted(settings.AllowedIps, e.Session.RemoteEndPoint))
             {
                 _logger.LogInformation("Client {RemoteEndPoint} is not in the allowed networks of user {Username} ({Origin}).",
-                    e.Session.RemoteEndPoint, e.Username, settings.AllowedIpsOrigin);
+                    e.Session.RemoteEndPoint, LogText.Clean(e.Username), settings.AllowedIpsOrigin);
                 return "the address is not in the whitelist of the user";
+            }
+
+            if (!user.AllowedProtocols.Allows(UserProtocols.Sftp))
+            {
+                // The same failure as a wrong credential (SSH has no "forbidden"), also in time (the caller spends it).
+                _logger.LogInformation("Authentication ({Method}) of {Username} refused: SFTP is not an allowed protocol of the user.",
+                    LogText.Clean(e.AuthMethod), LogText.Clean(e.Username));
+                return "the protocol is not allowed for the user";
             }
 
             if (TwoFactorEnabled(user) is not { } hasTotp)
@@ -465,7 +473,7 @@ namespace FxSsh.SshServerModule
             var refusal = attempt.Progress.Check(user, method, totp, settings.AllowedAuthMethods);
             if (refusal != null)
             {
-                _logger.LogInformation("Authentication ({Method}) of {Username} refused: {Reason}.", e.AuthMethod, e.Username, refusal);
+                _logger.LogInformation("Authentication ({Method}) of {Username} refused: {Reason}.", LogText.Clean(e.AuthMethod), LogText.Clean(e.Username), refusal);
                 return refusal;
             }
             return null;
@@ -477,13 +485,22 @@ namespace FxSsh.SshServerModule
         /// </summary>
         string VerifyCredential(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, AuthRequest request, ref User user, ref bool totp)
         {
+            // An app password of the user for SFTP (#71) is a local credential, also for a user of a provider.
+            if (user != null && request.Method == AuthMethods.Password
+                && AppPasswordGenerator.Find(user, request.Password, UserProtocols.Sftp, Now.UtcDateTime) != null)
+            {
+                _logger.LogInformation("Password authentication of {Username} with an app password. Successful: True", LogText.Clean(e.Username));
+                e.Result = true;
+                return null;
+            }
+
             var check = SyncBridge.Wait(_authenticator.VerifyAsync(request, CancellationToken.None));
             if (request.PublicKey != null)
                 _logger.LogInformation("Public key authentication of {Username}, {KeyAlgorithm} SHA256:{Fingerprint} ({Provider}). Successful: {Result}",
-                    e.Username, e.KeyAlgorithm, e.Fingerprint, check.Provider, check.Succeeded);
+                    LogText.Clean(e.Username), LogText.Clean(e.KeyAlgorithm), e.Fingerprint, check.Provider, check.Succeeded);
             else
                 _logger.LogInformation("Password authentication{Variant} of {Username} ({Provider}). Successful: {Result}",
-                    request.Method == AuthMethods.KeyboardInteractive ? " (keyboard-interactive)" : "", e.Username, check.Provider, check.Succeeded);
+                    request.Method == AuthMethods.KeyboardInteractive ? " (keyboard-interactive)" : "", LogText.Clean(e.Username), check.Provider, check.Succeeded);
 
             if (!check.Succeeded)
             {
@@ -514,7 +531,7 @@ namespace FxSsh.SshServerModule
                 // The second factor of the user changed between the prompt and the response.
                 if (!attempt.PromptAsksForCode)
                     SyncBridge.Wait(_authenticator.SpendFailureTimeAsync(request, CancellationToken.None));
-                _logger.LogInformation("Keyboard-interactive authentication of {Username} refused: the login changed during the prompt.", e.Username);
+                _logger.LogInformation("Keyboard-interactive authentication of {Username} refused: the login changed during the prompt.", LogText.Clean(e.Username));
                 return "the login changed during the prompt";
             }
 
@@ -529,15 +546,15 @@ namespace FxSsh.SshServerModule
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "The verification code of user {Username} cannot be checked; the login is refused.", e.Username);
+                _logger.LogError(ex, "The verification code of user {Username} cannot be checked; the login is refused.", LogText.Clean(e.Username));
                 return "the second factor cannot be checked";
             }
 
             e.Result = check is TwoFactorCheck.Valid or TwoFactorCheck.RecoveryCode;
             if (check == TwoFactorCheck.RecoveryCode)
-                _logger.LogWarning("User {Username} logged in with a recovery code from {RemoteEndPoint}.", e.Username, e.Session.RemoteEndPoint);
+                _logger.LogWarning("User {Username} logged in with a recovery code from {RemoteEndPoint}.", LogText.Clean(e.Username), e.Session.RemoteEndPoint);
             else
-                _logger.LogInformation("Verification code of {Username}: {Result}.", e.Username, check);
+                _logger.LogInformation("Verification code of {Username}: {Result}.", LogText.Clean(e.Username), check);
             return check switch
             {
                 TwoFactorCheck.Valid or TwoFactorCheck.RecoveryCode => null,
@@ -581,7 +598,7 @@ namespace FxSsh.SshServerModule
                 if (!_authenticator.Save(provisioned))
                 {
                     const string reason = "the user of the authentication provider cannot be saved";
-                    _logger.LogWarning("The login of {Username} from {RemoteEndPoint} is refused: {Reason}.", username, session.RemoteEndPoint, reason);
+                    _logger.LogWarning("The login of {Username} from {RemoteEndPoint} is refused: {Reason}.", LogText.Clean(username), session.RemoteEndPoint, reason);
                     Publish(new AuthEvent(AuthEventType.LoginFailed)
                     {
                         Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
@@ -595,7 +612,7 @@ namespace FxSsh.SshServerModule
             {
                 // Another login of the user took the last session between the check and now (issue #61).
                 var reason = UserLoginRules.SessionLimitReason(attempt.AcceptedMaxSessions);
-                _logger.LogInformation("The login of {Username} from {RemoteEndPoint} is refused: {Reason}.", username, session.RemoteEndPoint, reason);
+                _logger.LogInformation("The login of {Username} from {RemoteEndPoint} is refused: {Reason}.", LogText.Clean(username), session.RemoteEndPoint, reason);
                 Publish(new AuthEvent(AuthEventType.LoginFailed)
                 {
                     Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
@@ -628,7 +645,7 @@ namespace FxSsh.SshServerModule
             {
                 // The login itself is fine; only the time stamp is lost.
                 _logger.LogWarning(ex, "Could not save the last login time of user {Username} from {RemoteEndPoint}.",
-                    username, session.RemoteEndPoint);
+                    LogText.Clean(username), session.RemoteEndPoint);
             }
         }
 

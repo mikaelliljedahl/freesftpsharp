@@ -116,6 +116,15 @@ namespace FxSshSftpServer.Models
 
         public bool UsesOwnPermissions => !HasGroups || !InheritPermissions;
 
+        /// <summary>The user may log in with SFTP (issue #71).</summary>
+        public bool AllowSftp { get; set; } = true;
+
+        /// <summary>The user may log in with WebDAV (issue #71), when WebDAV is on for the server.</summary>
+        public bool AllowWebDav { get; set; } = true;
+
+        /// <summary>The stored app passwords, for display. The page changes them at once through <see cref="UserAdministrationService"/>, not with Save.</summary>
+        public List<AppPassword> AppPasswords { get; set; } = new();
+
         /// <summary>The permissions per directory (issue #59); the first row is always "/".</summary>
         public List<PermissionRow> Permissions { get; set; } = new() { PermissionRow.Root() };
 
@@ -146,6 +155,9 @@ namespace FxSshSftpServer.Models
             AllowPublicKey = user.AllowedAuthMethods.HasFlag(AuthMethods.PublicKey),
             OtherAllowedMethods = user.AllowedAuthMethods & ~(AuthMethods.Password | AuthMethods.PublicKey),
             MultiStep = MultiStepOf(user.RequireAllOf),
+            AllowSftp = user.AllowedProtocols.Allows(UserProtocols.Sftp),
+            AllowWebDav = user.AllowedProtocols.Allows(UserProtocols.WebDav),
+            AppPasswords = user.AppPasswords?.ToList() ?? new List<AppPassword>(),
             LastLoginAt = user.LastLoginAt,
             Description = user.Description ?? "",
             Enabled = user.Status == UserStatus.Enabled,
@@ -165,6 +177,9 @@ namespace FxSshSftpServer.Models
 
         private AuthMethods AllowedMethods =>
             (AllowPassword ? AuthMethods.Password : AuthMethods.None) | (AllowPublicKey ? AuthMethods.PublicKey : AuthMethods.None) | OtherAllowedMethods;
+
+        private UserProtocols AllowedProtocols =>
+            (AllowSftp ? UserProtocols.Sftp : UserProtocols.None) | (AllowWebDav ? UserProtocols.WebDav : UserProtocols.None);
 
         private List<AuthMethods> RequiredSteps => MultiStep switch
         {
@@ -206,6 +221,7 @@ namespace FxSshSftpServer.Models
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
             user.AllowedAuthMethods = AllowedMethods;
             user.RequireAllOf = RequiredSteps;
+            user.AllowedProtocols = AllowedProtocols; // every protocol ticked is stored as "All"
             if (UsesOwnPermissions)
             {
                 // Without groups, "/" = All and no filter is the same as not set; then a group can give them later.
@@ -249,6 +265,9 @@ namespace FxSshSftpServer.Models
             else
                 foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
                     yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
+
+            if (!AllowSftp && !AllowWebDav)
+                yield return new ValidationResult("Allow at least one protocol.", new[] { nameof(AllowSftp) });
 
             foreach (var problem in Quotas.Problems(Mounts))
                 yield return new ValidationResult(problem, new[] { nameof(Quotas) });

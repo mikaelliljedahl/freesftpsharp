@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Authentication;
@@ -64,7 +65,7 @@ public sealed class ExternalUserProvisioner
             CreateRootDirectory(prepared);
             if (_repository.AddUser(prepared))
             {
-                _logger.LogInformation("Created user {Username} from the authentication provider {Provider}.", prepared.Username, prepared.AuthenticationProvider);
+                _logger.LogInformation("Created user {Username} from the authentication provider {Provider}.", LogText.Clean(prepared.Username), prepared.AuthenticationProvider);
                 return true;
             }
             stored = _repository.GetUser(prepared.Username); // another login created it at the same time
@@ -75,7 +76,7 @@ public sealed class ExternalUserProvisioner
         if (!string.Equals(stored.AuthenticationProvider, prepared.AuthenticationProvider, StringComparison.Ordinal))
         {
             _logger.LogWarning("User {Username} belongs to the authentication provider {Owner}, not to {Provider}; it is not changed.",
-                prepared.Username, stored.AuthenticationProvider ?? DatabaseAuthenticationProvider.ProviderName, prepared.AuthenticationProvider);
+                LogText.Clean(prepared.Username), stored.AuthenticationProvider ?? DatabaseAuthenticationProvider.ProviderName, prepared.AuthenticationProvider);
             return false;
         }
 
@@ -85,7 +86,7 @@ public sealed class ExternalUserProvisioner
         CopyManagedFields(prepared, updated);
         if (!_repository.UpdateUser(updated))
             return false;
-        _logger.LogInformation("Updated user {Username} from the authentication provider {Provider}.", prepared.Username, prepared.AuthenticationProvider);
+        _logger.LogInformation("Updated user {Username} from the authentication provider {Provider}.", LogText.Clean(prepared.Username), prepared.AuthenticationProvider);
         return true;
     }
 
@@ -100,7 +101,7 @@ public sealed class ExternalUserProvisioner
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            _logger.LogWarning(ex, "The root directory of user {Username} cannot be created.", user.Username);
+            _logger.LogWarning(ex, "The root directory of user {Username} cannot be created.", LogText.Clean(user.Username));
         }
     }
 
@@ -135,7 +136,7 @@ public sealed class ExternalUserProvisioner
                 var group = groups.FirstOrDefault(g => string.Equals(g.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
                 if (group == null)
                     _logger.LogWarning("The authentication provider of user {Username} gave the group {Group}, which does not exist; it is skipped.",
-                        user.Username, name);
+                        LogText.Clean(user.Username), LogText.Clean(name));
                 return group?.Id;
             }
 

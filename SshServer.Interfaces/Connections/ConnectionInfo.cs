@@ -46,6 +46,7 @@ public enum TransferDirection
 public static class ConnectionProtocols
 {
     public const string Sftp = "SFTP";
+    public const string WebDav = "WebDAV";
 }
 
 public enum ConnectionEventKind

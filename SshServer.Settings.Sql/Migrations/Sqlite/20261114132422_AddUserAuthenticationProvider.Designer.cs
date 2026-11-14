@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114131830_AddUserAuthenticationProvider")]
-partial class _20261114131830_AddUserAuthenticationProvider
+[Migration("20261114132422_AddUserAuthenticationProvider")]
+partial class _20261114132422_AddUserAuthenticationProvider
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -412,6 +412,14 @@ partial class _20261114131830_AddUserAuthenticationProvider
                 b.Property<string>("AllowedAuthMethods")
                     .IsRequired()
                     .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AllowedProtocols")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AppPasswords")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("AuthenticationProvider")

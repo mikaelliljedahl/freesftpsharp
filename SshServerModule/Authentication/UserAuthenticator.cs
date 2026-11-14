@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FxSsh.SshServerModule;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
@@ -88,7 +89,7 @@ public sealed class UserAuthenticator : IUserAuthenticator
                     if (error != null)
                     {
                         _logger.LogWarning("The authentication provider {Provider} accepted {Username}, but the user is refused: {Reason}.",
-                            provider.Name, request.Username, error);
+                            provider.Name, LogText.Clean(request.Username), error);
                         return CredentialCheck.Failed(error, provider.Name);
                     }
                     return new CredentialCheck(true, null, provider.Name, user, needsSave);
@@ -132,7 +133,7 @@ public sealed class UserAuthenticator : IUserAuthenticator
         catch (Exception ex)
         {
             _logger.LogError(ex, "User {Username} of the authentication provider {Provider} cannot be saved; the login is refused.",
-                check.User.Username, check.Provider);
+                LogText.Clean(check.User.Username), check.Provider);
             return false;
         }
     }

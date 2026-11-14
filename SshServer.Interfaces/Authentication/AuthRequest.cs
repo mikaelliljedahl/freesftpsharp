@@ -34,5 +34,11 @@ public sealed class AuthRequest
     /// <summary>True for a password (also over keyboard-interactive): a refusal costs the time of a password check.</summary>
     public bool IsPassword => Password != null;
 
-    public override string ToString() => $"{Method} login of {Username} from {RemoteIp ?? "?"} ({Protocol})";
+    /// <summary>For the log: without the password, and the client values without control characters (no forged log lines).</summary>
+    public override string ToString() => $"{Method} login of {Clean(Username)} from {Clean(RemoteIp) ?? "?"} ({Clean(Protocol)})";
+
+    private static string? Clean(string? value) =>
+        value == null || !value.Any(char.IsControl)
+            ? value
+            : string.Concat(value.Select(c => char.IsControl(c) ? $"\\u{(int)c:x4}" : c.ToString()));
 }
