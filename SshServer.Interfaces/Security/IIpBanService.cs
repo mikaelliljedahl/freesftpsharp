@@ -11,7 +11,8 @@ public sealed record IpBan(IPAddress Address, DateTimeOffset BannedAt, DateTimeO
 
 /// <summary>
 /// The auto-bans of the SSH server (<c>ServerSettings.MaxLoginAttemptsBeforeBan</c>). The bans are kept in memory
-/// only, so a restart lifts them. The admin UI uses this service to list and lift bans.
+/// only, so a restart lifts them; with <c>Cluster:Enabled</c> they are shared through the <see cref="IIpBanStore"/>.
+/// The admin UI uses this service to list and lift bans.
 /// </summary>
 public interface IIpBanService
 {
@@ -23,4 +24,21 @@ public interface IIpBanService
 
     /// <summary>Lifts the ban of the address and forgets its failed logins. False when it was not banned.</summary>
     bool Unban(IPAddress address);
+}
+
+/// <summary>
+/// The shared bans of several nodes (issue #75, <c>Cluster:Enabled</c>): a ban of one node is refused on every node.
+/// The table BannedIps of the settings database. The failed logins are still counted per node.
+/// </summary>
+public interface IIpBanStore
+{
+    /// <summary>Adds or replaces the ban of its address.</summary>
+    Task AddAsync(IpBan ban, CancellationToken ct);
+
+    /// <summary>The bans that end after <paramref name="now"/>.</summary>
+    Task<IReadOnlyList<IpBan>> ListActiveAsync(DateTimeOffset now, CancellationToken ct);
+
+    Task RemoveAsync(IPAddress address, CancellationToken ct);
+
+    Task<int> RemoveExpiredAsync(DateTimeOffset now, CancellationToken ct);
 }

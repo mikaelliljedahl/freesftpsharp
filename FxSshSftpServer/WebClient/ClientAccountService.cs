@@ -216,7 +216,7 @@ namespace FxSshSftpServer.WebClient
             {
                 Timestamp = _time.GetUtcNow(),
                 Actor = SelfActor,
-                ChangedFields = [Security.TwoFactorAdministration.ChangedField],
+                ChangedFields = [SshServer.Administration.TwoFactorAdministration.ChangedField],
             }, ct).AsTask();
 
         private TwoFactorSubject Subject(string username) => TwoFactorSubject.ForUser(RequireUser(username));

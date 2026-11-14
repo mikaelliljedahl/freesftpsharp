@@ -63,6 +63,10 @@
                             <td class="d-none d-lg-table-cell">
                                 <span class="badge text-bg-info">@connection.Protocol</span>
                                 <div class="small text-body-secondary text-break">@connection.ClientVersion</div>
+                                @if (connection.Node != null)
+                                {
+                                    <div class="small text-body-secondary">Node @connection.Node</div>
+                                }
                             </td>
                             <td class="d-none d-md-table-cell" title="@connection.ConnectedAt.ToString("u", CultureInfo.InvariantCulture)">@Ago(connection.ConnectedAt)</td>
                             <td class="d-none d-md-table-cell" title="@connection.LastActivity.ToString("u", CultureInfo.InvariantCulture)">@Ago(connection.LastActivity)</td>
