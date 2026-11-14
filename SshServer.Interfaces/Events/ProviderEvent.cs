@@ -1,3 +1,5 @@
+using SshServer.Interfaces.Authentication;
+
 namespace SshServer.Interfaces.Events;
 
 /// <summary>The change of a <see cref="ProviderEvent"/>.</summary>
@@ -71,7 +73,17 @@ public sealed record UserSnapshot(string Username, string UserRootDirectory, boo
         (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList(),
         user.Status.ToString(), user.ExpiresAt, user.MaxSessions, user.Description, user.PrimaryGroupId,
         string.Join(",", user.SecondaryGroupIds ?? []),
-        QuotaText.Disk(user.DiskQuota, user.VirtualFolders), QuotaText.Transfer(user.TransferQuota), QuotaText.Bandwidth(user.Bandwidth));
+        QuotaText.Disk(user.DiskQuota, user.VirtualFolders), QuotaText.Transfer(user.TransferQuota), QuotaText.Bandwidth(user.Bandwidth))
+    {
+        AllowedProtocols = user.AllowedProtocols.ToString(),
+        AppPasswords = (user.AppPasswords ?? []).Select(a => $"{a.Name} ({a.Protocols})").ToList(),
+    };
+
+    /// <summary>The protocols that the user may use (#71).</summary>
+    public string AllowedProtocols { get; init; } = nameof(UserProtocols.All);
+
+    /// <summary>The names and protocols of the app passwords (#71), never their hashes.</summary>
+    public IReadOnlyList<string> AppPasswords { get; init; } = [];
 }
 
 /// <summary>A <see cref="Groups.Group"/> without its storage options (they can have secrets).</summary>

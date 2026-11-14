@@ -167,6 +167,53 @@ public sealed class UsersPageTests : AdminUiComponentContext
     }
 
     [Fact]
+    public void The_protocols_of_a_user_are_saved()
+    {
+        AddUser("paula");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        Assert.True(page.Find("#allow-sftp").HasAttribute("checked"));
+        page.Find("#allow-webdav").Change(false);
+        page.Find("#user-form").Submit();
+
+        page.WaitForAssertion(() => Assert.Equal(UserProtocols.Sftp, Repository.GetUser("paula").AllowedProtocols), SaveTimeout);
+        page.WaitForAssertion(() => Assert.Contains("SFTP", page.Find("#user-table").TextContent), SaveTimeout);
+
+        page.Find("#allow-sftp").Change(false);
+        page.Find("#user-form").Submit();
+        Assert.Contains("Allow at least one protocol.", page.Markup);
+        Assert.Equal(UserProtocols.Sftp, Repository.GetUser("paula").AllowedProtocols);
+    }
+
+    [Fact]
+    public void An_app_password_is_shown_once_stored_as_a_hash_and_can_be_removed()
+    {
+        AddUser("quinn");
+        var page = Render<Users>();
+        page.Find(".edit-user").Click();
+        Assert.NotNull(page.Find("#no-app-passwords"));
+
+        page.Find("#app-password-name").Change("Finder");
+        page.Find("#create-app-password").Click();
+
+        var secret = page.Find("#new-app-password").TextContent;
+        var stored = Assert.Single(Repository.GetUser("quinn").AppPasswords!);
+        Assert.Equal("Finder", stored.Name);
+        Assert.Equal(UserProtocols.WebDav, stored.Protocols);
+        Assert.True(stored.Matches(secret));
+        Assert.Contains("Finder", page.Find("#app-password-table").TextContent);
+
+        page.Find("#create-app-password").Click();
+        Assert.Contains("Enter a name", page.Find("#app-password-error").TextContent);
+        Assert.Empty(page.FindAll("#new-app-password"));
+
+        page.Find(".remove-app-password").Click();
+        Assert.Null(Repository.GetUser("quinn").AppPasswords);
+        Assert.NotNull(page.Find("#no-app-passwords"));
+    }
+
+    [Fact]
     public void Keys_pasted_as_text_are_added_with_the_expiry()
     {
         AddUser("lisa");

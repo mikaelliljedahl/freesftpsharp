@@ -64,6 +64,14 @@
                             {
                                 <span class="badge text-bg-primary me-1" title="Multi-step login">@context.RequireAllOf.Count-step</span>
                             }
+                            @if (context.AppPasswords is { Count: > 0 } appPasswords)
+                            {
+                                <span class="badge text-bg-light border me-1" title="App passwords">@(appPasswords.Count == 1 ? "app password" : $"{appPasswords.Count} app passwords")</span>
+                            }
+                            @if (context.AllowedProtocols != UserProtocols.All)
+                            {
+                                <span class="badge text-bg-dark me-1" title="Allowed protocols">@UserProtocolRules.Describe(context.AllowedProtocols)</span>
+                            }
                             @if (context.OnlyWhitelistedIps && context.WhitelistedIps is { Count: > 0 })
                             {
                                 <span class="badge text-bg-warning me-1" title="Only from whitelisted networks">IP</span>
@@ -439,6 +447,105 @@
                         }
 
                         <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Protocols</legend>
+                            <div class="form-check form-check-inline">
+                                <InputCheckbox id="allow-sftp" class="form-check-input" @bind-Value="form.AllowSftp" />
+                                <label class="form-check-label" for="allow-sftp">SFTP</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <InputCheckbox id="allow-webdav" class="form-check-input" @bind-Value="form.AllowWebDav" />
+                                <label class="form-check-label" for="allow-webdav">WebDAV</label>
+                            </div>
+                            <ValidationMessage For="() => form.AllowSftp" />
+                            <div class="form-text">SFTP refuses a protocol that is not allowed like a wrong password; WebDAV answers 403 after a correct password. WebDAV must also be turned on for the server (<code>WebDav:Enabled</code>).</div>
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">App passwords</legend>
+                            @if (form.IsNew)
+                            {
+                                <div class="small text-body-secondary">Save the user first, then create app passwords.</div>
+                            }
+                            else
+                            {
+                                @if (newAppPassword is not null)
+                                {
+                                    <div class="alert alert-success py-2 small" id="new-app-password-box">
+                                        The new app password. Copy it now; it is not shown again:
+                                        <div class="font-monospace fs-6 mt-1 user-select-all" id="new-app-password">@newAppPassword</div>
+                                    </div>
+                                }
+                                @if (form.AppPasswords.Count == 0)
+                                {
+                                    <div class="small text-body-secondary mb-2" id="no-app-passwords">No app passwords. An app password is a random password for a client that cannot do the normal login, for example a WebDAV client of a user with a multi-step login. The server keeps only its hash.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-2" id="app-password-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Name</th>
+                                                    <th scope="col">Protocols</th>
+                                                    <th scope="col">Created (UTC)</th>
+                                                    <th scope="col">Expires (UTC)</th>
+                                                    <th scope="col"><span class="visually-hidden">Remove</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var appPassword in form.AppPasswords)
+                                                {
+                                                    <tr class="app-password-row">
+                                                        <td class="small">@appPassword.Name</td>
+                                                        <td class="small">@UserProtocolRules.Describe(appPassword.Protocols)</td>
+                                                        <td class="small text-nowrap">@Date(appPassword.CreatedAt)</td>
+                                                        <td class="small text-nowrap">
+                                                            @if (appPassword.ExpiresAt is { } expires)
+                                                            {
+                                                                @Date(expires)
+                                                                @if (appPassword.IsExpired(DateTime.UtcNow))
+                                                                {
+                                                                    <span class="badge text-bg-danger ms-1">expired</span>
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="text-body-secondary">never</span>
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            <button type="button" class="btn btn-sm btn-outline-danger remove-app-password" title="Remove" aria-label="Remove the app password @appPassword.Name"
+                                                                    @onclick="() => RemoveAppPassword(appPassword)"><i class="bi bi-x"></i></button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <label class="small visually-hidden" for="app-password-name">Name</label>
+                                    <input id="app-password-name" class="form-control form-control-sm w-auto" placeholder="Name, for example Laptop" @bind="appPasswordName" />
+                                    <div class="form-check form-check-inline mb-0">
+                                        <input type="checkbox" id="app-password-webdav" class="form-check-input" @bind="appPasswordWebDav" />
+                                        <label class="form-check-label small" for="app-password-webdav">WebDAV</label>
+                                    </div>
+                                    <div class="form-check form-check-inline mb-0">
+                                        <input type="checkbox" id="app-password-sftp" class="form-check-input" @bind="appPasswordSftp" />
+                                        <label class="form-check-label small" for="app-password-sftp">SFTP</label>
+                                    </div>
+                                    <label class="small" for="app-password-expiry">Expires on (UTC, optional)</label>
+                                    <input type="date" id="app-password-expiry" class="form-control form-control-sm w-auto" @bind="appPasswordExpiry" />
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CreateAppPassword" id="create-app-password"><i class="bi bi-plus"></i> Create</button>
+                                </div>
+                                @if (appPasswordError is not null)
+                                {
+                                    <div class="small text-danger mt-2" id="app-password-error">@appPasswordError</div>
+                                }
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">IP whitelist</legend>
                             <div class="form-check form-switch mb-2">
                                 <InputCheckbox id="user-whitelist-mode" class="form-check-input" @bind-Value="form.OnlyWhitelistedIps" />
@@ -583,6 +690,12 @@
     private PublicKeyEntry pendingKeyRemoval;
     private ConfirmDialog deleteDialog;
     private ConfirmDialog removeKeyDialog;
+    private string appPasswordName;
+    private bool appPasswordWebDav = true;
+    private bool appPasswordSftp;
+    private DateTime? appPasswordExpiry;
+    private string appPasswordError;
+    private string newAppPassword;
     private SshServerModule.Quotas.UserQuotaView quotaView;
 
     private IQueryable<User> FilteredUsers =>
@@ -717,6 +830,56 @@
         newKeysText = null;
         newKeysExpiry = null;
         keyError = null;
+        appPasswordName = null;
+        appPasswordWebDav = true;
+        appPasswordSftp = false;
+        appPasswordExpiry = null;
+        appPasswordError = null;
+        newAppPassword = null;
+    }
+
+    private void CreateAppPassword()
+    {
+        appPasswordError = null;
+        newAppPassword = null;
+        var protocols = (appPasswordWebDav ? UserProtocols.WebDav : UserProtocols.None) | (appPasswordSftp ? UserProtocols.Sftp : UserProtocols.None);
+        var expires = appPasswordExpiry is { } date ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc) : (DateTime?)null;
+        try
+        {
+            var (entry, secret) = UserService.CreateAppPassword(form.Username, appPasswordName, protocols, expires, DateTime.UtcNow);
+            newAppPassword = secret;
+            appPasswordName = null;
+            ReloadAppPasswords(form.Username);
+            Toasts.ShowSuccess($"The app password {entry.Name} of {form.Username} was created.");
+        }
+        catch (UserAdministrationException ex)
+        {
+            appPasswordError = ex.Message;
+        }
+    }
+
+    private void RemoveAppPassword(AppPassword appPassword)
+    {
+        newAppPassword = null;
+        try
+        {
+            if (UserService.RemoveAppPassword(form.Username, appPassword.Id))
+                Toasts.ShowSuccess($"The app password {appPassword.Name} of {form.Username} was removed.");
+            else
+                Toasts.ShowError($"The app password {appPassword.Name} of {form.Username} was not found.");
+        }
+        catch (UserAdministrationException ex)
+        {
+            Toasts.ShowError(ex.Message);
+        }
+        ReloadAppPasswords(form.Username);
+    }
+
+    /// <summary>Reloads the app passwords of the open form (the rest of the form keeps what the admin typed).</summary>
+    private void ReloadAppPasswords(string username)
+    {
+        form.AppPasswords = SettingsRepository.GetUser(username)?.AppPasswords?.ToList() ?? new();
+        LoadUsers();
     }
 
     /// <summary>Reloads the keys of the open form after a key change (the rest of the form keeps what the admin typed).</summary>

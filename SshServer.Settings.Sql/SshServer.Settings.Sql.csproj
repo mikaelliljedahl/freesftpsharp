@@ -25,4 +25,8 @@
     <ProjectReference Include="..\SshServer.Settings.LiteDb\SshServer.Settings.LiteDb.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="FreeSftpSharp.Tests" />
+  </ItemGroup>
+
 </Project>
