@@ -342,6 +342,12 @@
           "SshServer.Settings.LiteDb": "[1.0.0, )"
         }
       },
+      "sshserver.webhooks": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
       "sshservermodule": {
         "type": "Project",
         "dependencies": {

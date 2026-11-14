@@ -45,6 +45,9 @@ public class AdminUiFactory : WebApplicationFactory<Program>
             // The SQL audit log would use the default database next to the app; the repository above does not create it.
             services.RemoveAll<SshServer.Interfaces.Audit.IAuditLog>();
             services.AddSingleton<SshServer.Interfaces.Audit.IAuditLog>(new InMemoryAuditLog());
+            // The same for the webhooks: no store, so the webhook dispatcher does nothing.
+            services.RemoveAll<SshServer.Interfaces.Webhooks.IWebhookStore>();
+            services.AddSingleton<SshServer.Interfaces.Webhooks.IWebhookStore>(new SshServer.Settings.Sql.Webhooks.DisabledWebhookStore());
 
             var sshServer = services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(HostedServer)).ToList();
             foreach (var descriptor in sshServer)

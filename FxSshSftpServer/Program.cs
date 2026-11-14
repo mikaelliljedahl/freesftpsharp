@@ -17,6 +17,7 @@ using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServer.Webhooks;
 using SshServer.Observability;
 
 using FxSshSftpServer.Security;
@@ -44,7 +45,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
-builder.Services.AddAdminDataProtection(builder.Configuration);
+builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook secrets
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -61,6 +62,7 @@ Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
+builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();

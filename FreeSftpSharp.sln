@@ -31,6 +31,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSsh", "external\FxSsh\FxS
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Filesystem.Encrypted", "SshServer.Filesystem.Encrypted\SshServer.Filesystem.Encrypted.csproj", "{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Webhooks", "SshServer.Webhooks\SshServer.Webhooks.csproj", "{8149F006-5EDE-496A-8B41-C0CB21E4AE83}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Observability", "SshServer.Observability\SshServer.Observability.csproj", "{7D2C41B8-5A63-4F0E-8B19-2E6A9C3D7F14}"
 EndProject
 Global
@@ -39,6 +41,10 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8149F006-5EDE-496A-8B41-C0CB21E4AE83}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E6C351AE-02D6-4145-931D-FCBCA37986C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E6C351AE-02D6-4145-931D-FCBCA37986C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E6C351AE-02D6-4145-931D-FCBCA37986C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
