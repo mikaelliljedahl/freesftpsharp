@@ -1145,6 +1145,254 @@
         }
       }
     },
+    "/api/v1/users/{username}/quotas": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "The own quotas of the user, and the effective limits (also from its groups) with their usage.",
+        "operationId": "GetUserQuotas",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserQuotasView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Sets the quotas and the bandwidth of the user; a value that is not given is not set.",
+        "operationId": "UpdateUserQuotas",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaSettingsModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaSettingsModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{username}/quotas/scan": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Queues a scan of the used space and files of every storage of the user with a disk quota.",
+        "operationId": "ScanUserQuota",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{username}/quotas/transfer/reset": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Sets the uploaded and downloaded bytes of the user to 0.",
+        "operationId": "ResetUserTransferQuota",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage-providers": {
       "get": {
         "tags": [
@@ -3927,6 +4175,150 @@
         }
       }
     },
+    "/api/v1/groups/{id}/quotas": {
+      "get": {
+        "tags": [
+          "Groups"
+        ],
+        "summary": "The quotas and the bandwidth that the group gives its members.",
+        "operationId": "GetGroupQuotas",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaSettingsModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Groups"
+        ],
+        "summary": "Sets the quotas and the bandwidth of the group; a value that is not given is not set.",
+        "operationId": "UpdateGroupQuotas",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaSettingsModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaSettingsModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/groups/{id}/members": {
       "get": {
         "tags": [
@@ -5268,6 +5660,63 @@
           }
         }
       },
+      "BandwidthLimit": {
+        "type": "object",
+        "properties": {
+          "uploadKiBPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "downloadKiBPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "overrides": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BandwidthOverride"
+            }
+          }
+        }
+      },
+      "BandwidthOverride": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uploadKiBPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "downloadKiBPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "ConnectionInfo": {
         "required": [
           "id",
@@ -5346,6 +5795,27 @@
           },
           "key": {
             "type": "string"
+          }
+        }
+      },
+      "DiskQuota": {
+        "type": "object",
+        "properties": {
+          "maxSizeBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxFiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -5571,6 +6041,36 @@
               "null",
               "string"
             ]
+          },
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
           }
         }
       },
@@ -5586,6 +6086,16 @@
           },
           "mountPath": {
             "type": "string"
+          },
+          "quota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
           }
         }
       },
@@ -5799,6 +6309,36 @@
             "items": {
               "type": "string"
             }
+          },
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
           }
         }
       },
@@ -6325,6 +6865,9 @@
           "allowedAuthMethods",
           "allowedIps",
           "roleId",
+          "diskQuota",
+          "transferQuota",
+          "bandwidth",
           "members"
         ],
         "type": "object",
@@ -6409,6 +6952,36 @@
               "string"
             ],
             "format": "int32"
+          },
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
           },
           "members": {
             "type": "array",
@@ -6499,6 +7072,36 @@
               "string"
             ],
             "format": "int32"
+          },
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
           }
         }
       },
@@ -7260,6 +7863,146 @@
           }
         }
       },
+      "QuotaScope": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/QuotaScopeKind"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
+      "QuotaScopeKind": {
+        "enum": [
+          "User",
+          "VirtualFolder"
+        ]
+      },
+      "QuotaScopeView": {
+        "required": [
+          "scope",
+          "label",
+          "limit",
+          "usage",
+          "scanQueued"
+        ],
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/QuotaScope"
+          },
+          "label": {
+            "type": "string"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/DiskQuota"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/QuotaUsage"
+          },
+          "scanQueued": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QuotaSettingsModel": {
+        "required": [
+          "diskQuota",
+          "transferQuota",
+          "bandwidth"
+        ],
+        "type": "object",
+        "properties": {
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
+          }
+        }
+      },
+      "QuotaUsage": {
+        "required": [
+          "usedBytes",
+          "usedFiles",
+          "uploadedBytes",
+          "downloadedBytes",
+          "scannedAt",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "usedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "usedFiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "uploadedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "downloadedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "scannedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "RoleView": {
         "required": [
           "id",
@@ -7665,6 +8408,82 @@
           "Download"
         ]
       },
+      "TransferQuota": {
+        "type": "object",
+        "properties": {
+          "maxUploadBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxDownloadBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxTotalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "UserQuotasView": {
+        "required": [
+          "settings",
+          "usage"
+        ],
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/QuotaSettingsModel"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UserQuotaView"
+          }
+        }
+      },
+      "UserQuotaView": {
+        "required": [
+          "disk",
+          "transfer",
+          "transferUsage"
+        ],
+        "type": "object",
+        "properties": {
+          "disk": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotaScopeView"
+            }
+          },
+          "transfer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "transferUsage": {
+            "$ref": "#/components/schemas/QuotaUsage"
+          },
+          "isEmpty": {
+            "type": "boolean"
+          }
+        }
+      },
       "UserStatus": {
         "enum": [
           "Enabled",
@@ -7692,6 +8511,9 @@
           "maxSessions",
           "primaryGroupId",
           "secondaryGroupIds",
+          "diskQuota",
+          "transferQuota",
+          "bandwidth",
           "lastLoginAt",
           "passwordChangedAt"
         ],
@@ -7819,6 +8641,36 @@
               ],
               "format": "int32"
             }
+          },
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
           },
           "lastLoginAt": {
             "type": [
@@ -8005,6 +8857,36 @@
               ],
               "format": "int32"
             }
+          },
+          "diskQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
+          },
+          "transferQuota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferQuota"
+              }
+            ]
+          },
+          "bandwidth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BandwidthLimit"
+              }
+            ]
           }
         }
       },
@@ -8025,6 +8907,16 @@
           },
           "mountPath": {
             "type": "string"
+          },
+          "quota": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskQuota"
+              }
+            ]
           }
         }
       },

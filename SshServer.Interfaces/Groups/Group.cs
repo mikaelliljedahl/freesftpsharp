@@ -1,5 +1,6 @@
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Interfaces.Groups;
@@ -45,6 +46,15 @@ public sealed class Group
     /// <summary>The networks (CIDR or single addresses) the members may log in from, like the IP whitelist of a user. Null or empty: not set.</summary>
     public List<string>? AllowedIps { get; set; }
 
+    /// <summary>The disk quota of the own storage of the members without one of their own (issue #62). Null: not set.</summary>
+    public DiskQuota? DiskQuota { get; set; }
+
+    /// <summary>The transfer quota of the members without one of their own (issue #62). Null: not set.</summary>
+    public TransferQuota? TransferQuota { get; set; }
+
+    /// <summary>The bandwidth of the members without one of their own (issue #62). Null: not set.</summary>
+    public BandwidthLimit? Bandwidth { get; set; }
+
     /// <summary>
     /// The scope role (issue #60): an administrator with this role as its scope manages the group and can give it to its
     /// users. Null: only administrators without a scope see the group.
@@ -64,9 +74,12 @@ public sealed class Group
             HiddenPatterns = p.Value.HiddenPatterns.ToList(),
         }, StringComparer.Ordinal),
         Storage = Storage,
-        VirtualFolders = VirtualFolders.Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath }).ToList(),
+        VirtualFolders = VirtualFolders.Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath, Quota = m.Quota }).ToList(),
         AllowedAuthMethods = AllowedAuthMethods,
         AllowedIps = AllowedIps?.ToList(),
+        DiskQuota = DiskQuota,
+        TransferQuota = TransferQuota,
+        Bandwidth = Bandwidth,
         RoleId = RoleId,
     };
 }

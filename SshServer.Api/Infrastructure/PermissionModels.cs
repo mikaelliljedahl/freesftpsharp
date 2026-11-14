@@ -1,5 +1,6 @@
 using SshServer.Api.Endpoints;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Api;
@@ -42,7 +43,7 @@ internal static class PermissionModels
         filters is { Count: > 0 } ? filters.ToDictionary(p => p.Key, p => PathFilterModel.From(p.Value), StringComparer.Ordinal) : null;
 
     public static List<VirtualFolderMount> Mounts(IEnumerable<VirtualFolderMountModel>? mounts) => (mounts ?? [])
-        .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = NormalizedOrRaw(m.MountPath) })
+        .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = NormalizedOrRaw(m.MountPath), Quota = DiskQuota.OrNull(m.Quota) })
         .ToList();
 
     /// <summary>A valid path is stored normalized; an invalid one is kept as given, so the validation tells about it.</summary>

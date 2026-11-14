@@ -7,6 +7,7 @@ using SshServer.Administration;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Groups;
+using SshServer.Interfaces.Quotas;
 using SshServerModule.Storage;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
@@ -15,7 +16,8 @@ namespace SshServer.Api.Endpoints;
 /// <summary>A group of users (#61) in the API: shared settings for its members. A setting that is null is not set by the group.</summary>
 public sealed record GroupView(int Id, string Name, string? Description, IReadOnlyDictionary<string, IReadOnlyList<string>>? Permissions,
     IReadOnlyDictionary<string, PathFilterModel>? PathFilters, StorageView? Storage, IReadOnlyList<VirtualFolderMountModel> VirtualFolders,
-    IReadOnlyList<string>? AllowedAuthMethods, IReadOnlyList<string>? AllowedIps, int? RoleId, IReadOnlyList<string> Members);
+    IReadOnlyList<string>? AllowedAuthMethods, IReadOnlyList<string>? AllowedIps, int? RoleId, DiskQuota? DiskQuota, TransferQuota? TransferQuota,
+    BandwidthLimit? Bandwidth, IReadOnlyList<string> Members);
 
 /// <summary>
 /// A group to create or save. A value that is not given is not set by the group. The storage is a template:
@@ -43,6 +45,15 @@ public sealed record GroupWrite
 
     /// <summary>The scope role (#60). An administrator with a scope role always gives its own role.</summary>
     public int? RoleId { get; init; }
+
+    /// <summary>The disk quota of the own storage of each member without one (#62).</summary>
+    public DiskQuota? DiskQuota { get; init; }
+
+    /// <summary>The transfer quota of each member without one (#62).</summary>
+    public TransferQuota? TransferQuota { get; init; }
+
+    /// <summary>The bandwidth of each member without one (#62).</summary>
+    public BandwidthLimit? Bandwidth { get; init; }
 }
 
 /// <summary>A member to add: the primary group of the user, or (default) a secondary group.</summary>
@@ -111,6 +122,28 @@ internal static class GroupEndpoints
             })
             .WithName("DeleteGroup").WithSummary("Removes a group without members.").RequireAuthorization(AdminPolicies.ManageGroups)
             .WithErrors().WithNotFound().ProducesProblem(StatusCodes.Status409Conflict);
+
+        groups.MapGet("/{id:int}/quotas", Results<Ok<QuotaSettingsModel>, ProblemHttpResult> (GroupService service, int id) =>
+                service.Get(id) is { } group ? TypedResults.Ok(new QuotaSettingsModel(group.DiskQuota, group.TransferQuota, group.Bandwidth)) : NotFound(id))
+            .WithName("GetGroupQuotas").WithSummary("The quotas and the bandwidth that the group gives its members.").WithErrors().WithNotFound();
+
+        groups.MapPut("/{id:int}/quotas", async Task<Results<Ok<QuotaSettingsModel>, ProblemHttpResult>> (GroupService service, VirtualFolderService folders,
+                StorageMapper storage, IAdminStore admins, CurrentAdmin current, int id, QuotaSettingsModel request, CancellationToken ct) =>
+            {
+                if (service.Get(id) is not { } stored)
+                    return NotFound(id);
+                var write = WriteModel(stored, storage) with
+                {
+                    DiskQuota = request.DiskQuota,
+                    TransferQuota = request.TransferQuota,
+                    Bandwidth = request.Bandwidth,
+                };
+                await ReplaceAsync(service, folders, storage, admins, current, id, write, ct);
+                var saved = service.Get(id)!;
+                return TypedResults.Ok(new QuotaSettingsModel(saved.DiskQuota, saved.TransferQuota, saved.Bandwidth));
+            })
+            .WithName("UpdateGroupQuotas").WithSummary("Sets the quotas and the bandwidth of the group; a value that is not given is not set.")
+            .RequireAuthorization(AdminPolicies.ManageGroups).WithValidationErrors().WithNotFound();
 
         groups.MapGet("/{id:int}/members", Results<Ok<IReadOnlyList<string>>, ProblemHttpResult> (GroupService service, int id) =>
                 service.Get(id) == null ? NotFound(id) : TypedResults.Ok(service.MembersOf(id)))
@@ -185,6 +218,8 @@ internal static class GroupEndpoints
         group.PathFilters = PermissionModels.ParseFilters(request.PathFilters);
         group.Storage = storage.Build(request.Storage, group.Id == 0 ? null : group.Storage, errors, "storage");
         group.VirtualFolders = PermissionModels.Mounts(request.VirtualFolders);
+        QuotaModels.Validate(errors, request.DiskQuota, request.TransferQuota, request.Bandwidth, group.VirtualFolders);
+        (group.DiskQuota, group.TransferQuota, group.Bandwidth) = QuotaModels.Normalize(request.DiskQuota, request.TransferQuota, request.Bandwidth);
         errors.AddRange("virtualFolders", folders.ValidateMounts(group.VirtualFolders));
         if (request.AllowedAuthMethods != null)
         {
@@ -220,19 +255,22 @@ internal static class GroupEndpoints
         Permissions = PermissionModels.Names(group.Permissions),
         PathFilters = PermissionModels.Models(group.PathFilters),
         Storage = storage.WriteModel(group.Storage),
-        VirtualFolders = group.VirtualFolders.Select(m => new VirtualFolderMountModel(m.VirtualFolderId, m.MountPath)).ToList(),
+        VirtualFolders = group.VirtualFolders.Select(VirtualFolderMountModel.From).ToList(),
         AllowedAuthMethods = group.AllowedAuthMethods is { } methods ? AuthMethodNames.Of(methods).ToList() : null,
         AllowedIps = group.AllowedIps?.ToList(),
         RoleId = group.RoleId,
+        DiskQuota = group.DiskQuota,
+        TransferQuota = group.TransferQuota,
+        Bandwidth = group.Bandwidth,
     };
 
     private static GroupView View(Group group, GroupService service, StorageMapper storage) => new(group.Id, group.Name, group.Description,
         group.Permissions?.ToDictionary(p => p.Key, p => FlagNames.Of(p.Value), StringComparer.Ordinal),
         group.PathFilters?.ToDictionary(p => p.Key, p => PathFilterModel.From(p.Value), StringComparer.Ordinal),
         storage.View(group.Storage),
-        group.VirtualFolders.Select(m => new VirtualFolderMountModel(m.VirtualFolderId, m.MountPath)).ToList(),
+        group.VirtualFolders.Select(VirtualFolderMountModel.From).ToList(),
         group.AllowedAuthMethods is { } methods ? AuthMethodNames.Of(methods) : null,
-        group.AllowedIps?.ToList(), group.RoleId, service.MembersOf(group.Id));
+        group.AllowedIps?.ToList(), group.RoleId, group.DiskQuota, group.TransferQuota, group.Bandwidth, service.MembersOf(group.Id));
 
     private static ProblemHttpResult NotFound(int id) => ApiResults.NotFound($"The group {id} does not exist.");
 }

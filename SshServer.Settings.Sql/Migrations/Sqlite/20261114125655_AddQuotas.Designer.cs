@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114125151_AddApiKeys")]
-partial class _20261114125151_AddApiKeys
+[Migration("20261114125655_AddQuotas")]
+partial class _20261114125655_AddQuotas
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -94,55 +94,6 @@ partial class _20261114125151_AddApiKeys
                     .IsUnique();
 
                 b.ToTable("Roles");
-            });
-
-        modelBuilder.Entity("SshServer.Interfaces.Api.ApiKey", b =>
-            {
-                b.Property<int>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("INTEGER");
-
-                b.Property<int>("AdminId")
-                    .HasColumnType("INTEGER");
-
-                b.Property<DateTime>("CreatedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime?>("ExpiresAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("KeyHash")
-                    .IsRequired()
-                    .HasMaxLength(64)
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime?>("LastUsedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(100)
-                    .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
-
-                b.Property<string>("Prefix")
-                    .IsRequired()
-                    .HasMaxLength(16)
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("Scopes")
-                    .HasMaxLength(512)
-                    .HasColumnType("TEXT");
-
-                b.HasKey("Id");
-
-                b.HasIndex("KeyHash")
-                    .IsUnique();
-
-                b.HasIndex("AdminId", "Name")
-                    .IsUnique();
-
-                b.ToTable("ApiKeys");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Audit.AuditEntry", b =>
@@ -325,8 +276,14 @@ partial class _20261114125151_AddApiKeys
                 b.PrimitiveCollection<string>("AllowedIps")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Bandwidth")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("Description")
                     .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiskQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Name")
@@ -345,6 +302,9 @@ partial class _20261114125151_AddApiKeys
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
@@ -454,8 +414,14 @@ partial class _20261114125151_AddApiKeys
                     .HasMaxLength(128)
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Bandwidth")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("Description")
                     .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiskQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<DateTime?>("ExpiresAt")
@@ -507,6 +473,9 @@ partial class _20261114125151_AddApiKeys
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("UserRootDirectory")
@@ -669,21 +638,33 @@ partial class _20261114125151_AddApiKeys
                 b.ToTable("WebhookDeliveries");
             });
 
-        modelBuilder.Entity("SshServer.Settings.Sql.Api.ApiSigningKey", b =>
+        modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>
             {
-                b.Property<int>("Id")
+                b.Property<string>("Scope")
+                    .HasMaxLength(300)
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("DownloadedBytes")
                     .HasColumnType("INTEGER");
 
-                b.Property<DateTime>("CreatedAt")
+                b.Property<DateTime?>("ScannedUtc")
                     .HasColumnType("TEXT");
 
-                b.Property<string>("ProtectedKey")
-                    .IsRequired()
+                b.Property<DateTime>("UpdatedUtc")
                     .HasColumnType("TEXT");
 
-                b.HasKey("Id");
+                b.Property<long>("UploadedBytes")
+                    .HasColumnType("INTEGER");
 
-                b.ToTable("ApiSigningKeys");
+                b.Property<long>("UsedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("UsedFiles")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Scope");
+
+                b.ToTable("QuotaUsages");
             });
 
         modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
@@ -745,15 +726,6 @@ partial class _20261114125151_AddApiKeys
                     .OnDelete(DeleteBehavior.Restrict);
             });
 
-        modelBuilder.Entity("SshServer.Interfaces.Api.ApiKey", b =>
-            {
-                b.HasOne("SshServer.Interfaces.Admins.Admin", null)
-                    .WithMany()
-                    .HasForeignKey("AdminId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-            });
-
         modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
             {
                 b.HasOne("SshServer.Interfaces.EventRules.EventRule", null)
@@ -782,6 +754,9 @@ partial class _20261114125151_AddApiKeys
                         b1.Property<string>("MountPath")
                             .IsRequired()
                             .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<string>("Quota")
                             .HasColumnType("TEXT");
 
                         b1.Property<int>("VirtualFolderId")
@@ -830,6 +805,9 @@ partial class _20261114125151_AddApiKeys
                         b1.Property<string>("MountPath")
                             .IsRequired()
                             .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<string>("Quota")
                             .HasColumnType("TEXT");
 
                         b1.Property<int>("UserId")

@@ -86,7 +86,9 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/users` | ManageUsers (and the scope role) | list (`?search`, `?roleId`), get, create, `PUT`, `PATCH`, delete |
 | `/groups` | read: ManageUsers or ManageGroups; change: ManageGroups (and the scope role) | list, get, create, `PUT`, `PATCH`, delete (only without members); `GET /{id}/members` |
 | `/groups/{id}/members` | ManageUsers | `POST {username, primary}` adds a user (primary or secondary group), `DELETE /{id}/members/{username}` removes it |
+| `/groups/{id}/quotas` | read: ManageUsers or ManageGroups; change: ManageGroups | get, `PUT` (disk, transfer, bandwidth of the members without their own) |
 | `/users/{username}/public-keys` | ManageUsers | list, add (authorized_keys text), remove (`?fingerprint=SHA256:...`), `POST .../generate` (returns the private key once) |
+| `/users/{username}/quotas` | ManageUsers | get (own settings, and the effective limits with their usage), `PUT` (disk, transfer, bandwidth), `POST .../scan`, `POST .../transfer/reset` |
 | `/virtual-folders` | read: ManageUsers or ManageFolders; change: ManageFolders | list, get, create, `PUT`, `PATCH`, delete |
 | `/storage-providers` | any administrator | the storage providers and their options; `POST /storage-providers/test` tries a storage |
 | `/admins`, `/roles` | ManageAdmins | list, get, create, `PUT`, `PATCH` (admins), delete |
@@ -100,13 +102,15 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/status` | any administrator | version, start time, uptime, node, and the permissions of the caller |
 | `/dump`, `/load` | SuperAdmin | export and import of every stored object (below) |
 
-Quotas (#62) and shares (#70) get their routes with their features. The second-factor administration (#63: set up
+Shares (#70) get their routes with their feature. The second-factor administration (#63: set up
 or reset the TOTP app of a user or an administrator) has no routes yet.
 
 A user has its own settings and the settings of its groups (#61): `primaryGroupId`, `secondaryGroupIds`; a value that
 the user does not set (`permissions` and `pathFilters` not given, no `storage`) comes from the groups. The lifecycle
 fields are `status` (`Enabled`, `Disabled`), `expiresAt` (UTC), `maxSessions` (0: no limit) and `description`; the views
-also have `lastLoginAt` and `passwordChangedAt`. All times are UTC; a time without an offset is UTC.
+also have `lastLoginAt` and `passwordChangedAt`. The quotas (#62) are `diskQuota` (`maxSizeBytes`, `maxFiles`),
+`transferQuota` (`maxUploadBytes`, `maxDownloadBytes`, `maxTotalBytes`) and `bandwidth` (`uploadKiBPerSecond`,
+`downloadKiBPerSecond`, `overrides` by client network), on users, groups and (disk) on each mount; 0 is unlimited. All times are UTC; a time without an offset is UTC.
 
 ### Conventions
 

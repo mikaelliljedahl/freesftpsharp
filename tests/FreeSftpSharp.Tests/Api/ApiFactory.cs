@@ -79,6 +79,8 @@ public sealed class ApiFactory : AdminUiFactory
             services.AddSingleton<IWebhookStore>(new SqlWebhookStore(_db));
             services.RemoveAll<SshServer.Interfaces.EventRules.IEventRuleStore>();
             services.AddSingleton<SshServer.Interfaces.EventRules.IEventRuleStore>(new SshServer.Settings.Sql.EventRules.SqlEventRuleStore(_db));
+            services.RemoveAll<SshServer.Interfaces.Quotas.IQuotaUsageStore>();
+            services.AddSingleton<SshServer.Interfaces.Quotas.IQuotaUsageStore>(new SshServer.Settings.Sql.Quotas.SqlQuotaUsageStore(_db));
             services.RemoveAll<SqlApiKeyStore>();
             services.AddSingleton(new SqlApiKeyStore(_db));
         });

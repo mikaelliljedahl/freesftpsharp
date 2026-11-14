@@ -175,6 +175,8 @@ public sealed class UserResource
         errors.AddRange("pathFilters", PermissionRulesValidator.Validate(null, user.PathFilters));
 
         user.VirtualFolders = PermissionModels.Mounts(write.VirtualFolders);
+        QuotaModels.Validate(errors, write.DiskQuota, write.TransferQuota, write.Bandwidth, user.VirtualFolders);
+        (user.DiskQuota, user.TransferQuota, user.Bandwidth) = QuotaModels.Normalize(write.DiskQuota, write.TransferQuota, write.Bandwidth);
         errors.AddRange("virtualFolders", _folders.ValidateMounts(user.VirtualFolders));
 
         // An administrator with a scope role cannot choose another role (the scoped repository refuses it or keeps the stored one).

@@ -389,6 +389,23 @@ counts from the upgrade.
 
 The old `ServerRootDirectory` setting was never used (each user has `UserRootDirectory`) and has been removed.
 
+## Quotas and bandwidth limits
+
+Each user can have limits (issue #62), set on the Users page; all are off (0) by default:
+
+- **Disk quota**: the size (MiB) and the number of files of the own storage of the user. Each mounted virtual folder
+  has its own quota in the mount table; its usage is counted per folder, for every user that mounts it. An upload that
+  goes over the quota fails with "Quota exceeded" (SFTP `SSH_FX_FAILURE`) and leaves no partial file.
+- **Transfer quota**: the uploaded, downloaded and total MiB until the counters are reset ("Reset transfer counters" on
+  the Users page, or the event rule action "Reset transfer quota" on a schedule).
+- **Bandwidth**: KiB/s per session for uploads and downloads, with other values for some client networks (for example
+  `0` for the LAN).
+
+The usage is counted by the server, so a write never scans the storage. A scan recomputes it: at the first session of a
+user that was never scanned, after a change of the quota, with "Rescan quota" (or the event rule action), and every
+`Quota:ScanIntervalHours` hours (default `24`, `0` turns the scheduled scan off). The counters are in the settings
+database, shared by the nodes. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#quotas-and-bandwidth).
+
 ## Listen port and bind addresses from configuration
 
 The port and the bind addresses are normally stored in the settings database (`ListenToPort`, `BindToAddress`).

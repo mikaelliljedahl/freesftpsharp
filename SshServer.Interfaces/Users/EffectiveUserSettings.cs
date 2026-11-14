@@ -1,6 +1,7 @@
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Interfaces.Users;
@@ -39,8 +40,8 @@ public sealed record SettingOrigin(SettingSource Source, string? GroupName = nul
     };
 }
 
-/// <summary>A virtual folder mounted for a user, by the user itself or by one of its groups.</summary>
-public sealed record EffectiveMount(int VirtualFolderId, string MountPath, SettingOrigin Origin);
+/// <summary>A virtual folder mounted for a user, by the user itself or by one of its groups, with the disk quota of that mount (#62).</summary>
+public sealed record EffectiveMount(int VirtualFolderId, string MountPath, SettingOrigin Origin, DiskQuota? Quota = null);
 
 /// <summary>
 /// The settings that apply to one user (issue #61), from <see cref="IEffectiveUserSettingsService"/>: its own values
@@ -84,6 +85,21 @@ public sealed class EffectiveUserSettings
     public required IReadOnlyList<string> AllowedIps { get; init; }
 
     public required SettingOrigin AllowedIpsOrigin { get; init; }
+
+    /// <summary>The disk quota of the own storage (#62); null: unlimited.</summary>
+    public DiskQuota? DiskQuota { get; init; }
+
+    public required SettingOrigin DiskQuotaOrigin { get; init; }
+
+    /// <summary>The transfer quota (#62); null: unlimited.</summary>
+    public TransferQuota? TransferQuota { get; init; }
+
+    public required SettingOrigin TransferQuotaOrigin { get; init; }
+
+    /// <summary>The bandwidth (#62); null: unlimited.</summary>
+    public BandwidthLimit? Bandwidth { get; init; }
+
+    public required SettingOrigin BandwidthOrigin { get; init; }
 }
 
 /// <summary>

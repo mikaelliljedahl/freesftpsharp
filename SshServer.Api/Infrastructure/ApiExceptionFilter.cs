@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using FxSsh.SshServerModule.Security;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Users;
 
@@ -49,7 +50,8 @@ internal sealed class ApiExceptionFilter : IEndpointFilter
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "REST API request {Method} {Path} failed.", context.HttpContext.Request.Method, context.HttpContext.Request.Path);
+            _logger.LogError(ex, "REST API request {Method} {Path} failed.", LogText.Clean(context.HttpContext.Request.Method),
+                LogText.Clean(context.HttpContext.Request.Path.Value));
             return Results.Problem("The server could not complete the request. The server log has the details.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }

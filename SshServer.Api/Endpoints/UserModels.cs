@@ -1,6 +1,7 @@
 using SshServer.Interfaces;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Api.Endpoints;
@@ -29,6 +30,9 @@ public sealed record UserView(
     int MaxSessions,
     int? PrimaryGroupId,
     IReadOnlyList<int> SecondaryGroupIds,
+    DiskQuota? DiskQuota,
+    TransferQuota? TransferQuota,
+    BandwidthLimit? Bandwidth,
     DateTime? LastLoginAt,
     DateTime? PasswordChangedAt)
 {
@@ -44,7 +48,7 @@ public sealed record UserView(
         UserWrite.PermissionsOf(user),
         (user.PathFilters ?? []).ToDictionary(f => f.Key, f => PathFilterModel.From(f.Value), StringComparer.Ordinal),
         storage.View(user.Storage),
-        (user.VirtualFolders ?? []).Select(m => new VirtualFolderMountModel(m.VirtualFolderId, m.MountPath)).ToList(),
+        (user.VirtualFolders ?? []).Select(VirtualFolderMountModel.From).ToList(),
         user.RoleId,
         user.Description,
         user.Status,
@@ -52,6 +56,9 @@ public sealed record UserView(
         user.MaxSessions,
         user.PrimaryGroupId,
         user.SecondaryGroupIds?.ToList() ?? [],
+        user.DiskQuota,
+        user.TransferQuota,
+        user.Bandwidth,
         user.LastLoginAt,
         user.PasswordChangedAt);
 }
@@ -79,8 +86,17 @@ public sealed record PathFilterModel(IReadOnlyList<string>? AllowedPatterns, IRe
         (patterns ?? []).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList();
 }
 
-/// <summary>A virtual folder (#56) mounted for a user at a path.</summary>
-public sealed record VirtualFolderMountModel(int VirtualFolderId, string MountPath);
+/// <summary>A virtual folder (#56) mounted for a user or a group at a path, with its disk quota for this mount (#62; null: unlimited).</summary>
+public sealed record VirtualFolderMountModel(int VirtualFolderId, string MountPath, DiskQuota? Quota = null)
+{
+    public static VirtualFolderMountModel From(VirtualFolderMount mount) => new(mount.VirtualFolderId, mount.MountPath, mount.Quota);
+}
+
+/// <summary>The quotas and the bandwidth (#62) of a user or a group; null: not set (unlimited, or the values of the groups).</summary>
+public sealed record QuotaSettingsModel(DiskQuota? DiskQuota, TransferQuota? TransferQuota, BandwidthLimit? Bandwidth);
+
+/// <summary>The quotas of a user: its own settings, and the effective limits with their usage.</summary>
+public sealed record UserQuotasView(QuotaSettingsModel Settings, SshServerModule.Quotas.UserQuotaView Usage);
 
 /// <summary>
 /// An SFTP user to create (POST) or to save (PUT; a PATCH is merged into the stored user first). A value that is not
@@ -151,6 +167,15 @@ public sealed record UserWrite
     /// <summary>The other groups, in the order in which their settings apply.</summary>
     public List<int>? SecondaryGroupIds { get; init; }
 
+    /// <summary>The disk quota of the own storage (#62). Not given: unlimited, or the quota of the groups.</summary>
+    public DiskQuota? DiskQuota { get; init; }
+
+    /// <summary>The transfer quota (#62). Not given: unlimited, or the quota of the groups.</summary>
+    public TransferQuota? TransferQuota { get; init; }
+
+    /// <summary>The bandwidth per session (#62). Not given: unlimited, or the bandwidth of the groups.</summary>
+    public BandwidthLimit? Bandwidth { get; init; }
+
     /// <summary>The write model of a stored user, for a PATCH (no password, no keys: they keep their stored values).</summary>
     public static UserWrite From(User user, StorageMapper storage) => new()
     {
@@ -163,7 +188,7 @@ public sealed record UserWrite
         Permissions = PermissionsOf(user)?.ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal),
         PathFilters = (user.PathFilters ?? []).ToDictionary(f => f.Key, f => PathFilterModel.From(f.Value), StringComparer.Ordinal),
         Storage = storage.WriteModel(user.Storage),
-        VirtualFolders = (user.VirtualFolders ?? []).Select(m => new VirtualFolderMountModel(m.VirtualFolderId, m.MountPath)).ToList(),
+        VirtualFolders = (user.VirtualFolders ?? []).Select(VirtualFolderMountModel.From).ToList(),
         RoleId = user.RoleId,
         Description = user.Description,
         Status = user.Status,
@@ -171,6 +196,9 @@ public sealed record UserWrite
         MaxSessions = user.MaxSessions,
         PrimaryGroupId = user.PrimaryGroupId,
         SecondaryGroupIds = user.SecondaryGroupIds?.ToList() ?? [],
+        DiskQuota = user.DiskQuota,
+        TransferQuota = user.TransferQuota,
+        Bandwidth = user.Bandwidth,
     };
 
     /// <summary>The own permissions of the user, or null when it sets none (the groups give them, else All at "/").</summary>

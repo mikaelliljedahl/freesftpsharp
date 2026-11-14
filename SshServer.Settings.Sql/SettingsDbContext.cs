@@ -11,8 +11,10 @@ using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Settings.Sql.Quotas;
 using SshServer.Settings.Sql.TwoFactor;
 
 namespace SshServer.Settings.Sql;
@@ -40,6 +42,11 @@ namespace SshServer.Settings.Sql;
 /// The groups (issue #61, <see cref="Group"/>) are the table Groups, with the same JSON columns as a user and their
 /// mounts in GroupVirtualFolders. <see cref="User.PrimaryGroupId"/> is a foreign key (a group with members cannot be
 /// removed); <see cref="User.SecondaryGroupIds"/> is a JSON list of ids.
+/// </para>
+/// <para>
+/// The quotas of a user (<see cref="User.DiskQuota"/>, <see cref="User.TransferQuota"/>, <see cref="User.Bandwidth"/>)
+/// and of a group, and of a mount (<see cref="VirtualFolderMount.Quota"/>), are JSON text columns, null for none (issue #62). The counters are
+/// the table QuotaUsages, one row per scope (<see cref="QuotaUsageRow"/>), changed by increments.
 /// </para>
 /// </summary>
 public class SettingsDbContext : DbContext
@@ -69,6 +76,7 @@ public class SettingsDbContext : DbContext
     public DbSet<TwoFactorRecord> TwoFactorEnrolments => Set<TwoFactorRecord>();
     public DbSet<EventRule> EventRules => Set<EventRule>();
     public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
+    public DbSet<QuotaUsageRow> QuotaUsages => Set<QuotaUsageRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -109,6 +117,12 @@ public class SettingsDbContext : DbContext
                 v => ToJson(v), v => FromJson<Dictionary<string, PathFilter>>(v), JsonComparer<Dictionary<string, PathFilter>>());
             b.Property(u => u.Storage).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
+            b.Property(u => u.DiskQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
+            b.Property(u => u.TransferQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<TransferQuota>(v), JsonComparer<TransferQuota>());
+            b.Property(u => u.Bandwidth).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<BandwidthLimit>(v), JsonComparer<BandwidthLimit>());
             // A role in use cannot be removed (AdminAdministrationService checks it first, with a clear message).
             b.HasOne<Role>().WithMany().HasForeignKey(u => u.RoleId).OnDelete(DeleteBehavior.Restrict);
             b.Property(u => u.Description).IsRequired(false).HasMaxLength(1000);
@@ -124,6 +138,8 @@ public class SettingsDbContext : DbContext
                 m.Property<int>("Id");
                 m.HasKey("Id");
                 m.Property(x => x.MountPath).IsRequired().HasMaxLength(1024);
+                m.Property(x => x.Quota).IsRequired(false).HasConversion(
+                    v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
                 m.HasOne<VirtualFolder>().WithMany().HasForeignKey(x => x.VirtualFolderId).OnDelete(DeleteBehavior.Cascade);
                 m.HasIndex("UserId", nameof(VirtualFolderMount.MountPath)).IsUnique();
             });
@@ -169,7 +185,22 @@ public class SettingsDbContext : DbContext
                 m.Property(x => x.MountPath).IsRequired().HasMaxLength(1024);
                 m.HasOne<VirtualFolder>().WithMany().HasForeignKey(x => x.VirtualFolderId).OnDelete(DeleteBehavior.Cascade);
                 m.HasIndex("GroupId", nameof(VirtualFolderMount.MountPath)).IsUnique();
+                m.Property(x => x.Quota).IsRequired(false).HasConversion(
+                    v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
             });
+            b.Property(g => g.DiskQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
+            b.Property(g => g.TransferQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<TransferQuota>(v), JsonComparer<TransferQuota>());
+            b.Property(g => g.Bandwidth).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<BandwidthLimit>(v), JsonComparer<BandwidthLimit>());
+        });
+
+        modelBuilder.Entity<QuotaUsageRow>(b =>
+        {
+            b.ToTable("QuotaUsages");
+            b.HasKey(q => q.Scope);
+            b.Property(q => q.Scope).HasMaxLength(300);
         });
 
         modelBuilder.Entity<Role>(b =>

@@ -5,6 +5,7 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Groups;
+using SshServer.Interfaces.Quotas;
 using SshServer.EventRules;
 using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Storage;
@@ -20,7 +21,7 @@ namespace SshServer.Api.Dump;
 /// (<see cref="AdminAdministrationService"/>), virtual folders, users and settings (the scoped repository and services),
 /// groups (<see cref="GroupService"/>), webhooks (<see cref="WebhookAdministrationService"/>) and event rules
 /// (<see cref="EventRuleAdministrationService"/>). Both need <see cref="AdminPermissions.SuperAdmin"/>, because a dump has the
-/// password hashes of every administrator and user. Quotas (#62) are added here when they exist.
+/// password hashes of every administrator and user. The quotas (#62) are part of the users, groups and mounts.
 /// </summary>
 public sealed class DumpService
 {
@@ -86,7 +87,7 @@ public sealed class DumpService
         var groups = _groups.List();
         var groupNames = groups.ToDictionary(g => g.Id, g => g.Name);
         List<DumpMount> Mounts(IEnumerable<VirtualFolderMount>? mounts) =>
-            (mounts ?? []).Select(m => new DumpMount(folderNames.GetValueOrDefault(m.VirtualFolderId) ?? "", m.MountPath)).ToList();
+            (mounts ?? []).Select(m => new DumpMount(folderNames.GetValueOrDefault(m.VirtualFolderId) ?? "", m.MountPath, m.Quota)).ToList();
 
         return new DumpDocument
         {
@@ -108,11 +109,12 @@ public sealed class DumpService
                 Mounts(u.VirtualFolders), u.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null,
                 u.Description, u.Status, u.ExpiresAt, u.MaxSessions, u.PasswordChangedAt,
                 u.PrimaryGroupId is { } primary ? groupNames.GetValueOrDefault(primary) : null,
-                (u.SecondaryGroupIds ?? []).Select(id => groupNames.GetValueOrDefault(id)).OfType<string>().ToList())).ToList(),
+                (u.SecondaryGroupIds ?? []).Select(id => groupNames.GetValueOrDefault(id)).OfType<string>().ToList(),
+                u.DiskQuota, u.TransferQuota, u.Bandwidth)).ToList(),
             Groups = groups.Select(g => new DumpGroup(g.Name, g.Description, PermissionModels.Names(g.Permissions), PermissionModels.Models(g.PathFilters),
                 g.Storage is { } storage ? ExportStorage(storage, (option, text) => Secret($"groups/{g.Name}", option, text)) : null,
                 Mounts(g.VirtualFolders), g.AllowedAuthMethods is { } methods ? AuthMethodNames.Of(methods).ToList() : null, g.AllowedIps?.ToList(),
-                g.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null)).ToList(),
+                g.RoleId is { } role ? roleNames.GetValueOrDefault(role) : null, g.DiskQuota, g.TransferQuota, g.Bandwidth)).ToList(),
             EventRules = (await _rules.ListAsync(actor, ct)).Select(EventRuleWrite.From).ToList(),
             Webhooks = (await _webhooks.ListAsync(actor, ct)).Select(w => new DumpWebhook(w.Name, w.Url, w.Method,
                 w.ProtectedSecret is { } secret && _webhookSecrets.TryUnprotect(secret) is { } plain ? Secret($"webhooks/{w.Name}", "secret", plain) : null,
@@ -227,10 +229,14 @@ public sealed class DumpService
             VirtualFolders = PermissionModels.Mounts(Mounts(dumped.VirtualFolders, folderIds)),
             AllowedAuthMethods = dumped.AllowedAuthMethods is { } methods ? AuthMethodNames.Parse(methods, unknown) : null,
             AllowedIps = dumped.AllowedIps,
+            DiskQuota = DiskQuota.OrNull(dumped.DiskQuota),
+            TransferQuota = TransferQuota.OrNull(dumped.TransferQuota),
+            Bandwidth = BandwidthLimit.OrNull(dumped.Bandwidth),
             RoleId = dumped.Role == null ? null : roleIds.TryGetValue(dumped.Role, out var role) ? role : throw new ApiValidationException("role", $"The role '{dumped.Role}' does not exist."),
         };
         errors.AddRange("allowedAuthMethods", unknown.Select(n => $"'{n}' is not a login method."));
         errors.AddRange("", GroupService.Validate(group));
+        QuotaModels.Validate(errors, group.DiskQuota, group.TransferQuota, group.Bandwidth, group.VirtualFolders);
         errors.AddRange("virtualFolders", _folders.ValidateMounts(group.VirtualFolders));
         errors.ThrowIfAny();
         if (stored == null)
@@ -245,7 +251,7 @@ public sealed class DumpService
         {
             if (!folderIds.TryGetValue(mount.VirtualFolder ?? "", out var id))
                 throw new ApiValidationException("virtualFolders", $"The virtual folder '{mount.VirtualFolder}' is not in the dump or on the server.");
-            result.Add(new VirtualFolderMountModel(id, mount.MountPath));
+            result.Add(new VirtualFolderMountModel(id, mount.MountPath, mount.Quota));
         }
         return result;
     }
@@ -294,6 +300,9 @@ public sealed class DumpService
             MaxSessions = dumped.MaxSessions,
             PrimaryGroupId = dumped.PrimaryGroup is { } primary ? GroupId(primary) : null,
             SecondaryGroupIds = (dumped.SecondaryGroups ?? []).Select(GroupId).ToList(),
+            DiskQuota = dumped.DiskQuota,
+            TransferQuota = dumped.TransferQuota,
+            Bandwidth = dumped.Bandwidth,
         };
         var user = stored ?? new User();
         await _userResource.ApplyAsync(write, user, stored == null, errors =>

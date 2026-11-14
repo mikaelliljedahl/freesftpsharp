@@ -14,6 +14,8 @@ using SshServer.Settings.Sql.Api;
 using SshServer.Interfaces.Api;
 using SshServer.Settings.Sql.Audit;
 using SshServer.Settings.Sql.Webhooks;
+using SshServer.Settings.Sql.Quotas;
+using SshServer.Interfaces.Quotas;
 using SshServer.Settings.Sql.EventRules;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Webhooks;
@@ -30,8 +32,9 @@ namespace SshServer.Settings.Sql
         /// (see <see cref="SettingsStorageOptions"/>): SQLite by default, LiteDB when <c>Settings:Provider</c> is <c>LiteDb</c>.
         /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>),
-        /// the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it) and the store
-        /// of the event rules (<see cref="IEventRuleStore"/>; the event rules plug-in, AddEventRules, uses it).
+        /// the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it), the store
+        /// of the event rules (<see cref="IEventRuleStore"/>; the event rules plug-in, AddEventRules, uses it) and the store
+        /// of the quota counters (<see cref="IQuotaUsageStore"/>, #62).
         /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
         /// provider keeps them in memory only. The TOTP enrolments (<see cref="ITwoFactorStore"/>, #63) are in the same
@@ -59,6 +62,9 @@ namespace SshServer.Settings.Sql
                     // does not resolve the repository (that would be a cycle: repository, event bus, webhook sink, store).
                     services.TryAddSingleton<IWebhookStore>(_ => new SqlWebhookStore(dbOptions));
                     services.TryAddSingleton<IEventRuleStore>(_ => new SqlEventRuleStore(dbOptions));
+                    // The quota counters (#62) are shared by the nodes. AddSingleton, not TryAdd: it replaces the in-memory
+                    // store of AddSshServerStorage in either order. Like the webhook store, it does not resolve the repository.
+                    services.AddSingleton<IQuotaUsageStore>(_ => new SqlQuotaUsageStore(dbOptions));
                     services.TryAddSingleton<IAdminStore>(sp =>
                     {
                         // The repository creates and migrates the database; the store only uses the tables.

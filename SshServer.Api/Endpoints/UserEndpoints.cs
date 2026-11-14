@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using SshServer.Administration;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Users;
+using SshServerModule.Quotas;
 
 namespace SshServer.Api.Endpoints;
 
@@ -54,6 +55,7 @@ internal static class UserEndpoints
             .WithName("DeleteUser").WithSummary("Removes a user. The files in its storage stay.").WithErrors().WithNotFound();
 
         MapPublicKeys(users);
+        MapQuotas(users);
     }
 
     private static void MapPublicKeys(RouteGroupBuilder users)
@@ -106,6 +108,48 @@ internal static class UserEndpoints
             })
             .WithName("RemoveUserPublicKey").WithSummary("Removes the key with this fingerprint (?fingerprint=SHA256:...).")
             .WithErrors().WithNotFound();
+    }
+
+    private static void MapQuotas(RouteGroupBuilder users)
+    {
+        users.MapGet("/{username}/quotas", async Task<Results<Ok<UserQuotasView>, ProblemHttpResult>> (UserResource resource,
+                QuotaAdministrationService quotas, string username, CancellationToken ct) =>
+            {
+                if (resource.Get(username) is not { } user || await quotas.GetAsync(username, ct) is not { } usage)
+                    return NotFound(username);
+                return TypedResults.Ok(new UserQuotasView(new QuotaSettingsModel(user.DiskQuota, user.TransferQuota, user.Bandwidth), usage));
+            })
+            .WithName("GetUserQuotas").WithSummary("The own quotas of the user, and the effective limits (also from its groups) with their usage.")
+            .WithErrors().WithNotFound();
+
+        users.MapPut("/{username}/quotas", async Task<Results<Ok<QuotaSettingsModel>, ProblemHttpResult>> (UserResource resource,
+                IOptions<JsonOptions> json, string username, QuotaSettingsModel request, CancellationToken ct) =>
+            {
+                if (resource.Get(username) is not { } stored)
+                    return NotFound(username);
+                var write = UserWrite.From(stored, resource.Storage) with
+                {
+                    DiskQuota = request.DiskQuota,
+                    TransferQuota = request.TransferQuota,
+                    Bandwidth = request.Bandwidth,
+                };
+                if (await resource.ReplaceAsync(username, write, ct) is not { } saved)
+                    return NotFound(username);
+                return TypedResults.Ok(new QuotaSettingsModel(saved.DiskQuota, saved.TransferQuota, saved.Bandwidth));
+            })
+            .WithName("UpdateUserQuotas").WithSummary("Sets the quotas and the bandwidth of the user; a value that is not given is not set.")
+            .WithValidationErrors().WithNotFound();
+
+        users.MapPost("/{username}/quotas/scan", Results<Accepted, ProblemHttpResult> (UserResource resource, QuotaAdministrationService quotas,
+                string username) =>
+                resource.Get(username) != null && quotas.RequestScan(username) ? TypedResults.Accepted((string?)null) : NotFound(username))
+            .WithName("ScanUserQuota").WithSummary("Queues a scan of the used space and files of every storage of the user with a disk quota.")
+            .WithErrors().WithNotFound();
+
+        users.MapPost("/{username}/quotas/transfer/reset", async Task<Results<NoContent, ProblemHttpResult>> (UserResource resource,
+                QuotaAdministrationService quotas, string username, CancellationToken ct) =>
+                resource.Get(username) != null && await quotas.ResetTransferAsync(username, ct) ? TypedResults.NoContent() : NotFound(username))
+            .WithName("ResetUserTransferQuota").WithSummary("Sets the uploaded and downloaded bytes of the user to 0.").WithErrors().WithNotFound();
     }
 
     private static ProblemHttpResult NotFound(string username) => ApiResults.NotFound($"The user '{username}' does not exist.");

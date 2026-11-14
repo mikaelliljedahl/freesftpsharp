@@ -3,6 +3,7 @@ using SshServer.Api.Endpoints;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Authentication;
+using SshServer.Interfaces.Quotas;
 
 namespace SshServer.Api.Dump;
 
@@ -60,18 +61,19 @@ public sealed record DumpStorage(string Provider, JsonObject Options);
 
 public sealed record DumpVirtualFolder(string Name, string? Description, DumpStorage Storage);
 
-public sealed record DumpMount(string VirtualFolder, string MountPath);
+public sealed record DumpMount(string VirtualFolder, string MountPath, DiskQuota? Quota = null);
 
 public sealed record DumpUser(string Username, string RootDirectory, string? PasswordHash, List<PublicKeyEntry> PublicKeys,
     List<string> AllowedAuthMethods, List<string> RequireAllOf, bool OnlyWhitelistedIps, List<string> WhitelistedIps,
     Dictionary<string, List<string>>? Permissions, Dictionary<string, PathFilterModel>? PathFilters, DumpStorage? Storage,
     List<DumpMount> VirtualFolders, string? Role, string? Description, UserStatus Status, DateTime? ExpiresAt, int MaxSessions,
-    DateTime? PasswordChangedAt, string? PrimaryGroup, List<string> SecondaryGroups);
+    DateTime? PasswordChangedAt, string? PrimaryGroup, List<string> SecondaryGroups, DiskQuota? DiskQuota = null,
+    TransferQuota? TransferQuota = null, BandwidthLimit? Bandwidth = null);
 
 /// <summary>A group (#61); its storage is a template.</summary>
 public sealed record DumpGroup(string Name, string? Description, Dictionary<string, List<string>>? Permissions,
     Dictionary<string, PathFilterModel>? PathFilters, DumpStorage? Storage, List<DumpMount> VirtualFolders, List<string>? AllowedAuthMethods,
-    List<string>? AllowedIps, string? Role);
+    List<string>? AllowedIps, string? Role, DiskQuota? DiskQuota = null, TransferQuota? TransferQuota = null, BandwidthLimit? Bandwidth = null);
 
 public sealed record DumpWebhook(string Name, string Url, string Method, string? Secret, Dictionary<string, string> Headers,
     List<string> EventTypes, List<string> Users, string? PathGlob, bool Sync, bool FailOpen, int TimeoutSeconds, bool Enabled);
