@@ -262,6 +262,8 @@ plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Au
 - **Chain.** The providers run in the order of `Auth:Providers` (default: the database, then the plug-ins); the first
   success or failure wins, "not handled" asks the next one. An exception of a provider is a failure (fail closed).
 - **Ownership.** `User.AuthenticationProvider` (null: the database) names the one provider that checks a stored user.
+  A `CredentialOwner` registration (#145) narrows it: an owner that owns only the password (the OpenID Connect sign-in,
+  `oidc`) leaves the SSH public keys to the database provider. App passwords are local for every owner.
 - **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). Its
   JSON form is `UserAttributes` (#136), with the names and types of the REST API user; the HTTP hook answers with it. The
   `ExternalUserProvisioner` makes the user in memory; the protocol checks it like a stored user and calls
@@ -298,7 +300,15 @@ without a limit gets no quota decorator and no counter at all.
   The admin UI ("Reset transfer counters") and the event rule action "QuotaResetTransfer" set the counters to 0.
 - **Bandwidth.** A `TokenBucket` per session and direction (capacity a quarter of a second, debt for larger requests, on a
   `TimeProvider`): a write waits before it reaches the storage, a read waits before it returns, so the protocol answers
-  later and SFTP clients slow down to the rate.
+  later and SFTP clients slow down to the rate. The wait is asynchronous and holds no other request of the session (#133):
+  the SFTP engine handles the requests of each handle in order in a lane of their own, and the path requests (list,
+  STAT, rename, ...) in one more lane, and it uses the asynchronous READ and WRITE of the adapter (`ISftpAsyncFileHandle`,
+  see [external/README.md](../external/README.md)). The other storage calls of SFTP are still synchronous: a slow call of a
+  remote storage (for example a STAT on S3) holds the path lane of its session, not the transfers of the open files.
+  The SSH window gives the flow control: the window of a request goes back to the client only when it is answered, and
+  the engine stops taking requests while more than 4 MiB of replies wait for the client's window. Known limit: a path
+  request (SETSTAT, RENAME, REMOVE) that a client pipelines behind queued writes of an open file can run before them;
+  SFTP clients wait for the replies of their writes before they send such a request.
 
 ## Administrators and authorization
 
@@ -322,7 +332,12 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
   client), with its own callback path. Each handler signs in to the local cookie scheme of its area with a local
   principal (no tokens), so it never opens the other area. The account check is `AdminOidcAccounts` and
   `ClientOidcAccounts`; the new users of the web client come from the `ExternalUserProvisioner` of the authentication
-  providers (#64) with the provider name `oidc`. Nothing is registered without configuration.
+  providers (#64) with the provider name `oidc`. The administrators that the sign-in creates have the same owner
+  (`Admin.AuthenticationProvider`, #145): `AdminAdministrationService` and `AdminCredentialValidator` refuse a local
+  password for them. The back-channel logout of the provider (`OidcBackChannelLogout`, #145) checks the logout token
+  (`OidcLogoutTokenValidator`) and ends the sessions of the provider session: in `ClientSessions` for the web client,
+  through `AdminOidcLogouts` (per node, in memory; checked with the cookie and the circuit) for the admin UI. Nothing is
+  registered without configuration.
 - **One application layer for the UI and the API.** The claims, the policies, `CurrentAdmin` and the scoped views are in
   `SshServer.Administration`; the admin UI (`FxSshSftpServer`) and the REST API (`SshServer.Api`) both reference it.
 

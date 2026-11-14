@@ -7,6 +7,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace SshServerModule.Sftp
 {
@@ -19,8 +20,10 @@ namespace SshServerModule.Sftp
     /// </para>
     /// <para>
     /// The engine is synchronous and the storage is asynchronous: every call waits through <see cref="SyncBridge"/>
-    /// (see there why this cannot deadlock). The engine gives no cancellation, so the calls use
-    /// <see cref="CancellationToken.None"/>.
+    /// (see there why this cannot deadlock), with <see cref="CancellationToken.None"/>. The exception are READ and WRITE
+    /// of a file: the handle is an <see cref="ISftpAsyncFileHandle"/>, so a read or write that waits (a bandwidth limit,
+    /// #133, or a remote storage) holds no thread and does not hold the other requests of the session; the engine
+    /// cancels it when the session closes.
     /// </para>
     /// <para>
     /// Errors: the storage throws <see cref="FileSystemException"/>. This adapter maps each <see cref="FileSystemError"/>
@@ -365,7 +368,7 @@ namespace SshServerModule.Sftp
             });
         }
 
-        private sealed class FileHandle : ISftpFileHandle
+        private sealed class FileHandle : ISftpAsyncFileHandle
         {
             private readonly SftpFileSystemAdapter _owner;
             private readonly IFileHandle _handle;
@@ -414,6 +417,39 @@ namespace SshServerModule.Sftp
                 finally
                 {
                     ArrayPool<byte>.Shared.Return(rented);
+                }
+            }
+
+            public async ValueTask<int> ReadAsync(long offset, Memory<byte> buffer, CancellationToken cancellationToken)
+            {
+                try
+                {
+                    return await _handle.ReadAsync(offset, buffer, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw; // the session closed
+                }
+                catch (Exception ex)
+                {
+                    throw _owner.Translate(ex, _path);
+                }
+            }
+
+            public async ValueTask WriteAsync(long offset, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+            {
+                try
+                {
+                    // The engine gives a buffer of its own per request, so the storage can use it across the await.
+                    await _handle.WriteAsync(offset, data, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw _owner.Translate(ex, _path);
                 }
             }
 

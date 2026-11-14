@@ -14,6 +14,12 @@ time"). Nothing changes until a provider is configured.
   badge in the admin UI), and only that provider checks its credential. So a directory never logs in a local user with
   the same name, and a local password never opens a directory account. A local user (created in the admin UI or with
   `user add`) is checked by the database only.
+- **What the owner owns** (#145). A provider of this chain (LDAP, the HTTP hook) owns all the credentials of its users:
+  the password and the SSH public keys, so a key stored here is not used. The OpenID Connect sign-in (`oidc`) owns
+  **the password only**: the identity provider has no SSH login, so the stored SSH public keys of its users are checked
+  by the database, like those of a local user. An owner declares this with a `CredentialOwner` registration
+  (`SshServer.Interfaces.Authentication`). The **app passwords** (`User.AppPasswords`, per protocol) are always local
+  credentials, for every owner: a user of a provider can get one from an administrator or create one in the web client.
 - **Just in time.** A user that is not stored is created after the provider accepted the login, with the groups (and
   optionally the permissions, networks and session limit) the provider gives. The next logins update these values. For
   an SSH public key the user is saved only after the client proved that it has the private key.
@@ -40,7 +46,7 @@ time"). Nothing changes until a provider is configured.
 
 The sign-in with an OpenID Connect provider (#73) is for the browser (the admin UI and the web client), not a provider
 of this chain: see [OIDC.md](OIDC.md). Its new users belong to the provider `oidc` and are created by the same
-just-in-time provisioning, with the same ownership rules.
+just-in-time provisioning; `oidc` owns their password only (see above).
 
 Put secrets (`Auth:Ldap:BindPassword`, `Auth:HttpHook:Secret`) in environment variables
 (`Auth__Ldap__BindPassword=...`) or the user secrets, not in `appsettings.json`.

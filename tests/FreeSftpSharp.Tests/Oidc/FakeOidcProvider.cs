@@ -48,10 +48,12 @@ public sealed partial class FakeOidcProvider : HttpMessageHandler
         return this;
     }
 
-    /// <summary>The claims of a signed-in account with a user name, roles and groups.</summary>
-    public void SignIn(string username, string[]? roles = null, string[]? groups = null)
+    /// <summary>The claims of a signed-in account with a user name, roles and groups, and the session id <paramref name="sid"/> (#145).</summary>
+    public void SignIn(string username, string[]? roles = null, string[]? groups = null, string? sid = null)
     {
         var claims = new Dictionary<string, object> { ["sub"] = "sub-" + username, ["preferred_username"] = username };
+        if (sid != null)
+            claims["sid"] = sid;
         if (roles != null)
             claims["roles"] = roles;
         if (groups != null)
@@ -161,6 +163,51 @@ public sealed partial class FakeOidcProvider : HttpMessageHandler
             SigningCredentials = new SigningCredentials(_key, SecurityAlgorithms.RsaSha256),
         });
         return Json(new { access_token = "access-" + Guid.NewGuid().ToString("N"), token_type = "Bearer", expires_in = 300, id_token = idToken });
+    }
+
+    /// <summary>
+    /// A logout token of OpenID Connect Back-Channel Logout 1.0 (#145) for <paramref name="audience"/>, signed with the key
+    /// of the provider (or with another key). <paramref name="change"/> edits the claims before the signature.
+    /// </summary>
+    public string LogoutToken(string audience, string? sid, string? sub, Action<Dictionary<string, object>>? change = null, bool otherKey = false,
+        string issuer = Issuer, string type = "logout+jwt", TimeSpan? age = null)
+    {
+        var claims = new Dictionary<string, object>
+        {
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["events"] = new Dictionary<string, object> { ["http://schemas.openid.net/event/backchannel-logout"] = new Dictionary<string, object>() },
+        };
+        if (sid != null)
+            claims["sid"] = sid;
+        if (sub != null)
+            claims["sub"] = sub;
+        change?.Invoke(claims);
+        var key = otherKey ? new RsaSecurityKey(RSA.Create(2048)) { KeyId = _key.KeyId } : _key;
+        var issued = DateTime.UtcNow - (age ?? TimeSpan.Zero);
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = issuer,
+            Audience = audience,
+            IssuedAt = issued,
+            NotBefore = issued,
+            Expires = issued.AddMinutes(2),
+            TokenType = type,
+            Claims = claims,
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256),
+        });
+    }
+
+    /// <summary>An unsigned token (<c>alg: none</c>) with the claims of a valid logout token.</summary>
+    public static string UnsignedLogoutToken(string audience, string sid)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var header = Base64UrlEncoder.Encode(JsonSerializer.Serialize(new { alg = "none", typ = "logout+jwt" }));
+        var payload = Base64UrlEncoder.Encode(JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["iss"] = Issuer, ["aud"] = audience, ["iat"] = now, ["exp"] = now + 120, ["jti"] = Guid.NewGuid().ToString("N"), ["sid"] = sid,
+            ["events"] = new Dictionary<string, object> { ["http://schemas.openid.net/event/backchannel-logout"] = new Dictionary<string, object>() },
+        }));
+        return header + "." + payload + ".";
     }
 
     private HttpResponseMessage EndSession(Uri uri)

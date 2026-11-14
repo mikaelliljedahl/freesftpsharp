@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FxSsh.SshServerModule;
+using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Audit;
@@ -28,7 +29,8 @@ namespace FxSshSftpServer.WebClient
     /// <summary>
     /// The self-service of the web client (#69) for the signed-in user only: its password (the policy of
     /// <see cref="UserAdministrationService.ValidatePassword"/>, also the forced change of an expired password, #61), its
-    /// public keys (#58, through <see cref="UserAdministrationService"/>), its second factor (#63, through
+    /// public keys (#58, through <see cref="UserAdministrationService"/>), its app passwords (#71, #145: for the clients of
+    /// WebDAV, FTP and SFTP that cannot do the normal login, also for a user of the single sign-on), its second factor (#63, through
     /// <see cref="TwoFactorService"/>; turning it off or new recovery codes need a current code), and its open sessions
     /// of every protocol. Each method takes the user name of the login; nothing here reaches another user.
     /// </summary>
@@ -119,6 +121,42 @@ namespace FxSshSftpServer.WebClient
             {
                 using (_actors.Begin(SelfActor))
                     return _users.RemovePublicKey(username, keyBase64 ?? "");
+            }
+            catch (UserAdministrationException ex)
+            {
+                throw new ClientAccountException(ex.Message);
+            }
+        }
+
+        public IReadOnlyList<AppPassword> ListAppPasswords(string username) =>
+            RequireUser(username).AppPasswords?.ToList() ?? new List<AppPassword>();
+
+        /// <summary>Creates an app password; returns it with its secret, which is shown once and not stored.</summary>
+        public (AppPassword Entry, string Secret) CreateAppPassword(string username, string name, UserProtocols protocols, DateTime? expiresAtUtc)
+        {
+            RequireUser(username);
+            try
+            {
+                (AppPassword Entry, string Secret) created;
+                using (_actors.Begin(SelfActor))
+                    created = _users.CreateAppPassword(username, name, protocols, expiresAtUtc, _time.GetUtcNow().UtcDateTime);
+                _logger.LogInformation("User {Username} created the app password {Name} ({Id}) in the web client.",
+                    LogText.Clean(username), LogText.Clean(created.Entry.Name), created.Entry.Id);
+                return created;
+            }
+            catch (UserAdministrationException ex)
+            {
+                throw new ClientAccountException(ex.Message);
+            }
+        }
+
+        public bool RemoveAppPassword(string username, string id)
+        {
+            RequireUser(username);
+            try
+            {
+                using (_actors.Begin(SelfActor))
+                    return _users.RemoveAppPassword(username, id ?? "");
             }
             catch (UserAdministrationException ex)
             {

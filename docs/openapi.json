@@ -5896,7 +5896,8 @@
           "allowedIps",
           "scopeRoleId",
           "lastLoginAt",
-          "mustChangePassword"
+          "mustChangePassword",
+          "authenticationProvider"
         ],
         "type": "object",
         "properties": {
@@ -5942,6 +5943,12 @@
           },
           "mustChangePassword": {
             "type": "boolean"
+          },
+          "authenticationProvider": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -6528,6 +6535,12 @@
           },
           "mustChangePassword": {
             "type": "boolean"
+          },
+          "authenticationProvider": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

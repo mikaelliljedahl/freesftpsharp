@@ -32,6 +32,9 @@ public class OidcHostFactory : WebClientFactory
 
     protected virtual bool DisableLocalLogin => false;
 
+    /// <summary>Auth:Oidc:Admin:BootstrapAdmin (#145), or null.</summary>
+    protected virtual string? BootstrapAdmin => null;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -44,6 +47,8 @@ public class OidcHostFactory : WebClientFactory
         builder.UseSetting("Auth:Oidc:Admin:AutoProvision", "true");
         builder.UseSetting("Auth:Oidc:Admin:RolePermissions:sftp-helpdesk", "ViewConnections, ViewAudit");
         builder.UseSetting("Auth:Oidc:Admin:DisableLocalLogin", DisableLocalLogin ? "true" : "false");
+        if (BootstrapAdmin != null)
+            builder.UseSetting("Auth:Oidc:Admin:BootstrapAdmin", BootstrapAdmin);
         builder.UseSetting("Auth:Oidc:Client:Authority", FakeOidcProvider.Issuer);
         builder.UseSetting("Auth:Oidc:Client:ClientId", WebClientId);
         builder.UseSetting("Auth:Oidc:Client:DisplayName", "Test IdP");
@@ -68,6 +73,16 @@ public class OidcHostFactory : WebClientFactory
 public sealed class OidcLocalLoginDisabledFactory : OidcHostFactory
 {
     protected override bool DisableLocalLogin => true;
+}
+
+/// <summary>A new installation without an administrator, with <c>Auth:Oidc:Admin:BootstrapAdmin</c> (#145).</summary>
+public sealed class OidcBootstrapFactory : OidcHostFactory
+{
+    public const string FirstAdmin = "first-admin";
+
+    protected override bool ConfigureAdminCredential => false;
+
+    protected override string? BootstrapAdmin => FirstAdmin;
 }
 
 /// <summary>A browser for the code flow: the app, and the provider for the authorize step.</summary>
@@ -293,6 +308,47 @@ public sealed class OidcSignInTests : IClassFixture<OidcHostFactory>
     }
 
     [Fact]
+    public async Task A_user_of_the_sign_in_manages_its_keys_and_app_passwords_in_the_web_client()
+    {
+        var name = NewName("oidcself");
+        _factory.Provider.SignIn(name, roles: ["sftp-user"]);
+        using var browser = _factory.CreateOidcBrowser();
+        await browser.FollowDonePageAsync(await browser.SignInAsync("/client/login?handler=Oidc"));
+
+        var account = await (await browser.Http.GetAsync("/client/account", Ct)).Content.ReadAsStringAsync(Ct);
+        Assert.Contains("id=\"keys-local\"", account);
+        Assert.Contains("id=\"app-passwords-section\"", account);
+        var key = Infrastructure.TestUserKeys.Ed25519();
+        var added = await browser.Http.PostAsync("/client/account?handler=AddKeys", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = ClientBrowser.FormToken(account), ["KeysText"] = key.AuthorizedKeysLine,
+        }), Ct);
+        Assert.Equal(HttpStatusCode.OK, added.StatusCode);
+        Assert.Equal(key.Entry.KeyBase64, Assert.Single(_factory.Repository.GetUser(name)!.PublicKeys!).KeyBase64);
+
+        var created = await browser.Http.PostAsync("/client/account?handler=CreateAppPassword", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = ClientBrowser.FormToken(await added.Content.ReadAsStringAsync(Ct)),
+            ["AppPasswordName"] = "Finder", ["AppPasswordWebDav"] = "true",
+        }), Ct);
+        var html = await created.Content.ReadAsStringAsync(Ct);
+        var secret = WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Match(html, "id=\"new-app-password\">([^<]+)<").Groups[1].Value);
+        Assert.False(string.IsNullOrEmpty(secret), html);
+        var stored = _factory.Repository.GetUser(name)!;
+        Assert.Equal(OidcClaims.ProviderName, stored.AuthenticationProvider);
+        Assert.Equal(SshServer.Interfaces.Authentication.UserProtocols.WebDav, Assert.Single(stored.AppPasswords!).Protocols);
+
+        // The app password logs in to WebDAV, not to the web client (which needs the sign-in).
+        var logins = _factory.Services.GetRequiredService<FxSsh.SshServerModule.Security.PasswordLoginService>();
+        var webdav = await logins.LoginAsync("WebDAV", SshServer.Interfaces.Authentication.UserProtocols.WebDav, name, secret, IPAddress.Loopback, Ct);
+        Assert.Equal(FxSsh.SshServerModule.Security.PasswordLoginStatus.Ok, webdav.Status);
+        Assert.Equal("app-password", webdav.Method);
+        var web = await logins.LoginAsync("HTTP", SshServer.Interfaces.Authentication.UserProtocols.Web, name, secret, IPAddress.Loopback, Ct,
+            FxSsh.SshServerModule.Security.PasswordLoginOptions.Interactive);
+        Assert.Equal(FxSsh.SshServerModule.Security.PasswordLoginStatus.Failed, web.Status);
+    }
+
+    [Fact]
     public async Task A_user_without_the_required_role_is_refused_and_not_created()
     {
         var name = NewName("norole");
@@ -448,6 +504,45 @@ public sealed class OidcLocalLoginDisabledTests : IClassFixture<OidcLocalLoginDi
     }
 }
 
+/// <summary>The first administrator of an installation from the sign-in (#145, <c>Auth:Oidc:Admin:BootstrapAdmin</c>).</summary>
+[Collection(AdminUiCollection.Name)]
+public sealed class OidcBootstrapAdminTests : IClassFixture<OidcBootstrapFactory>
+{
+    private readonly OidcBootstrapFactory _factory;
+
+    public OidcBootstrapAdminTests(OidcBootstrapFactory factory)
+    {
+        _factory = factory;
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Without_an_administrator_only_the_bootstrap_name_becomes_the_first_super_admin()
+    {
+        using var browser = _factory.CreateOidcBrowser();
+        // The admin UI is not closed with 503: its login page offers the sign-in.
+        var login = await browser.Http.GetAsync("/Login", Ct);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        Assert.Contains("id=\"oidc-login\"", await login.Content.ReadAsStringAsync(Ct));
+
+        // Another name with the right role and no mapped permission: refused, nothing created.
+        _factory.Provider.SignIn("someone-else", roles: ["sftp-admin"]);
+        var other = await browser.SignInAsync("/Login?handler=Oidc");
+        Assert.Equal("/Login?oidc_error=missingrole", other.Headers.Location!.OriginalString);
+        Assert.False(await _factory.AdminStore.AnyAdminAsync(Ct));
+
+        _factory.Provider.SignIn(OidcBootstrapFactory.FirstAdmin, roles: ["sftp-admin"]);
+        await browser.FollowDonePageAsync(await browser.SignInAsync("/Login?handler=Oidc"));
+
+        var admin = await _factory.AdminStore.GetAdminAsync(OidcBootstrapFactory.FirstAdmin, Ct);
+        Assert.NotNull(admin);
+        Assert.Equal(AdminPermissions.SuperAdmin, admin.Permissions);
+        Assert.Equal(OidcClaims.ProviderName, admin.AuthenticationProvider);
+        Assert.Equal(HttpStatusCode.OK, (await browser.Http.GetAsync("/admins", Ct)).StatusCode);
+    }
+}
+
 /// <summary>Without <c>Auth:Oidc</c> nothing changes (#73): no handler, no button, no callback.</summary>
 [Collection(AdminUiCollection.Name)]
 public sealed class OidcZeroConfigTests : IClassFixture<WebClientFactory>
@@ -493,5 +588,11 @@ public sealed class OidcZeroConfigTests : IClassFixture<WebClientFactory>
 
         Assert.NotEqual(HttpStatusCode.OK, admin.StatusCode);
         Assert.DoesNotContain("oidc_error", admin.Headers.Location?.OriginalString ?? "", StringComparison.Ordinal);
+        foreach (var path in new[] { OidcSignInSetup.AdminBackChannelLogoutPath, OidcSignInSetup.ClientBackChannelLogoutPath })
+        {
+            var logout = await browser.PostAsync(path, new FormUrlEncodedContent(new Dictionary<string, string> { ["logout_token"] = "x" }), Ct);
+            Assert.NotEqual(HttpStatusCode.OK, logout.StatusCode);
+            Assert.NotEqual(HttpStatusCode.BadRequest, logout.StatusCode);
+        }
     }
 }

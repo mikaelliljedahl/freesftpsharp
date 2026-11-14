@@ -99,7 +99,7 @@ curl -s https://sftp.example.com/api/v1/users -H "X-API-Key: fss_..."
 | `/admins/{username}/two-factor` | ManageAdmins | the same for an administrator that the caller may manage (no more permissions than the caller). Not for the own account: turn it off in the admin UI with a current code |
 | `/virtual-folders` | read: ManageUsers or ManageFolders; change: ManageFolders | list, get, create, `PUT`, `PATCH`, delete |
 | `/storage-providers` | any administrator | the storage providers and their options; `POST /storage-providers/test` tries a storage |
-| `/admins`, `/roles` | ManageAdmins | list, get, create, `PUT`, `PATCH` (admins), delete |
+| `/admins`, `/roles` | ManageAdmins | list, get, create, `PUT`, `PATCH` (admins), delete. An administrator of the single sign-on has `authenticationProvider` `oidc` (#145): a password for it is refused with 400 |
 | `/api-keys` | any administrator (bearer token) | list, create, revoke |
 | `/connections` | ViewConnections; DisconnectConnections to close one | list, `DELETE /connections/{id}` |
 | `/audit` | ViewAudit | the audit log, newest first: `?username`, `?type`, `?status`, `?from`, `?to`; `actor` is who made a change |

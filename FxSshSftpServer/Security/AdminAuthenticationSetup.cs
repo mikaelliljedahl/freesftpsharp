@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Threading.Tasks;
+using FxSsh.SshServerModule.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -132,6 +133,16 @@ namespace FxSshSftpServer.Security
                 return app;
             }
 
+            // The first administrator from the OpenID Connect sign-in (#145): the login page stays open for its sign-in.
+            var oidc = services.GetService<IOptions<Oidc.AdminOidcOptions>>()?.Value;
+            if (oidc is { IsEnabled: true } && !string.IsNullOrWhiteSpace(oidc.BootstrapAdmin))
+            {
+                logger.LogWarning(
+                    "No administrator is stored: the first OpenID Connect sign-in of {UserName} ({Setting}) creates it as a super admin. " +
+                    "Remove the setting after that sign-in.", LogText.Clean(oidc.BootstrapAdmin.Trim()), Oidc.AdminOidcOptions.SectionName + ":BootstrapAdmin");
+                return app;
+            }
+
             logger.LogError(
                 "The admin UI is closed: no administrator is stored and {Reason}. Create one with 'FxSshSftpServer {CreateSwitch} <name>', " +
                 "or set AdminAuth:UserName and AdminAuth:PasswordHash (create the hash with 'FxSshSftpServer {Switch}'), and restart. The SSH server still runs.",
@@ -170,7 +181,10 @@ namespace FxSshSftpServer.Security
         {
             var validator = context.HttpContext.RequestServices.GetRequiredService<AdminSessionValidator>();
             IPAddress client = context.HttpContext.Connection.RemoteIpAddress;
-            if (await validator.IsValidAsync(context.Principal, client, context.HttpContext.RequestAborted))
+            // A session that the identity provider ended with a back-channel logout (#145) is not valid either.
+            var logouts = context.HttpContext.RequestServices.GetService<Oidc.AdminOidcLogouts>();
+            if (logouts?.IsEnded(context.Principal) != true
+                && await validator.IsValidAsync(context.Principal, client, context.HttpContext.RequestAborted))
                 return;
 
             context.RejectPrincipal();

@@ -146,6 +146,7 @@ app.UseAntiforgery();
 app.MapStaticAssets().AllowAnonymous();
 app.MapRazorPages(); // Login, Logout, Error, and the pages of the web client (Pages/Client)
 app.MapWebClient(); // the endpoints of the web client (/client/api)
+app.MapOidcBackChannelLogout(); // OIDC back-channel logout (#145): only for a configured Auth:Oidc area
 app.MapRazorComponents<FxSshSftpServer.Components.App>()
     .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
 app.MapRestApi(); // bearer token or API key, never the login cookie

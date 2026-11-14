@@ -36,6 +36,14 @@ namespace FxSsh.Services
         // no TCS per WINDOW_ADJUST at all.
         private int _windowWaiters;
 
+        // Local (receive) window. ServerWindowSize is the credit the peer
+        // has; _unreleasedBytes are received bytes that the consumer still
+        // holds (see DeferWindowAdjust). Both under _serverWindowLocker,
+        // because ReleaseWindow runs on the consumer's threads.
+        private readonly object _serverWindowLocker = new object();
+        private bool _deferWindowAdjust;
+        private long _unreleasedBytes;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Channel"/> class for a
         /// client-initiated channel open, recording the receive window and
@@ -471,9 +479,74 @@ namespace FxSsh.Services
         {
             if (Log.IsEnabled(LogLevel.Trace))
                 Log.Trace($"Channel {ServerChannelId} received {data.Length} bytes.");
-            ServerAttemptAdjustWindow((uint)data.Length);
+            bool release;
+            lock (_serverWindowLocker)
+            {
+                ServerWindowSize -= (uint)data.Length;
+                _unreleasedBytes += data.Length;
+                release = !_deferWindowAdjust;
+            }
+            if (release)
+                ReleaseWindow((uint)data.Length);
 
             DataReceived?.Invoke(this, data);
+        }
+
+        /// <summary>
+        /// Gives the window back to the peer only when the consumer calls
+        /// <see cref="ReleaseWindow"/> for the received bytes, instead of at
+        /// once on receipt. A consumer that handles the data later (the SFTP
+        /// engine with its request lanes) uses this, so a slow consumer stops
+        /// the peer through the SSH window (RFC 4254 section 5.2) and the
+        /// receive loop never waits. Call it before the first data arrives.
+        /// </summary>
+        public void DeferWindowAdjust()
+        {
+            lock (_serverWindowLocker)
+                _deferWindowAdjust = true;
+        }
+
+        /// <summary>
+        /// The consumer is done with <paramref name="bytes"/> received bytes:
+        /// their window can go back to the peer. Thread-safe and never throws
+        /// (the consumer calls it in its cleanup, also while the session is
+        /// torn down). Without <see cref="DeferWindowAdjust"/> the channel
+        /// calls it itself on receipt.
+        /// </summary>
+        public void ReleaseWindow(uint bytes)
+        {
+            uint bytesToAdd;
+            lock (_serverWindowLocker)
+            {
+                _unreleasedBytes = Math.Max(0, _unreleasedBytes - bytes);
+
+                // RFC 4254 section 5.2: top the window up before the peer
+                // stalls. The refresh point is a choice; we refresh when the
+                // credit of the peer is below half of the initial window
+                // (with 2 MiB and 32 KiB packets that is about every 64
+                // packets, and the peer can always send a full packet), and
+                // never give more than the consumer has released.
+                var grantable = (long)ServerInitialWindowSize - ServerWindowSize - _unreleasedBytes;
+                if (ServerWindowSize >= ServerInitialWindowSize / 2 || grantable <= 0)
+                    return;
+                bytesToAdd = (uint)grantable;
+                ServerWindowSize += bytesToAdd;
+            }
+
+            // No adjust after our CHANNEL_CLOSE (RFC 4254 5.3) or the teardown;
+            // a session whose send queue is already completed drops it.
+            lock (_windowLocker)
+            {
+                if (_forceClosed)
+                    return;
+            }
+            if (ServerClosed)
+                return;
+            _connectionService._session.TrySendMessage(new ChannelWindowAdjustMessage
+            {
+                RecipientChannel = ClientChannelId,
+                BytesToAdd = bytesToAdd,
+            });
         }
 
         internal void OnEof()
@@ -527,40 +600,6 @@ namespace FxSsh.Services
             }
 
             signal?.TrySetResult(true);
-        }
-
-        private void ServerAttemptAdjustWindow(uint messageLength)
-        {
-            ServerWindowSize -= messageLength;
-
-            // RFC 4254 section 5.2: the local window advertised to the peer is topped
-            // up by sending SSH_MSG_CHANNEL_WINDOW_ADJUST before the peer's send
-            // window would otherwise stall. The exact refresh point is an
-            // implementation choice; the only hard constraint is that the peer
-            // must always have at least one maximum-sized packet worth of credit
-            // available until EOF (otherwise it blocks mid-transfer).
-            //
-            // We refresh when the remaining window drops below HALF of the
-            // initial window rather than below one max-packet (ServerMaxPacketSize).
-            // With InitialLocalWindowSize = 2 MiB and ServerMaxPacketSize = 32 KiB,
-            // the previous "<= ServerMaxPacketSize" threshold refreshed roughly
-            // every 128 inbound ~16 KiB packets; the half-window threshold refreshes
-            // roughly every 64 packets, which halves how often the SSH receive
-            // thread is synchronously interrupted to encrypt + transmit a
-            // WINDOW_ADJUST message. Because 1/2 initial (1 MiB) is still far
-            // above ServerMaxPacketSize (32 KiB), the peer can always send a
-            // full-size packet between refreshes - the RFC 4254 hard constraint
-            // stays satisfied. BytesToAdd tops the window back up to the initial
-            // size, matching the RFC's "top up" semantics.
-            if (ServerWindowSize < ServerInitialWindowSize / 2)
-            {
-                _connectionService._session.SendMessage(new ChannelWindowAdjustMessage
-                {
-                    RecipientChannel = ClientChannelId,
-                    BytesToAdd = ServerInitialWindowSize - ServerWindowSize
-                });
-                ServerWindowSize = ServerInitialWindowSize;
-            }
         }
 
         private void CheckBothClosed()

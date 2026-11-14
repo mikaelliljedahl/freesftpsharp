@@ -180,6 +180,39 @@ public sealed class AdminAdministrationServiceTests
     }
 
     [Fact]
+    public async Task An_administrator_of_an_identity_provider_gets_no_local_password()
+    {
+        var created = await _service.CreateAdminAsync(AdminActor.System,
+            new AdminInput("sso") { Permissions = AdminPermissions.ManageUsers, AuthenticationProvider = "oidc" }, Password, Ct);
+        Assert.Equal("oidc", created.AuthenticationProvider);
+
+        var update = await Assert.ThrowsAsync<AdminAdministrationException>(() =>
+            _service.UpdateAdminAsync(Super(), new AdminInput("sso") { Permissions = AdminPermissions.ManageUsers }, "other-password-2", Ct));
+        Assert.Equal("The password of this account is managed by oidc.", update.Message);
+        await Assert.ThrowsAsync<AdminAdministrationException>(() =>
+            _service.UpdateAdminAsync(Super(), new AdminInput("sso") { Permissions = AdminPermissions.ManageUsers, MustChangePassword = true }, null, Ct));
+        await Assert.ThrowsAsync<AdminAdministrationException>(() => _service.ChangeOwnPasswordAsync("sso", Password, "new-password-3", Ct));
+
+        // Other fields can change; the owner stays, also when the input does not name it.
+        var updated = await _service.UpdateAdminAsync(Super(), new AdminInput("sso") { Permissions = AdminPermissions.ViewAudit }, null, Ct);
+        Assert.Equal("oidc", updated.AuthenticationProvider);
+        Assert.Equal("oidc", (await _store.GetAdminAsync("sso", Ct))!.AuthenticationProvider);
+        Assert.Null(await new SshServer.Administration.AdminCredentialValidator(_store).ValidateAsync("sso", Password, System.Net.IPAddress.Loopback, Ct));
+    }
+
+    [Fact]
+    public async Task A_loaded_administrator_keeps_its_identity_provider()
+    {
+        var hash = PasswordHasher.Hash("loaded-1", PasswordHasher.MinimumIterations);
+
+        await _service.LoadAdminAsync(Super(), new AdminInput("loaded") { Permissions = AdminPermissions.ViewAudit, AuthenticationProvider = "oidc" }, hash, Ct);
+        Assert.Equal("oidc", (await _store.GetAdminAsync("loaded", Ct))!.AuthenticationProvider);
+
+        await _service.LoadAdminAsync(Super(), new AdminInput("loaded") { Permissions = AdminPermissions.ViewAudit }, hash, Ct);
+        Assert.Null((await _store.GetAdminAsync("loaded", Ct))!.AuthenticationProvider);
+    }
+
+    [Fact]
     public async Task The_configured_account_is_imported_once_as_super_admin()
     {
         var hash = PasswordHasher.Hash("configured-1", PasswordHasher.MinimumIterations);

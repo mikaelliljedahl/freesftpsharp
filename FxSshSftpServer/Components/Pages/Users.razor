@@ -17,6 +17,7 @@
 @inject SshServer.Interfaces.Users.IEffectiveUserSettingsService UserSettings
 @inject IJSRuntime JS
 @inject ToastService Toasts
+@inject IEnumerable<CredentialOwner> CredentialOwners
 
 <PageTitle>Users - FreeSftpSharp admin</PageTitle>
 
@@ -301,7 +302,14 @@
                             {
                                 <div class="alert alert-info small py-2" id="external-provider-note">
                                     @SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(owner)
-                                    The provider checks the password and the keys of the user; a key set here is not used.
+                                    @if (CredentialOwner.IsLocal(owner, OwnedCredentials.PublicKeys, CredentialOwners))
+                                    {
+                                        <span>The SSH public keys and the app passwords set here are used.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>The provider checks the password and the keys of the user; a key set here is not used.</span>
+                                    }
                                 </div>
                             }
                             <div class="small text-body-secondary mb-2">

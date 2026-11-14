@@ -13,18 +13,20 @@ using SshServer.TwoFactor;
 namespace FxSshSftpServer.Pages.Client
 {
     /// <summary>
-    /// The account of the signed-in user (#69): the password, the public keys (#58), the second factor (#63) and the open
-    /// sessions. Every change goes through <see cref="ClientAccountService"/>, always for the user of the login.
+    /// The account of the signed-in user (#69): the password, the public keys (#58), the app passwords (#145), the second
+    /// factor (#63) and the open sessions. Every change goes through <see cref="ClientAccountService"/>, always for the user of the login.
     /// </summary>
     [Authorize(Policy = ClientAuth.UserPolicy)]
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public class AccountModel : PageModel
     {
         private readonly ClientAccountService _account;
+        private readonly IEnumerable<CredentialOwner> _owners;
 
-        public AccountModel(ClientAccountService account)
+        public AccountModel(ClientAccountService account, IEnumerable<CredentialOwner> owners)
         {
             _account = account;
+            _owners = owners;
         }
 
         [BindProperty]
@@ -35,6 +37,26 @@ namespace FxSshSftpServer.Pages.Client
 
         [BindProperty(SupportsGet = true)]
         public string Changed { get; set; }
+
+        [BindProperty]
+        public string AppPasswordName { get; set; }
+
+        [BindProperty]
+        public bool AppPasswordWebDav { get; set; }
+
+        [BindProperty]
+        public bool AppPasswordFtp { get; set; }
+
+        [BindProperty]
+        public bool AppPasswordSftp { get; set; }
+
+        [BindProperty]
+        public DateTime? AppPasswordExpires { get; set; }
+
+        public IReadOnlyList<AppPassword> AppPasswords { get; private set; } = Array.Empty<AppPassword>();
+
+        /// <summary>The secret of the app password that was just created (shown once).</summary>
+        public string NewAppPassword { get; private set; }
 
         public string Message { get; private set; }
 
@@ -55,6 +77,9 @@ namespace FxSshSftpServer.Pages.Client
         public Guid? CurrentSession => ClientClaims.Session(User);
 
         public bool AllowsPublicKeys { get; private set; }
+
+        /// <summary>The account belongs to a provider that owns only its password (#145): the keys here log it in over SFTP.</summary>
+        public bool KeysWithoutPassword { get; private set; }
 
         /// <summary>The external provider that manages the password (#64), or null: then the page offers the change.</summary>
         public string PasswordManagedBy { get; private set; }
@@ -81,6 +106,23 @@ namespace FxSshSftpServer.Pages.Client
         public Task<IActionResult> OnPostRemoveKeyAsync(string key) => RunAsync(() =>
         {
             Message = _account.RemovePublicKey(Username, key) ? "The key was removed." : "You do not have this key.";
+            return Task.CompletedTask;
+        });
+
+        public Task<IActionResult> OnPostCreateAppPasswordAsync() => RunAsync(() =>
+        {
+            var protocols = (AppPasswordWebDav ? UserProtocols.WebDav : UserProtocols.None) | (AppPasswordFtp ? UserProtocols.Ftp : UserProtocols.None)
+                | (AppPasswordSftp ? UserProtocols.Sftp : UserProtocols.None);
+            var expires = AppPasswordExpires is { } date ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc) : (DateTime?)null;
+            var (entry, secret) = _account.CreateAppPassword(Username, AppPasswordName, protocols, expires);
+            NewAppPassword = secret;
+            Message = $"The app password {entry.Name} was created. Copy it now; it is not shown again.";
+            return Task.CompletedTask;
+        });
+
+        public Task<IActionResult> OnPostRemoveAppPasswordAsync(string id) => RunAsync(() =>
+        {
+            Message = _account.RemoveAppPassword(Username, id) ? "The app password was removed." : "You do not have this app password.";
             return Task.CompletedTask;
         });
 
@@ -134,8 +176,10 @@ namespace FxSshSftpServer.Pages.Client
             if (user == null)
                 return Challenge(ClientAuth.Scheme);
             Keys = _account.ListPublicKeys(Username);
+            AppPasswords = _account.ListAppPasswords(Username);
             AllowsPublicKeys = (user.AllowedAuthMethods & AuthMethods.PublicKey) != 0;
             PasswordManagedBy = ExternalCredentials.PasswordManagedBy(user);
+            KeysWithoutPassword = PasswordManagedBy != null && CredentialOwner.IsLocal(user.AuthenticationProvider, OwnedCredentials.PublicKeys, _owners);
             TwoFactor = await _account.GetTwoFactorStatusAsync(Username, Ct);
             Sessions = _account.ListSessions(Username);
             return Page();
