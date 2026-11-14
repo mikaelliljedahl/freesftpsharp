@@ -205,8 +205,12 @@ reads `User.Permissions`, `User.Storage` or a `Group` itself; a new shared setti
 The lifecycle of a login (status, expiry, password age, session limit; #61) is in `UserLoginRules`. Every protocol asks
 it before the credential check and refuses like a wrong credential; the session limit is checked again when the login is
 recorded (`IConnectionRegistry.TrySetAuthenticated`, one step with the count), so two logins at the same time cannot
-both take the last session. The `DisabledUserDisconnector` sink (registered by `AddSshServerConnections()`) closes the
-connections of a user that is disabled or removed, from the provider events, through the registry.
+both take the last session. The `UserSessionCloser` (registered by `AddSshServerConnections()`) is the one place that closes the sessions of a user
+whose account ended (#132), in every protocol through the registry, with a reason ("The account expired.", "The account
+was disabled.", "The account was removed.") that is logged and published as a `System.SessionsClosed` event (audit log). As
+an event sink it closes the sessions of a user that is disabled or removed, from the provider events. An expiry is a
+point in time and no event, so the `UserLifecycleService` (every 5 seconds) checks the users of the open connections and
+calls the closer for an expired one.
 
 ## Authentication providers
 
