@@ -17,7 +17,7 @@ namespace FxSsh.SshServerModule.Security
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton(sp => new LoginBanTracker(sp.GetRequiredService<TimeProvider>()));
             services.TryAddSingleton<IIpBanService>(sp => sp.GetRequiredService<LoginBanTracker>());
-            services.TryAddSingleton<PasswordLoginService>(); // the password login of WebDAV (and later FTP)
+            services.TryAddSingleton<PasswordLoginService>(); // the password login of WebDAV and FTP
             return services;
         }
     }
