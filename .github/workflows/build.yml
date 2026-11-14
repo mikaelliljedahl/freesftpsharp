@@ -101,6 +101,11 @@ jobs:
           docker logs azurite
           exit 1
 
+      # lftp for the FTPS end-to-end tests (#72); curl is on the runner already.
+      - name: Install lftp
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q lftp
+
       # Keycloak for the OpenID Connect sign-in tests (#73) on Linux, with the realm of tests/keycloak imported. A step and
       # not a service container: it needs the command line "start-dev --import-realm" and the realm file as a volume.
       - name: Start Keycloak

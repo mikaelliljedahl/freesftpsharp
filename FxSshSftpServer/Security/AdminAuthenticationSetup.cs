@@ -76,6 +76,7 @@ namespace FxSshSftpServer.Security
             services.AddScoped<AdminScopedSettingsRepository>();
             services.AddScoped<ScopedAuditLog>();
             services.AddScoped<ScopedConnections>();
+            services.AddScoped<ScopedShares>();
             services.AddScoped<TwoFactorAdministration>();
             // In the admin UI every user operation goes through the scope of the signed-in administrator. The command
             // line (ServerConsoleApp) keeps the singleton on the shared repository.
@@ -137,11 +138,12 @@ namespace FxSshSftpServer.Security
                 AdminCreateCommand.Switch,
                 AdminPasswordCommand.Switch);
 
-            // The web client of the users (#69) does not need an administrator: it, its OpenID Connect sign-in (#73) and the files of its pages stay open.
+            // The web client of the users (#69), its share links (#70) and its OpenID Connect sign-in (#73) do not need an administrator: they and the files of their pages stay open.
             var clientEnabled = services.GetRequiredService<IOptions<WebClient.WebClientOptions>>().Value.Enabled;
             return app.Use(async (HttpContext context, Func<Task> next) =>
             {
-                if (clientEnabled && (WebClient.WebClientSetup.IsClientPath(context.Request.Path) || Oidc.OidcSignInSetup.IsClientPath(context.Request.Path)
+                if (clientEnabled && (WebClient.WebClientSetup.IsClientPath(context.Request.Path) || WebClient.ShareAccess.IsSharePath(context.Request.Path)
+                                      || Oidc.OidcSignInSetup.IsClientPath(context.Request.Path)
                                       || IsStaticFile(context.Request.Path)))
                 {
                     await next();

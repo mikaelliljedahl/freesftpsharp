@@ -12,4 +12,13 @@ public sealed record ClientContext(string Protocol, string? RemoteIp, Guid? Conn
     /// never sets it.
     /// </summary>
     public bool SkipPermissions { get; init; }
+
+    /// <summary>
+    /// The most that this client may do in any directory: the permissions of the user are limited to these flags (a share
+    /// link, #70, limits the owner's permissions to its scope). Null: the permissions of the user.
+    /// </summary>
+    public Permissions.FilePermissions? PermissionMask { get; init; }
+
+    /// <summary>More values for the file events of this client (<c>FileEvent.Metadata</c>), for example the id of a share link.</summary>
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

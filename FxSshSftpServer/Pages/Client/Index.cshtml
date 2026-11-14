@@ -1,10 +1,12 @@
 @page
 @model IndexModel
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@inject ShareAccess ShareAccess
 @{
     ViewData["Title"] = "Files";
     var token = Antiforgery.GetAndStoreTokens(HttpContext).RequestToken;
     var a = Model.Actions;
+    var sharing = ShareAccess.Enabled;
 }
 <div id="file-browser" data-path="@Model.Directory" data-chunk="@Model.ChunkBytes" data-token="@token"
      data-can-overwrite="@(a.Overwrite ? "true" : "false")">
@@ -105,6 +107,10 @@
                                 @if (a.Download && !entry.IsDirectory)
                                 {
                                     <a class="btn btn-sm btn-outline-secondary action-download" href="/client/api/download?path=@Uri.EscapeDataString(path)" title="Download"><i class="bi bi-download"></i></a>
+                                }
+                                @if (sharing)
+                                {
+                                    <a class="btn btn-sm btn-outline-secondary action-share" href="/client/shares?path=@Uri.EscapeDataString(path)" title="Share"><i class="bi bi-share"></i></a>
                                 }
                                 @if (a.Rename)
                                 {

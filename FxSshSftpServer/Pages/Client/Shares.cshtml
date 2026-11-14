@@ -1,0 +1,134 @@
+@page "/client/shares"
+@model SharesModel
+@using SshServer.Interfaces.Shares
+@{
+    ViewData["Title"] = "Shares";
+    var settings = Model.Settings;
+}
+<h1 class="h3 mb-3">Shares</h1>
+<p class="text-body-secondary">
+    A share link lets a person without an account download files or folders, or upload files into a folder of yours.
+    Everything goes through your permissions and your quota.
+</p>
+
+@if (Model.CreatedLink != null)
+{
+    <div class="alert alert-success d-flex flex-wrap align-items-center gap-2" id="share-created">
+        <span>The share is ready:</span>
+        <span class="font-monospace text-break" id="share-created-link">@Model.CreatedLink</span>
+        <button type="button" class="btn btn-sm btn-outline-success" data-copy="@Model.CreatedLink">Copy link</button>
+    </div>
+}
+@if (Model.Message != null)
+{
+    <div class="alert alert-info" id="share-message">@Model.Message</div>
+}
+@if (Model.Errors.Count > 0)
+{
+    <div class="alert alert-danger" id="share-errors">
+        <ul class="mb-0">
+            @foreach (var error in Model.Errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-plus-circle"></i> New share</div>
+    <div class="card-body">
+        <form method="post" asp-page-handler="Create" id="share-form">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="share-name">Name</label>
+                    <input class="form-control" id="share-name" name="Name" value="@Model.Name" maxlength="@ShareRules.MaxNameLength" required />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="share-scope">Allows</label>
+                    <select class="form-select" id="share-scope" name="Scope">
+                        <option value="Read" selected="@(Model.Scope == ShareScope.Read)">Download</option>
+                        <option value="Write" selected="@(Model.Scope == ShareScope.Write)">Upload (inbox)</option>
+                        <option value="ReadWrite" selected="@(Model.Scope == ShareScope.ReadWrite)">Download and upload</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="share-paths">Files and folders (one path per line)</label>
+                    <textarea class="form-control font-monospace" id="share-paths" name="PathsText" rows="2" required>@Model.PathsText</textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="share-description">Description (optional)</label>
+                    <input class="form-control" id="share-description" name="Description" value="@Model.Description" maxlength="@ShareRules.MaxDescriptionLength" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="share-password">Password@(settings.RequirePassword ? "" : " (optional)")</label>
+                    <input type="password" class="form-control" id="share-password" name="Password" autocomplete="new-password" required="@settings.RequirePassword" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="share-expires">Expires (UTC)@(settings.MaxLifetimeDays > 0 ? $", at most {settings.MaxLifetimeDays} days" : " (optional)")</label>
+                    <input type="datetime-local" class="form-control" id="share-expires" name="ExpiresAt" value="@Model.ExpiresAt" required="@(settings.MaxLifetimeDays > 0)" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="share-max-uses">Maximum downloads and uploads (0: no limit)</label>
+                    <input type="number" min="0" class="form-control" id="share-max-uses" name="MaxUses" value="@Model.MaxUses" />
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label" for="share-ips">Allowed client networks (optional, CIDR, one per line)</label>
+                    <textarea class="form-control font-monospace" id="share-ips" name="AllowedIpsText" rows="1">@Model.AllowedIpsText</textarea>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="share-overwrite" name="AllowOverwrite" value="true" checked="@Model.AllowOverwrite" />
+                        <label class="form-check-label" for="share-overwrite">Uploads may replace existing files</label>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3" id="share-create"><i class="bi bi-link-45deg"></i> Create share</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header fw-semibold"><i class="bi bi-share"></i> Your shares <span class="badge text-bg-secondary" id="share-count">@Model.Shares.Count</span></div>
+    @if (Model.Shares.Count == 0)
+    {
+        <div class="card-body text-body-secondary" id="no-shares">You have no shares.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle mb-0" id="share-table">
+                <thead><tr><th>Name</th><th>Paths</th><th>Allows</th><th>Uses</th><th>Expires (UTC)</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var share in Model.Shares)
+                    {
+                        <tr class="share-row" data-share-id="@share.Id">
+                            <td>
+                                <span class="fw-semibold">@share.Name</span>
+                                @if (share.HasPassword)
+                                {
+                                    <i class="bi bi-lock" title="With password"></i>
+                                }
+                            </td>
+                            <td class="font-monospace small text-break">@string.Join(", ", share.Paths)</td>
+                            <td>@share.Scope</td>
+                            <td>@share.UsedCount@(share.MaxUses > 0 ? " / " + share.MaxUses : "")</td>
+                            <td class="text-nowrap">@(share.ExpiresAt?.ToString("yyyy-MM-dd HH:mm") ?? "never")</td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-copy="@Model.LinkOf(share)" title="Copy link"><i class="bi bi-clipboard"></i> Copy link</button>
+                                <form method="post" asp-page-handler="Revoke" class="d-inline">
+                                    <input type="hidden" name="id" value="@share.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger share-revoke"><i class="bi bi-x-circle"></i> Revoke</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script src="~/js/client.js"></script>
+}

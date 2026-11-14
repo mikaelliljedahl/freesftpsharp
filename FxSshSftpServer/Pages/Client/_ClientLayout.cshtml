@@ -1,3 +1,4 @@
+@inject ShareAccess ShareAccess
 @{
     var signedIn = ClientClaims.Session(User) != null;
     var mustChange = ClientClaims.MustChangePassword(User);
@@ -25,6 +26,10 @@
                     @if (!mustChange)
                     {
                         <li class="nav-item"><a class="nav-link" href="/client" id="nav-files"><i class="bi bi-folder2"></i> Files</a></li>
+                        @if (ShareAccess.Enabled)
+                        {
+                            <li class="nav-item"><a class="nav-link" href="/client/shares" id="nav-shares"><i class="bi bi-share"></i> Shares</a></li>
+                        }
                         <li class="nav-item"><a class="nav-link" href="/client/account" id="nav-account"><i class="bi bi-person-gear"></i> Account</a></li>
                     }
                 </ul>
