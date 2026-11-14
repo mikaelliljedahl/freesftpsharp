@@ -36,7 +36,8 @@ public sealed record UserView(
     BandwidthLimit? Bandwidth,
     DateTime? LastLoginAt,
     DateTime? PasswordChangedAt,
-    string? AuthenticationProvider)
+    string? AuthenticationProvider,
+    IReadOnlyList<string> AllowedProtocols)
 {
     public static UserView From(User user, StorageMapper storage) => new(
         user.Username,
@@ -63,7 +64,8 @@ public sealed record UserView(
         user.Bandwidth,
         user.LastLoginAt,
         user.PasswordChangedAt,
-        user.AuthenticationProvider);
+        user.AuthenticationProvider,
+        ProtocolNames.Of(user.AllowedProtocols));
 }
 
 /// <summary>A public key of a user: the type, the fingerprint and the comment; the key blob is not needed by a client.</summary>
@@ -180,6 +182,12 @@ public sealed record UserWrite
     /// <summary>The bandwidth per session (#62). Not given: unlimited, or the bandwidth of the groups.</summary>
     public BandwidthLimit? Bandwidth { get; init; }
 
+    /// <summary>
+    /// The protocols the user may use (#71): sftp, webdav, web, ftp. Not given: all of them. At least one is needed. The
+    /// app passwords have their own routes (/users/{username}/app-passwords).
+    /// </summary>
+    public List<string>? AllowedProtocols { get; init; }
+
     /// <summary>The write model of a stored user, for a PATCH (no password, no keys: they keep their stored values).</summary>
     public static UserWrite From(User user, StorageMapper storage) => new()
     {
@@ -203,6 +211,7 @@ public sealed record UserWrite
         DiskQuota = user.DiskQuota,
         TransferQuota = user.TransferQuota,
         Bandwidth = user.Bandwidth,
+        AllowedProtocols = ProtocolNames.Of(user.AllowedProtocols).ToList(),
     };
 }
 
@@ -217,3 +226,23 @@ public sealed record GenerateKeyRequest(string? Type);
 
 /// <summary>A generated key pair: the private key is returned only here and is not stored on the server.</summary>
 public sealed record GeneratedKey(PublicKeyView PublicKey, string PrivateKey, string FileName);
+
+/// <summary>An app password (#71) of a user: the metadata only. The secret is shown once, when it is created.</summary>
+public sealed record AppPasswordView(string Id, string Name, IReadOnlyList<string> Protocols, DateTime CreatedAt, DateTime? ExpiresAt, bool Expired)
+{
+    public static AppPasswordView From(AppPassword password, DateTime utcNow) => new(password.Id, password.Name, ProtocolNames.Of(password.Protocols),
+        ApiTime.ToUtc(password.CreatedAt), ApiTime.ToUtc(password.ExpiresAt), password.IsExpired(utcNow));
+}
+
+/// <summary>An app password to create: a name, the protocols (default: webdav) and an optional expiry (UTC).</summary>
+public sealed record AppPasswordCreate(string? Name, List<string>? Protocols, DateTime? ExpiresAt);
+
+/// <summary>A new app password. The <see cref="Secret"/> is returned only here; the server keeps its hash.</summary>
+public sealed record AppPasswordCreated(AppPasswordView AppPassword, string Secret);
+
+/// <summary>The second factor (#63) of a user or an administrator: never the secret. State is Off, Pending (set up, not confirmed) or On.</summary>
+public sealed record TwoFactorView(bool Enrolled, string State, DateTime? CreatedAt, DateTime? EnabledAt, int RecoveryCodesLeft)
+{
+    public static TwoFactorView From(SshServer.TwoFactor.TwoFactorStatus status) => new(status.State == SshServer.TwoFactor.TwoFactorState.On,
+        status.State.ToString(), ApiTime.ToUtc(status.CreatedAt), ApiTime.ToUtc(status.EnabledAt), status.RecoveryCodesLeft);
+}

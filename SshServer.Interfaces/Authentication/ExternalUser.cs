@@ -35,6 +35,9 @@ public sealed class ExternalUser
     /// <summary>The number of sessions at the same time (<see cref="User.MaxSessions"/>, 0: no limit). Null: unchanged.</summary>
     public int? MaxSessions { get; init; }
 
+    /// <summary>The protocols the user may log in with (<see cref="User.AllowedProtocols"/>). Null: unchanged.</summary>
+    public UserProtocols? AllowedProtocols { get; init; }
+
     /// <summary>The note of the user (<see cref="User.Description"/>). Null: unchanged.</summary>
     public string? Description { get; init; }
 }

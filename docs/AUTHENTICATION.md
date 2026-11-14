@@ -144,6 +144,7 @@ The answer:
     "onlyWhitelistedIps": true,
     "whitelistedIps": [ "192.0.2.0/24" ],
     "maxSessions": 2,
+    "allowedProtocols": [ "sftp", "webdav" ],
     "description": "Partner account"
   }
   ```
@@ -152,7 +153,8 @@ The answer:
   JSON types of the user of the REST API (`UserView` and `UserWrite` of `/api/v1/users`, see [REST-API.md](REST-API.md)),
   so the same code can write both. Only the groups differ: the hook gives local group **names** (`primaryGroup`,
   `groups`), because it does not know the local ids; the REST API has the ids (`primaryGroupId`, `secondaryGroupIds`).
-  Without `onlyWhitelistedIps`, a non-empty `whitelistedIps` list also turns it on. The answer never sets the root
+  `allowedProtocols` takes `sftp`, `webdav`, `web`, `ftp` and `all` (without case), like the REST API; an empty list
+  or an unknown name refuses the login. Without `onlyWhitelistedIps`, a non-empty `whitelistedIps` list also turns it on. The answer never sets the root
   directory, the storage, the status or the expiry: the storage comes from the groups, the status and the expiry stay
   local.
 

@@ -144,6 +144,41 @@ public sealed class HttpAuthHookTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_allowed_protocols_have_the_rest_api_format()
+    {
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"allowedProtocols":["SFTP","webdav"]}""");
+
+        var check = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.True(check.Succeeded);
+        Assert.Equal(UserProtocols.Sftp | UserProtocols.WebDav, check.User!.AllowedProtocols);
+    }
+
+    [Fact]
+    public async Task All_allows_every_protocol()
+    {
+        _repository.AddUser(new User { Username = "alice", AuthenticationProvider = "http", AllowedProtocols = UserProtocols.Ftp });
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"allowedProtocols":["all"]}""");
+
+        var check = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.True(check.Succeeded);
+        Assert.True(check.NeedsSave);
+        Assert.Equal(UserProtocols.All, check.User!.AllowedProtocols);
+    }
+
+    [Fact]
+    public async Task No_allowed_protocol_refuses()
+    {
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"allowedProtocols":[]}""");
+
+        var check = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.False(check.Succeeded);
+        Assert.Contains("allow at least one protocol", check.Reason);
+    }
+
+    [Fact]
     public async Task The_deprecated_snake_case_answer_is_still_accepted_with_one_warning_per_process()
     {
         _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"primary_group":"staff","allowed_ips":["10.0.0.0/8"],"max_sessions":2}""");
@@ -251,6 +286,7 @@ public sealed class HttpAuthHookTests : IAsyncLifetime
     [InlineData("""{"maxSessions":"many"}""")]
     [InlineData("""{"whitelistedIps":"10.0.0.0/8"}""")]
     [InlineData("""{"permissions":{"/":null}}""")]
+    [InlineData("""{"allowedProtocols":["gopher"]}""")]
     public async Task An_answer_that_is_not_a_valid_user_refuses(string body)
     {
         _receiver.Respond = (_, _) => new ReceiverAnswer(200, body);

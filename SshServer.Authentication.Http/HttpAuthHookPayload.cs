@@ -10,7 +10,7 @@ namespace SshServer.Authentication.Http;
 /// line, key logins), "method" ("password", "publickey", "keyboard-interactive"), "ip", "protocol"}</c>.</para>
 /// <para>Answer 200: a <see cref="UserAttributes"/> (#136), the names and types of the user of the REST API, every field
 /// optional: <c>{"username" (must be the name of the request), "primaryGroup", "groups", "permissions"
-/// ({"/": ["List", "Download"]}), "onlyWhitelistedIps", "whitelistedIps", "maxSessions", "description"}</c>.</para>
+/// ({"/": ["List", "Download"]}), "onlyWhitelistedIps", "whitelistedIps", "maxSessions", "allowedProtocols" (["sftp", "webdav"]), "description"}</c>.</para>
 /// <para>Deprecated: the snake_case answer of the first version (<c>primary_group</c>, <c>allowed_ips</c>,
 /// <c>max_sessions</c>) is still read for one release; <see cref="ParseUser"/> tells when an answer used it.</para>
 /// </summary>

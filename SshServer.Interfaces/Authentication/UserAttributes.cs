@@ -43,6 +43,12 @@ public sealed class UserAttributes
     /// <summary>The sessions at the same time; 0: no limit.</summary>
     public int? MaxSessions { get; init; }
 
+    /// <summary>
+    /// The protocols the user may log in with: <c>sftp</c>, <c>webdav</c>, <c>web</c>, <c>ftp</c> or <c>all</c>, without
+    /// case (<see cref="ProtocolNames"/>, the format of the REST API).
+    /// </summary>
+    public List<string>? AllowedProtocols { get; init; }
+
     /// <summary>A note (at most 1000 characters are kept).</summary>
     public string? Description { get; init; }
 
@@ -62,7 +68,19 @@ public sealed class UserAttributes
         AllowedIps = WhitelistedIps,
         MaxSessions = MaxSessions,
         Description = Description,
+        AllowedProtocols = ParseProtocols(AllowedProtocols),
     };
+
+    private static UserProtocols? ParseProtocols(List<string>? names)
+    {
+        if (names == null)
+            return null;
+        var unknown = new List<string>();
+        var protocols = ProtocolNames.Parse(names, unknown);
+        if (unknown.Count > 0)
+            throw new FormatException($"unknown protocol in \"allowedProtocols\" ({ProtocolNames.Allowed})");
+        return protocols;
+    }
 
     private static Dictionary<string, FilePermissions>? ParsePermissions(Dictionary<string, List<string>>? permissions)
     {

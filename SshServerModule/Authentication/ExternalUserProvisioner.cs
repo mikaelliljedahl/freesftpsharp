@@ -183,6 +183,13 @@ public sealed class ExternalUserProvisioner
             user.MaxSessions = maxSessions;
         }
 
+        if (definition.AllowedProtocols is { } protocols)
+        {
+            if ((protocols & UserProtocols.All) == UserProtocols.None)
+                return "the protocols of the provider are not valid: allow at least one protocol";
+            user.AllowedProtocols = protocols;
+        }
+
         if (definition.Description != null)
             user.Description = definition.Description.Length > 1000 ? definition.Description[..1000] : definition.Description;
         return null;
@@ -197,6 +204,7 @@ public sealed class ExternalUserProvisioner
         to.WhitelistedIps = from.WhitelistedIps?.ToList();
         to.MaxSessions = from.MaxSessions;
         to.Description = from.Description;
+        to.AllowedProtocols = from.AllowedProtocols;
     }
 
     private static bool ManagedFieldsDiffer(User a, User b) =>
@@ -206,7 +214,8 @@ public sealed class ExternalUserProvisioner
         || a.OnlyWhitelistedIps != b.OnlyWhitelistedIps
         || !(a.WhitelistedIps ?? []).SequenceEqual(b.WhitelistedIps ?? [])
         || a.MaxSessions != b.MaxSessions
-        || !string.Equals(a.Description, b.Description, StringComparison.Ordinal);
+        || !string.Equals(a.Description, b.Description, StringComparison.Ordinal)
+        || a.AllowedProtocols != b.AllowedProtocols;
 
     private static bool SamePermissions(Dictionary<string, FilePermissions>? a, Dictionary<string, FilePermissions>? b)
     {
