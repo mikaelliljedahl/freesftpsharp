@@ -1,0 +1,46 @@
+[Unit]
+Description=FreeSftpSharp SFTP server and admin UI
+Documentation=https://github.com/mikaelliljedahl/freesftpsharp/blob/main/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=freesftpsharp
+Group=freesftpsharp
+WorkingDirectory=/var/lib/freesftpsharp
+ExecStart=/opt/freesftpsharp/FxSshSftpServer/FxSshSftpServer
+# Secrets and settings (AdminAuth__PasswordHash=..., SshServer__Port=...), see docs/deployment.md.
+EnvironmentFile=-/etc/freesftpsharp/freesftpsharp.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ConnectionStrings__Settings=Data Source=/var/lib/freesftpsharp/freesftpsharp.db
+Environment=DataProtection__KeysPath=/var/lib/freesftpsharp/keys
+Environment=Serilog__WriteTo__File__Args__path=/var/log/freesftpsharp/FxSshServer.txt
+Environment=Serilog__WriteTo__HtmlFile__Args__path=/var/log/freesftpsharp/html/FxSshServer.html
+Restart=on-failure
+RestartSec=5
+
+# Port 22 and 80 need this capability for a non-root user; drop it when the ports are above 1023.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Hardening. The server writes only to its state and log directories (and to the user roots you add below).
+StateDirectory=freesftpsharp
+StateDirectoryMode=0750
+LogsDirectory=freesftpsharp
+ConfigurationDirectory=freesftpsharp
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Add the directories that hold the SFTP user roots, for example:
+# ReadWritePaths=/srv/sftp
+
+[Install]
+WantedBy=multi-user.target

@@ -9,8 +9,9 @@ sizes (the plaintext size follows from the file length).
 
 ## Turn it on
 
-The encrypted storage is off by default; nothing changes and nothing is required while it is off. Until the per-user
-storage configuration (#56) exists, one switch applies to **every** user root.
+The encrypted storage is off by default; nothing changes and nothing is required while it is off. Configure the keys,
+then either select "Local disk (encrypted)" as the storage of a user or a virtual folder in the admin UI, or set
+`Enabled` to encrypt the root directory of **every** user that has no storage configuration of its own.
 
 ```json
 {
@@ -28,7 +29,7 @@ storage configuration (#56) exists, one switch applies to **every** user root.
 
 | Key | Meaning |
 | --- | --- |
-| `Storage:Encryption:Enabled` | `true` stores every user root encrypted. Default `false` |
+| `Storage:Encryption:Enabled` | `true` stores the root directory of every user without a storage configuration encrypted. Default `false` |
 | `Storage:Encryption:ActiveKeyId` | The id of the key that encrypts new files |
 | `Storage:Encryption:Keys:N:Id` | A name of the key. The file header stores a hash of it, so never rename a key |
 | `Storage:Encryption:Keys:N:Key` | The key: base64 of 32 random bytes. Use an environment variable (`Storage__Encryption__Keys__0__Key`) or user secrets, not `appsettings.json` |
@@ -42,7 +43,8 @@ umask 077 && openssl rand -base64 32 > /etc/freesftpsharp/2026-01.key
 
 When `Enabled` is `true`, the server does not start if the active key is missing, has the wrong length, is not
 base64, or its key file can be read by other users. The message names the key id and the problem, never the key.
-The keys are never logged.
+The keys are never logged. With `Enabled` false, a user or virtual folder with "Local disk (encrypted)" and no valid
+key gets no storage (the SFTP subsystem is refused and the log tells why); "Test connection" in the admin UI shows it.
 
 **Use new, empty user root directories.** Files that were stored before the switch are not encrypted and cannot be
 read through the encrypted storage. There is no tool that encrypts an existing directory; copy the files in through

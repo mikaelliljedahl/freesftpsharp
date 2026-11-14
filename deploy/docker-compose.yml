@@ -1,0 +1,33 @@
+# Single node with a local volume.
+#
+#   FREESFTPSHARP_ADMIN_PASSWORD='choose-a-long-password' docker compose -f deploy/docker-compose.yml up -d
+#
+# Without FREESFTPSHARP_ADMIN_PASSWORD a password is generated at the first start and printed once to the log
+# (docker compose logs freesftpsharp). Add SFTP users in the admin UI at http://localhost:8080 or with
+#   docker compose exec -T freesftpsharp freesftpsharp-user add alice --root /data/files/alice --password-stdin <<< 'a-password'
+services:
+  freesftpsharp:
+    image: ghcr.io/mikaelliljedahl/freesftpsharp:latest
+    # To build from a checkout instead:  build: { context: .. , dockerfile: Dockerfile }
+    restart: unless-stopped
+    ports:
+      - "2222:22"                    # SFTP
+      - "127.0.0.1:8080:80"          # admin UI: plain HTTP, keep it on localhost or put HTTPS in front
+    environment:
+      FREESFTPSHARP_ADMIN_PASSWORD: ${FREESFTPSHARP_ADMIN_PASSWORD:-}
+      # Optional first SFTP user (created only when it does not exist yet):
+      # FREESFTPSHARP_USER: alice
+      # FREESFTPSHARP_USER_PASSWORD: change-me-please
+    volumes:
+      - freesftpsharp-data:/data     # database (users, settings, host keys), admin keys, logs, user files
+      # - ./appsettings.Production.json:/config/appsettings.Production.json:ro
+    # The image runs as the non-root user "app". These limits are optional hardening.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  freesftpsharp-data:

@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.Storage;
 using SshServer.Settings.LiteDb;
 
 namespace SshServer.Settings.Sql;
@@ -62,6 +64,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             ImportFromLiteDb(db, legacyLiteDbPath);
         }
 
+        MigrateLegacyPublicKeys(db);
+
         if (!db.ServerSettings.Any())
         {
             db.ServerSettings.Add(new ServerSettings
@@ -72,6 +76,44 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             db.SaveChanges();
             _logger.LogInformation("Created new server settings with a new host key in the settings database");
         }
+    }
+
+    /// <summary>
+    /// Converts the old single key of each user (the column RsaPublicKey, a base64 CSP blob) to an entry of
+    /// <see cref="User.PublicKeys"/> and clears the column, so a user keeps the key it had (issue #58). A key that cannot
+    /// be read did not work before either; it is removed with a warning.
+    /// </summary>
+    private void MigrateLegacyPublicKeys(SettingsDbContext db)
+    {
+        var users = db.Users.Where(u => EF.Property<string?>(u, SettingsDbContext.LegacyRsaPublicKey) != null).ToList();
+        if (users.Count == 0)
+            return;
+
+        var now = _time.GetUtcNow().UtcDateTime;
+        var converted = 0;
+        foreach (var user in users)
+        {
+            var legacy = db.Entry(user).Property<string?>(SettingsDbContext.LegacyRsaPublicKey);
+            if (!string.IsNullOrWhiteSpace(legacy.CurrentValue))
+            {
+                try
+                {
+                    var entry = SshPublicKey.FromLegacyCspBlob(legacy.CurrentValue, now);
+                    var keys = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>();
+                    if (!keys.Any(k => k.KeyBase64 == entry.KeyBase64))
+                        keys.Add(entry);
+                    user.PublicKeys = keys;
+                    converted++;
+                }
+                catch (PublicKeyFormatException)
+                {
+                    _logger.LogWarning("The old public key of user {Username} cannot be read and was removed. Add the key of the user again.", user.Username);
+                }
+            }
+            legacy.CurrentValue = null;
+        }
+        db.SaveChanges();
+        _logger.LogInformation("Moved the public key of {Count} user(s) to the key list of the user.", converted);
     }
 
     private void ImportFromLiteDb(SettingsDbContext db, string liteDbPath)
@@ -193,12 +235,16 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             Username = newUser.Username,
             UserRootDirectory = newUser.UserRootDirectory,
             HashedPassword = newUser.HashedPassword,
-            RsaPublicKey = newUser.RsaPublicKey,
+            PublicKeys = newUser.PublicKeys,
+            AllowedAuthMethods = newUser.AllowedAuthMethods,
+            RequireAllOf = newUser.RequireAllOf,
             OnlyWhitelistedIps = newUser.OnlyWhitelistedIps,
             WhitelistedIps = newUser.WhitelistedIps,
             LastSuccessfulLogin = newUser.LastSuccessfulLogin,
             Permissions = newUser.Permissions,
             PathFilters = newUser.PathFilters,
+            Storage = newUser.Storage,
+            VirtualFolders = CopyMounts(newUser.VirtualFolders),
             RoleId = newUser.RoleId,
         };
         db.Users.Add(stored);
@@ -218,16 +264,20 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
 
         var before = UserSnapshot.From(stored);
         var passwordChanged = stored.HashedPassword != updatedUser.HashedPassword;
-        var keyChanged = stored.RsaPublicKey != updatedUser.RsaPublicKey;
+        var keyChanged = PublicKeyBlobs(stored) != PublicKeyBlobs(updatedUser);
         var roleChanged = stored.RoleId != updatedUser.RoleId;
         stored.HashedPassword = updatedUser.HashedPassword;
         stored.LastSuccessfulLogin = updatedUser.LastSuccessfulLogin;
         stored.OnlyWhitelistedIps = updatedUser.OnlyWhitelistedIps;
-        stored.RsaPublicKey = updatedUser.RsaPublicKey;
+        stored.PublicKeys = updatedUser.PublicKeys;
+        stored.AllowedAuthMethods = updatedUser.AllowedAuthMethods;
+        stored.RequireAllOf = updatedUser.RequireAllOf;
         stored.UserRootDirectory = updatedUser.UserRootDirectory;
         stored.WhitelistedIps = updatedUser.WhitelistedIps;
         stored.Permissions = updatedUser.Permissions;
         stored.PathFilters = updatedUser.PathFilters;
+        stored.Storage = updatedUser.Storage;
+        ReplaceMounts(stored, updatedUser.VirtualFolders);
         stored.RoleId = updatedUser.RoleId;
         db.SaveChanges();
 
@@ -235,8 +285,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         // The snapshot tells only whether there is a password or key; a new one is a change too.
         if (passwordChanged && !changed.Contains(nameof(UserSnapshot.HasPassword)))
             changed.Add("Password");
-        if (keyChanged && !changed.Contains(nameof(UserSnapshot.HasPublicKey)))
-            changed.Add("PublicKey");
+        if (keyChanged && !changed.Contains(nameof(UserSnapshot.PublicKeyFingerprints)))
+            changed.Add("PublicKeys");
         if (roleChanged)
             changed.Add(nameof(User.RoleId));
         if (changed.Count > 0)
@@ -247,6 +297,94 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             });
         return true;
     }
+
+    private static List<VirtualFolderMount> CopyMounts(IEnumerable<VirtualFolderMount>? mounts)
+        => (mounts ?? []).Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath }).ToList();
+
+    /// <summary>Changes the mounts of a tracked user in place: unchanged mounts keep their row, so the unique index never sees a duplicate.</summary>
+    private static void ReplaceMounts(User stored, IEnumerable<VirtualFolderMount>? mounts)
+    {
+        var wanted = CopyMounts(mounts);
+        stored.VirtualFolders.RemoveAll(m => !wanted.Any(w => w.MountPath == m.MountPath && w.VirtualFolderId == m.VirtualFolderId));
+        foreach (var mount in wanted)
+        {
+            if (!stored.VirtualFolders.Any(m => m.MountPath == mount.MountPath && m.VirtualFolderId == mount.VirtualFolderId))
+                stored.VirtualFolders.Add(mount);
+        }
+    }
+
+    public List<VirtualFolder> GetVirtualFolders()
+    {
+        using var db = CreateContext();
+        return db.VirtualFolders.AsNoTracking().OrderBy(f => f.Name).ToList();
+    }
+
+    public VirtualFolder? GetVirtualFolder(int id)
+    {
+        using var db = CreateContext();
+        return db.VirtualFolders.AsNoTracking().FirstOrDefault(f => f.Id == id);
+    }
+
+    public bool AddVirtualFolder(VirtualFolder folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder.Name))
+            return false;
+        using var db = CreateContext();
+        if (db.VirtualFolders.Any(f => f.Name == folder.Name))
+            return false;
+        var stored = new VirtualFolder { Name = folder.Name, Description = folder.Description, Storage = folder.Storage };
+        db.VirtualFolders.Add(stored);
+        db.SaveChanges();
+        folder.Id = stored.Id;
+        Publish(new ProviderEvent(ProviderAction.Add, ProviderObjectType.VirtualFolder, stored.Name) { Object = VirtualFolderSnapshot.From(stored) });
+        return true;
+    }
+
+    public bool UpdateVirtualFolder(VirtualFolder folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder.Name))
+            return false;
+        using var db = CreateContext();
+        var stored = db.VirtualFolders.FirstOrDefault(f => f.Id == folder.Id);
+        if (stored == null || db.VirtualFolders.Any(f => f.Id != folder.Id && f.Name == folder.Name))
+            return false;
+        var before = VirtualFolderSnapshot.From(stored);
+        var storageChanged = stored.Storage != folder.Storage;
+        stored.Name = folder.Name;
+        stored.Description = folder.Description;
+        stored.Storage = folder.Storage;
+        db.SaveChanges();
+
+        var changed = ChangedFields(before, VirtualFolderSnapshot.From(stored));
+        if (storageChanged && !changed.Contains(nameof(VirtualFolderSnapshot.StorageProvider)))
+            changed.Add("Storage");
+        if (changed.Count > 0)
+            Publish(new ProviderEvent(ProviderAction.Update, ProviderObjectType.VirtualFolder, stored.Name)
+            {
+                Object = VirtualFolderSnapshot.From(stored),
+                ChangedFields = changed,
+            });
+        return true;
+    }
+
+    public bool RemoveVirtualFolder(int id)
+    {
+        using var db = CreateContext();
+        var stored = db.VirtualFolders.FirstOrDefault(f => f.Id == id);
+        if (stored == null)
+            return false;
+        // Unmount it from the users (the foreign key would do it too, but only with PRAGMA foreign_keys).
+        foreach (var user in db.Users.Where(u => u.VirtualFolders.Any(m => m.VirtualFolderId == id)).ToList())
+            user.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
+        db.VirtualFolders.Remove(stored);
+        db.SaveChanges();
+        Publish(new ProviderEvent(ProviderAction.Delete, ProviderObjectType.VirtualFolder, stored.Name) { Object = VirtualFolderSnapshot.From(stored) });
+        return true;
+    }
+
+    /// <summary>The key blobs of a user in one text, to see whether a key changed (also an expiry or a comment).</summary>
+    private static string PublicKeyBlobs(User user) =>
+        string.Join("\n", (user.PublicKeys ?? []).Select(k => $"{k.KeyBase64} {k.ExpiresAt:O} {k.Comment}"));
 
     /// <summary>The names of the properties with different values; lists are compared by their items.</summary>
     private static List<string> ChangedFields<T>(T before, T after)

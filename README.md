@@ -10,7 +10,8 @@ The M1 Foundation milestone of the [technical roadmap](docs/ROADMAP.md) is done:
 - SFTP version 3 with all file and directory operations, and the common OpenSSH extensions. Symbolic links are
   not supported.
 - Each user is locked to a root directory. Path traversal and links that point outside the root are refused.
-- Password (salted PBKDF2) and RSA public key login, IP filters and auto-ban.
+- Password (salted PBKDF2) and public key login (several ed25519, ECDSA and RSA keys per user), allowed login methods
+  and multi-step login (key and password) per user, IP filters and auto-ban.
 - A Blazor admin UI and a `user` command line for users and settings, stored in SQLite.
 - A storage abstraction (`IFileSystem`) with the local disk as the first backend. Other backends are plug-ins,
   see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -44,11 +45,21 @@ start the server. The rules are the same as in the admin UI (the same service): 
 
 | Command | What it does |
 | --- | --- |
-| `ServerConsoleApp user add <name> --root <dir> [--password-stdin \| --public-key <file>]` | Adds a user. `--public-key` takes an OpenSSH `ssh-rsa` line (an `id_rsa.pub` file) or a PEM public key; only RSA keys are supported. Without either option on a terminal, it asks for the password twice. |
-| `ServerConsoleApp user list` | Lists the users: name, login kind (`password`, `key`) and root directory. It never shows hashes or keys. |
+| `ServerConsoleApp user add <name> --root <dir> [--password-stdin \| --public-key <file>]` | Adds a user. `--public-key` takes an OpenSSH `.pub` or `authorized_keys` file (ed25519, ECDSA or RSA keys of at least 2048 bits, one per line) or a PEM public key. Lines with options (`from=`, `restrict`, ...) are refused. Without either option on a terminal, it asks for the password twice. |
+| `ServerConsoleApp user list` | Lists the users: name, login kind (`password`, `key` or `N keys`, and `(all of publickey,password)` for a multi-step login) and root directory. It never shows hashes or keys. |
 | `ServerConsoleApp user remove <name>` | Removes a user. The files in the root directory are not deleted. |
 
 Exit codes: 0 = done, 1 = the operation failed (the reason is on stderr), 2 = wrong arguments (the usage is on stderr).
+
+## Run in a container
+
+```sh
+docker run -p 2222:22 -p 8080:80 -v freesftpsharp-data:/data ghcr.io/mikaelliljedahl/freesftpsharp
+```
+
+The first start prints a generated admin password to the log. Log in at `http://localhost:8080`, add a user, then
+`sftp -P 2222 alice@localhost`. Releases also have self-contained archives (`--version` prints the version). See
+[docs/deployment.md](docs/deployment.md) for compose, systemd and Kubernetes examples, HTTPS, upgrade and backup.
 
 ## Admin web UI (FxSshSftpServer)
 
@@ -62,7 +73,7 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | Page | What it shows and changes |
 | --- | --- |
 | Dashboard (`/`) | The effective listen port and bind addresses (and whether they come from the configuration or the database), the number of users, the active bans, the host key fingerprints |
-| Users (`/users`) | A searchable user list; add, edit and delete (with a confirmation) users: root directory (with a warning when it does not exist), password (salted PBKDF2), a generated RSA key pair (the browser downloads the private key once; the fingerprint is shown), the per-user IP whitelist (CIDR, validated), the last successful login |
+| Users (`/users`) | A searchable user list; add, edit and delete (with a confirmation) users: root directory (with a warning when it does not exist), password (salted PBKDF2), the public keys (a list with type, SHA256 fingerprint, comment, added and expiry date; add keys from pasted `authorized_keys` text with an optional expiry, generate an ed25519 or RSA 4096 key pair (the browser downloads the private key once), remove a key with a confirmation), the allowed login methods and the multi-step login, the per-user IP whitelist (CIDR, validated), the last successful login |
 | Server settings (`/general`) | Listen port and bind addresses (with a note when `SshServer:Port` / `SshServer:BindToAddress` override them), server banner, idle timeout, `EnableCommand`, `EnableDirectTcpIp` (with a security warning), the host key fingerprints (never the private keys) and the algorithms the server offers |
 | Connections (`/connections`) | The open client connections (user, client address, protocol and client version, connected since, last activity) with the files they read or write now and the bytes so far, refreshed every 2 seconds; a "Disconnect" action with a confirmation |
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
@@ -163,7 +174,7 @@ administrator that made the change. Admin passwords are salted PBKDF2-SHA256 has
 With the obsolete LiteDB settings provider the administrators are kept in memory only (the configured account is
 imported at every start).
 
-The login cookie and the antiforgery tokens are protected with ASP.NET Core data protection keys. The keys are
+The login cookie, the antiforgery tokens and the secrets of the storage configurations are protected with ASP.NET Core data protection keys. The keys are
 stored in `DataProtection:KeysPath` (default: `keys/` in the app directory), so a login survives a restart. On
 Windows the keys are encrypted with DPAPI. On Linux and macOS they are stored unencrypted, and the log has a
 warning about it at the first start: give the directory restrictive file permissions (for example `chmod 700`).
@@ -203,7 +214,7 @@ OpenSSH connects with its default settings.
 ### Features in this repo that was not in the original FxSSH
 
 - Password Authentication is implemented and enabled by default
-- Public Key authentication relying on key fingerprint
+- Public key authentication with several keys per user (see "User login" below)
 - Server keys are autogenerated: the RSA key at first startup, the ECDSA P-256 key at the first startup of a version that supports it. The RSA key of an existing `config.db` is kept, so clients do not see a new host key
 - Logging based on Serilog (the FxSsh library log goes to the same Microsoft.Extensions.Logging logger).
 - SFTP (version 3): the protocol engine is upstream FxSsh's `SftpService`. `SshServerModule/Sftp/SftpFileSystemAdapter`
@@ -239,6 +250,22 @@ The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub
 example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, groups, quotas,
 an audit log, webhooks, a REST API, WebDAV and FTP, and more settings databases.
 
+## Log files
+
+Both hosts log with Serilog. The sinks are in `appsettings.json` under `Serilog:WriteTo` and are **named**
+(`File`, `HtmlFile`, and `Console` in ServerConsoleApp), not listed in an array, so that one environment variable
+can change one setting of one sink. Relative paths are resolved against the program directory.
+
+| Environment variable | Default | Meaning |
+|---|---|---|
+| `Serilog__WriteTo__File__Args__path` | `logs/FxSshServer.txt` | Text log file (rolls at 10 MB) |
+| `Serilog__WriteTo__HtmlFile__Args__path` | `logs/html/FxSshServer.html` | HTML log file |
+| `Serilog__MinimumLevel__Default` | `Information` | Minimum level |
+
+The container image and the systemd unit set the two paths to `/data/logs` and `/var/log/freesftpsharp`. If you add
+your own sink in `appsettings.Production.json`, give it a name as a key (`"WriteTo": { "Mine": { "Name": ... } }`);
+an array there cannot be combined with the environment variables.
+
 ## Network access settings
 
 These fields of the server settings (`ServerSettings`) control who can connect. Network entries are CIDR
@@ -259,6 +286,22 @@ validates the entries; the admin UI can use `CidrNotation.IsValid` / `FindInvali
 | `ExemptLoopbackFromBan` | `true` | Never ban `127.0.0.0/8` and `::1` |
 
 The per-user whitelist (`User.OnlyWhitelistedIps` / `User.WhitelistedIps`) is checked in addition, at login.
+
+### User login
+
+- **Public keys.** A user has a list of keys (`User.PublicKeys`): `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521` and
+  `ssh-rsa` (signatures rsa-sha2-256/512). A login compares the whole key blob that the client sends, not only the
+  fingerprint. A key with an expiry date (`ExpiresAt`, UTC) is refused from that time on. A removed key is refused at
+  the next connection. SSH certificates, DSA and security keys (`sk-...`) are not supported. The server checks ed25519
+  signatures with BouncyCastle (FxSsh and .NET have no ed25519); it has no ed25519 host key. It registers ssh-ed25519
+  as a custom algorithm; the start log has the Info line "Imported custom algorithms: hostkey=[ssh-ed25519]".
+- **Allowed methods.** `User.AllowedAuthMethods` (default: all) can limit a user to `PublicKey` or `Password`. A
+  refused method fails like a wrong credential (a refused password takes the time of a password check).
+- **Multi-step login.** `User.RequireAllOf`, for example `[PublicKey, Password]`, needs every method in this order. The
+  server answers the first step with partial success (RFC 4252 section 5.1) and offers only the next method; OpenSSH
+  then asks for the password. A step for another user name, or a change of the user's steps, starts again.
+- **Upgrade.** The single RSA key of a user of an older version (`RsaPublicKey`, also in an imported `config.db`) is
+  moved to the key list at the first start; the user keeps its key and its password.
 
 Auto-ban details:
 
@@ -311,8 +354,8 @@ and with S3-compatible stores (MinIO, Cloudflare R2, Backblaze B2, Wasabi, Digit
 register it with `services.AddS3Storage()` under the provider name `s3`. Nothing changes for a server that does not
 use it: no S3 client is created and no setting is needed.
 
-> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
-> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+Select it for a user, or for a virtual folder, in the admin UI (see [Storage per user and virtual folders](#storage-per-user-and-virtual-folders)).
+The secret access key is stored encrypted and is never shown again.
 
 ### Options (`S3StorageOptions`)
 
@@ -523,8 +566,30 @@ docker stop azurite
 ## Encrypted storage
 
 The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
-Set `Storage:Encryption:Enabled` to `true` and configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md)
-for the configuration, the limits and the file format.
+Configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md) for the configuration, the limits and the
+file format. Then select "Local disk (encrypted)" for a user or a virtual folder, or set `Storage:Encryption:Enabled`
+to `true` to encrypt the root directory of every user without a storage configuration.
+
+## Storage per user and virtual folders
+
+By default a user has the local disk at its root directory, as before. On the Users page an admin can select another
+storage for a user instead: every registered provider (`local`, `local-encrypted`, `s3`) with its own fields, and a
+"Test connection" button that lists the root with the unsaved settings. The fields come from the options record of the
+provider, so a new backend needs no UI code.
+
+A **virtual folder** (page "Virtual folders") is a named storage location that is mounted into the file system of one
+or more users at a path, for example a shared S3 prefix at `/incoming` or an encrypted `/archive`. The user sees it as
+a directory; the permissions and path filters of the user apply to its virtual path (`/incoming = Upload`).
+
+- A mount point and the directories that hold one cannot be removed or renamed.
+- A rename from one storage into another (for example `rename /a /incoming/a`) answers `SSH_FX_OP_UNSUPPORTED`;
+  copy the file instead.
+- Removing a virtual folder unmounts it from every user; the files in its storage stay.
+
+Secrets of a storage configuration (for example the S3 secret key) are encrypted in the settings database with the
+ASP.NET Core data protection keys of `DataProtection:KeysPath` (see below). They are never shown in the UI after they
+are saved and never written to the log or the audit events. Keep the keys directory: without it the stored secrets
+cannot be read and must be entered again. Two hosts that share one settings database must share the keys directory too.
 
 ## Settings storage
 

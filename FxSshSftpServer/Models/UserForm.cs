@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Permissions;
@@ -7,6 +8,7 @@ using SshServer.Interfaces.Security;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using SshServerModule.Storage;
 
 namespace FxSshSftpServer.Models
 {
@@ -23,8 +25,16 @@ namespace FxSshSftpServer.Models
         [RegularExpression(UserAdministrationService.UserNamePattern, ErrorMessage = "The user name cannot have spaces, ':', '/' or '\\'.")]
         public string Username { get; set; } = "";
 
-        [Required(ErrorMessage = "Enter the root directory of the user on the server.")]
+        /// <summary>The local root directory of the default storage; required only while <see cref="Storage"/> has no provider.</summary>
         public string UserRootDirectory { get; set; } = "";
+
+        /// <summary>The storage of "/" (issue #56). No provider: the default storage, the local disk at <see cref="UserRootDirectory"/>.</summary>
+        public StorageSettings Storage { get; set; } = new();
+
+        /// <summary>The virtual folders mounted for the user (issue #56).</summary>
+        public List<MountRow> Mounts { get; set; } = new();
+
+        public bool UsesDefaultStorage => string.IsNullOrEmpty(Storage.Provider);
 
         /// <summary>A new password. Empty: keep the stored password.</summary>
         public string NewPassword { get; set; } = "";
@@ -41,7 +51,24 @@ namespace FxSshSftpServer.Models
 
         public bool HasPassword { get; set; }
 
-        public string RsaPublicKey { get; set; }
+        /// <summary>The stored keys, for display. The page changes them at once through <see cref="UserAdministrationService"/>, not with Save.</summary>
+        public List<PublicKeyEntry> PublicKeys { get; set; } = new();
+
+        /// <summary>The value of <see cref="MultiStep"/> for [PublicKey, Password].</summary>
+        public const string KeyThenPassword = "publickey,password";
+
+        /// <summary>The value of <see cref="MultiStep"/> for [Password, PublicKey].</summary>
+        public const string PasswordThenKey = "password,publickey";
+
+        public bool AllowPassword { get; set; } = true;
+
+        public bool AllowPublicKey { get; set; } = true;
+
+        /// <summary>The allowed methods that the form does not show (keyboard-interactive, #63); they are kept as stored.</summary>
+        public AuthMethods OtherAllowedMethods { get; set; } = AuthMethods.KeyboardInteractive;
+
+        /// <summary>Empty (one method is enough), <see cref="KeyThenPassword"/> or <see cref="PasswordThenKey"/>.</summary>
+        public string MultiStep { get; set; } = "";
 
         public DateTime LastSuccessfulLogin { get; set; }
 
@@ -53,21 +80,43 @@ namespace FxSshSftpServer.Models
 
         public static UserForm New() => new() { IsNew = true };
 
-        public static UserForm From(User user) => new()
+        public static UserForm From(User user, StorageConfigService storage) => new()
         {
+            Storage = storage.Edit(user.Storage),
+            Mounts = (user.VirtualFolders ?? new List<VirtualFolderMount>())
+                .OrderBy(m => m.MountPath, StringComparer.Ordinal)
+                .Select(m => new MountRow { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath })
+                .ToList(),
             IsNew = false,
             Username = user.Username ?? "",
             UserRootDirectory = user.UserRootDirectory ?? "",
             OnlyWhitelistedIps = user.OnlyWhitelistedIps,
             WhitelistedIps = EntryList.Format(user.WhitelistedIps),
             HasPassword = !string.IsNullOrWhiteSpace(user.HashedPassword),
-            RsaPublicKey = user.RsaPublicKey,
+            PublicKeys = user.PublicKeys?.ToList() ?? new List<PublicKeyEntry>(),
+            AllowPassword = user.AllowedAuthMethods.HasFlag(AuthMethods.Password),
+            AllowPublicKey = user.AllowedAuthMethods.HasFlag(AuthMethods.PublicKey),
+            OtherAllowedMethods = user.AllowedAuthMethods & ~(AuthMethods.Password | AuthMethods.PublicKey),
+            MultiStep = MultiStepOf(user.RequireAllOf),
             LastSuccessfulLogin = user.LastSuccessfulLogin,
             Permissions = PermissionRowsOf(user.Permissions),
             PathFilters = (user.PathFilters ?? new Dictionary<string, PathFilter>())
                 .OrderBy(f => f.Key, StringComparer.Ordinal)
                 .Select(f => PathFilterRow.From(f.Key, f.Value))
                 .ToList(),
+        };
+
+        private static string MultiStepOf(List<AuthMethods> steps) =>
+            steps is { Count: > 0 } ? string.Join(",", steps.Select(AuthMethodRules.ToSshName)) : "";
+
+        private AuthMethods AllowedMethods =>
+            (AllowPassword ? AuthMethods.Password : AuthMethods.None) | (AllowPublicKey ? AuthMethods.PublicKey : AuthMethods.None) | OtherAllowedMethods;
+
+        private List<AuthMethods> RequiredSteps => MultiStep switch
+        {
+            KeyThenPassword => new List<AuthMethods> { AuthMethods.PublicKey, AuthMethods.Password },
+            PasswordThenKey => new List<AuthMethods> { AuthMethods.Password, AuthMethods.PublicKey },
+            _ => null,
         };
 
         /// <summary>The rows of the stored permissions: "/" first (All when it is not stored), then by path.</summary>
@@ -108,13 +157,17 @@ namespace FxSshSftpServer.Models
         /// Writes the form to <paramref name="user"/> (a new user, or the stored copy of an existing one). A new
         /// password is hashed with <see cref="PasswordHasher"/>; the plain text never leaves the form.
         /// </summary>
+        /// <remarks>The storage configuration is built and validated by <see cref="StorageConfigService"/>; the caller sets <see cref="User.Storage"/>.</remarks>
         public void ApplyTo(User user, int passwordIterations = PasswordHasher.DefaultIterations)
         {
             if (IsNew)
                 user.Username = Username.Trim();
             user.UserRootDirectory = UserRootDirectory.Trim();
+            user.VirtualFolders = MountList();
             user.OnlyWhitelistedIps = OnlyWhitelistedIps;
             user.WhitelistedIps = EntryList.Parse(WhitelistedIps);
+            user.AllowedAuthMethods = AllowedMethods;
+            user.RequireAllOf = RequiredSteps;
             user.Permissions = PermissionDictionary();
             var filters = FilterDictionary().Where(f => !f.Value.IsEmpty).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
             user.PathFilters = filters.Count == 0 ? null : filters;
@@ -124,8 +177,16 @@ namespace FxSshSftpServer.Models
                 user.HashedPassword = null;
         }
 
+        /// <summary>The mounts of the form, with normalized paths.</summary>
+        public List<VirtualFolderMount> MountList() => Mounts
+            .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = NormalizedOrRaw(m.MountPath) })
+            .ToList();
+
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
+            if (UsesDefaultStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
+                yield return new ValidationResult("Enter the root directory of the user on the server.", new[] { nameof(UserRootDirectory) });
+
             if (!string.IsNullOrEmpty(NewPassword))
             {
                 if (NewPassword.Length < MinimumPasswordLength)
@@ -133,6 +194,12 @@ namespace FxSshSftpServer.Models
                 if (!string.Equals(NewPassword, ConfirmPassword, StringComparison.Ordinal))
                     yield return new ValidationResult("The passwords are not the same.", new[] { nameof(ConfirmPassword) });
             }
+
+            if (!AllowPassword && !AllowPublicKey)
+                yield return new ValidationResult("Allow the password, the public key or both.", new[] { nameof(AllowPassword) });
+            else
+                foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
+                    yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
 
             // Rows that are typed twice are found here; the dictionaries keep only the first of them.
             foreach (var path in Permissions.GroupBy(r => NormalizedOrRaw(r.Path), StringComparer.Ordinal).Where(g => g.Count() > 1 && g.Key.Length > 0))
@@ -144,5 +211,12 @@ namespace FxSshSftpServer.Models
             foreach (var problem in PermissionRulesValidator.Validate(null, FilterDictionary()))
                 yield return new ValidationResult(problem, new[] { nameof(PathFilters) });
         }
+    }
+
+    /// <summary>One virtual folder mounted for a user, in the form.</summary>
+    public sealed class MountRow
+    {
+        public int VirtualFolderId { get; set; }
+        public string MountPath { get; set; } = "";
     }
 }

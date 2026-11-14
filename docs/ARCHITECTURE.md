@@ -141,8 +141,18 @@ Permissions, path filters, quotas, bandwidth limits and events wrap an `IFileSys
 - Protocols never repeat a rule. SFTP, WebDAV, FTP and the web client get it from the chain.
 - Test each decorator alone with `InMemoryFileSystem`, and run the conformance suite through it.
 
+The storage of a user comes from `IUserStorageResolver`: `User.Storage` (a provider name and its options as JSON, a
+`StorageConfig`), or `IDefaultUserStorage` (the local disk at `User.UserRootDirectory`) for a user without one, and the
+mounted virtual folders. The core decodes the options into the `IStorageProvider.OptionsType` of the provider
+(`StorageOptionsCodec`) and never looks into them; the provider validates them. Option properties marked `[Secret]`
+are encrypted at rest with `ISecretProtector` (ASP.NET Core data protection). The admin UI builds its fields from the
+options record (`[Display]`, `[Secret]`, `[AllowedValues]`), so a backend needs no UI code of its own.
+
 The chain today, from the backend outwards:
 
+0. `MountedFileSystem` (#56), added by the factory for a user with virtual folders: routes each path to the storage
+   with the longest mount path. A mount point is the root of its storage (it cannot be removed or renamed), and a rename
+   between two storages throws `OpNotSupported`. It is innermost, so every rule below sees the virtual paths.
 1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
    `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
    factory leaves it out for a user who may do everything, and for a server operation (`ClientContext.SkipPermissions`,
@@ -154,7 +164,7 @@ The chain today, from the backend outwards:
 3. `ConnectionTrackingFileSystem` (#57): the activity and open files of the connection (see "Connections"), for a
    client with a connection id in its `ClientContext`. Outermost, so every request is activity, also a refused one.
 
-All three are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
+All of them are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
 to `IFileSystemFactory.CreateAsync`.
 
 The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from

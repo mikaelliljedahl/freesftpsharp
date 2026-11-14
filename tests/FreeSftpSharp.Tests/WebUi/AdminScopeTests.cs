@@ -159,6 +159,37 @@ public sealed class AdminScopeTests : AdminUiComponentContext
     }
 
     [Fact]
+    public void Only_an_administrator_with_manage_folders_changes_virtual_folders()
+    {
+        var folder = new SshServer.Interfaces.Storage.VirtualFolder { Name = "shared", Storage = new() { Provider = "local" } };
+        Repository.AddVirtualFolder(folder);
+
+        // Manage users: may see the folders (to mount them), not change them.
+        SignInAs(AdminPermissions.ManageUsers);
+        Assert.Single(Scoped.GetVirtualFolders());
+        Assert.Throws<AdminAccessDeniedException>(() => Scoped.AddVirtualFolder(new() { Name = "x", Storage = new() { Provider = "local" } }));
+        Assert.Throws<AdminAccessDeniedException>(() => Scoped.UpdateVirtualFolder(folder));
+        Assert.Throws<AdminAccessDeniedException>(() => Scoped.RemoveVirtualFolder(folder.Id));
+
+        SignInAs(AdminPermissions.ViewAudit);
+        Assert.Empty(Scoped.GetVirtualFolders());
+        Assert.Null(Scoped.GetVirtualFolder(folder.Id));
+
+        SignInAs(AdminPermissions.ManageFolders);
+        Assert.True(Scoped.RemoveVirtualFolder(folder.Id));
+        Assert.Empty(Repository.GetVirtualFolders());
+    }
+
+    [Fact]
+    public void The_virtual_folders_page_needs_manage_folders()
+    {
+        var attribute = (Microsoft.AspNetCore.Authorization.AuthorizeAttribute)Attribute.GetCustomAttribute(
+            typeof(VirtualFolders), typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute))!;
+
+        Assert.Equal(AdminPolicies.ManageFolders, attribute.Policy);
+    }
+
+    [Fact]
     public void Without_a_login_nothing_is_readable()
     {
         SignInAs(AdminPermissions.None, name: "");

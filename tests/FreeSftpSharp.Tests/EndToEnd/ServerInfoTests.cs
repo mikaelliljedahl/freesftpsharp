@@ -59,19 +59,4 @@ public sealed class ServerInfoTests : IClassFixture<SftpServerFixture>
         Assert.DoesNotContain("ssh-rsa", algorithms.HostKey);
         Assert.NotEmpty(algorithms.Compression);
     }
-
-    [Fact]
-    public void User_key_fingerprint_matches_the_key_check_of_the_server()
-    {
-        using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(2048);
-        var blob = Convert.ToBase64String(rsa.ExportCspBlob(false));
-
-        var fingerprint = ServerInfo.GetUserKeyFingerprint(blob);
-
-        Assert.NotNull(fingerprint);
-        Assert.StartsWith("SHA256:", fingerprint);
-        Assert.Equal(UserLogics.GetRsaPublicKeyFingerprint(blob).TrimEnd('='), fingerprint["SHA256:".Length..]);
-        Assert.Null(ServerInfo.GetUserKeyFingerprint("garbage"));
-        Assert.Null(ServerInfo.GetUserKeyFingerprint(null));
-    }
 }

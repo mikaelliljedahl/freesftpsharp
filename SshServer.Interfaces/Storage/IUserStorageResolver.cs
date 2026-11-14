@@ -1,15 +1,30 @@
 namespace SshServer.Interfaces.Storage;
 
-/// <summary>The storage of a user: the provider name and the options for <see cref="IStorageProvider.CreateAsync"/>.</summary>
-/// <param name="Provider">The <see cref="IStorageProvider.Name"/>.</param>
-/// <param name="Options">The options, of the <see cref="IStorageProvider.OptionsType"/> of the provider.</param>
-public sealed record StorageSelection(string Provider, object Options);
+/// <summary>A storage location mounted at a virtual path of a user (a <see cref="VirtualFolder"/>).</summary>
+/// <param name="Path">The normalized virtual path, for example "/shared".</param>
+/// <param name="Name">The name of the virtual folder, for the messages.</param>
+/// <param name="Storage">The storage of the folder.</param>
+public sealed record StorageMount(string Path, string Name, StorageConfig Storage);
+
+/// <summary>The storage of a user: the storage of "/" and the virtual folders mounted below it.</summary>
+public sealed record UserStorage(StorageConfig Root, IReadOnlyList<StorageMount> Mounts);
 
 /// <summary>
-/// Gives the storage of a user. Today every user has the local disk at <see cref="User.UserRootDirectory"/>
-/// (registered by <c>AddLocalDiskStorage</c>); the per-user storage configuration (#56) replaces this.
+/// Gives the storage of a user: <see cref="User.Storage"/>, or the <see cref="IDefaultUserStorage"/> for a user without
+/// one, and the mounted <see cref="User.VirtualFolders"/>.
 /// </summary>
 public interface IUserStorageResolver
 {
-    StorageSelection Resolve(User user);
+    /// <summary>Throws <see cref="ArgumentException"/> when a mounted virtual folder does not exist.</summary>
+    UserStorage Resolve(User user);
+}
+
+/// <summary>
+/// The storage of a user without a storage configuration (<see cref="User.Storage"/> null): the local disk at
+/// <see cref="User.UserRootDirectory"/> (registered by <c>AddLocalDiskStorage</c>), so a server without any storage
+/// configuration works as before.
+/// </summary>
+public interface IDefaultUserStorage
+{
+    StorageConfig For(User user);
 }

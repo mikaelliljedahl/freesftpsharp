@@ -47,6 +47,23 @@ public sealed class SftpInMemoryStorageTests
         Assert.Equal([".", ".."], client.ReadDirectory("/").Select(e => e.Name).Order(StringComparer.Ordinal));
     }
 
+    [Fact]
+    public void A_virtual_folder_is_listed_in_the_root_and_a_rename_into_it_answers_OP_UNSUPPORTED()
+    {
+        var s3 = new InMemoryFileSystem(StorageCapabilities.None); // like an object store
+        using var client = Connect(new SshServerModule.Storage.MountedFileSystem(new InMemoryFileSystem(),
+            [new SshServerModule.Storage.MountedFileSystem.Mount("/s3", s3)]));
+        var handle = client.OpenHandle("/a", WriteCreateTruncate);
+        Assert.Equal(SSH_FX_OK, client.Close(handle));
+
+        Assert.Equal([".", "..", "a", "s3"], client.ReadDirectory("/").Select(e => e.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(SSH_FX_OP_UNSUPPORTED, client.Rename("/a", "/s3/a"));
+        Assert.Equal(SSH_FX_PERMISSION_DENIED, client.Status(SSH_FXP_RMDIR, "/s3"));
+        var inS3 = client.OpenHandle("/s3/b", WriteCreateTruncate);
+        Assert.Equal(SSH_FX_OK, client.Close(inS3));
+        Assert.Equal([".", "..", "b"], client.ReadDirectory("/s3").Select(e => e.Name).Order(StringComparer.Ordinal));
+    }
+
     [Theory]
     [InlineData(FileSystemError.NoSuchFile, SSH_FX_NO_SUCH_FILE)]
     [InlineData(FileSystemError.PermissionDenied, SSH_FX_PERMISSION_DENIED)]

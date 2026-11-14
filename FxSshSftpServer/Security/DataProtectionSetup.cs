@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace FxSshSftpServer.Security;
 
 /// <summary>
-/// Stores the ASP.NET Core data protection keys (they protect the admin login cookie, the antiforgery tokens and the
-/// webhook secrets in the settings database) in a known directory, so that a login survives a restart of the app and
+/// Stores the ASP.NET Core data protection keys (they protect the admin login cookie, the antiforgery tokens, and the
+/// webhook secrets and storage secrets (#56) in the settings database) in a known directory, so that a login survives a restart of the app and
 /// a stored webhook secret stays readable. Both hosts (admin UI and console) use this, with the same application name,
 /// so they read the same secrets when they share the directory.
 /// </summary>

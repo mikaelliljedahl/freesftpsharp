@@ -25,6 +25,12 @@ using SshServer.Observability;
 
 using FxSshSftpServer.Security;
 
+if (FxSsh.SshServerModule.Cli.VersionCommand.IsRequested(args))
+{
+    Console.WriteLine(FxSsh.SshServerModule.Cli.VersionCommand.Describe(typeof(Program).Assembly));
+    return 0;
+}
+
 if (AdminPasswordCommand.IsRequested(args))
 {
     return AdminPasswordCommand.RunOnConsole();
@@ -53,7 +59,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
-builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook secrets
+builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook and storage secrets
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -76,10 +82,10 @@ builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
-builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a storage configuration selects it)
-builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (used only when a storage configuration selects it)
-builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a storage configuration selects it)
-builder.Services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
+builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();

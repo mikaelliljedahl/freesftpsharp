@@ -7,8 +7,8 @@ using SshServer.EventRules.Actions;
 using SshServer.Interfaces;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Permissions;
+using FreeSftpSharp.Tests.Infrastructure;
 using SshServer.Interfaces.Storage;
-using SshServerModule.Storage;
 
 namespace FreeSftpSharp.Tests.EventRules;
 
@@ -203,8 +203,8 @@ public sealed class FileActionTests : IAsyncDisposable
             Permissions = new() { ["/"] = FilePermissions.List | FilePermissions.Download },
         };
         var backend = new InMemoryFileSystem();
-        var factory = new StorageFileSystemFactory(new StorageProviderRegistry([new FixedProvider(backend)]), new FixedResolver(),
-            new EffectivePermissionsService(), events: new RecordingEventBus());
+        var factory = TestStorage.Factory([new FixedProvider(backend)], codec => TestStorage.Fixed(codec, "memory", new MemoryOptions()),
+            events: new RecordingEventBus());
 
         var client = await factory.CreateAsync(user, new ClientContext("SFTP", "192.0.2.1"), Ct);
         var server = await factory.CreateAsync(user, new ClientContext(EventRuleRunner.Protocol, null) { SkipPermissions = true }, Ct);
@@ -220,19 +220,16 @@ public sealed class FileActionTests : IAsyncDisposable
         public ValueTask<IFileSystem> CreateAsync(User user, ClientContext client, CancellationToken ct) => ValueTask.FromResult(fileSystem);
     }
 
-    private sealed class FixedProvider(IFileSystem fileSystem) : IStorageProvider
+    public sealed class MemoryOptions
     {
-        public string Name => "memory";
-
-        public Type OptionsType => typeof(object);
-
-        public IReadOnlyList<string> Validate(object options) => [];
-
-        public ValueTask<IFileSystem> CreateAsync(object options, CancellationToken ct) => ValueTask.FromResult(fileSystem);
     }
 
-    private sealed class FixedResolver : IUserStorageResolver
+    private sealed class FixedProvider(IFileSystem fileSystem) : StorageProvider<MemoryOptions>
     {
-        public StorageSelection Resolve(User user) => new("memory", new object());
+        public override string Name => "memory";
+
+        protected override IReadOnlyList<string> ValidateOptions(MemoryOptions options) => [];
+
+        protected override ValueTask<IFileSystem> CreateFileSystemAsync(MemoryOptions options, CancellationToken ct) => ValueTask.FromResult(fileSystem);
     }
 }

@@ -17,6 +17,7 @@ public sealed partial class AdminUiAuthenticationTests : IClassFixture<AdminUiFa
     [InlineData("/")]
     [InlineData("/users")]
     [InlineData("/general")]
+    [InlineData("/virtual-folders")]
     [InlineData("/Users")]
     [InlineData("/some/unknown/page")]
     public async Task Anonymous_page_request_redirects_to_the_login_page(string path)
@@ -227,6 +228,7 @@ public sealed class UnconfiguredAdminUiTests : IClassFixture<UnconfiguredAdminUi
     [InlineData("/")]
     [InlineData("/users")]
     [InlineData("/general")]
+    [InlineData("/virtual-folders")]
     [InlineData("/Login")]
     [InlineData("/css/site.css")]
     public async Task Without_an_admin_credential_the_ui_answers_503(string path)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
 
@@ -22,7 +23,8 @@ namespace FxSsh.SshServerModule.Cli
             "  ServerConsoleApp user list\n" +
             "  ServerConsoleApp user remove <name>\n" +
             "\n" +
-            "The password is read from stdin (--password-stdin) or asked for on a terminal, never from an argument.";
+            "The password is read from stdin (--password-stdin) or asked for on a terminal, never from an argument.\n" +
+            "The public key file is an OpenSSH .pub or authorized_keys file (ed25519, ECDSA or RSA keys, one per line) or a PEM public key.";
 
         public static bool IsRequested(string[] args) =>
             args.Length > 0 && string.Equals(args[0], Name, StringComparison.OrdinalIgnoreCase);
@@ -148,11 +150,14 @@ namespace FxSsh.SshServerModule.Cli
             output.WriteLine($"{"NAME".PadRight(width)}  {"LOGIN",-14}  ROOT");
             foreach (var u in all)
             {
+                var keys = u.PublicKeys?.Count ?? 0;
                 var login = string.Join("+", new[]
                 {
                     string.IsNullOrWhiteSpace(u.HashedPassword) ? null : "password",
-                    string.IsNullOrWhiteSpace(u.RsaPublicKey) ? null : "key",
+                    keys == 0 ? null : keys == 1 ? "key" : $"{keys} keys",
                 }.Where(x => x != null));
+                if (u.RequireAllOf is { Count: > 0 })
+                    login += " (all of " + string.Join(",", u.RequireAllOf.Select(AuthMethodRules.ToSshName)) + ")";
                 output.WriteLine($"{(u.Username ?? "").PadRight(width)}  {(login.Length == 0 ? "none" : login),-14}  {u.UserRootDirectory}");
             }
             return 0;

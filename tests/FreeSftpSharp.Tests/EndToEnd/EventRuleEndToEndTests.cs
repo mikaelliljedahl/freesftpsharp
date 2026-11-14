@@ -3,14 +3,12 @@ using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SshServer.EventRules;
-using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
-using SshServerModule.Storage;
 
 namespace FreeSftpSharp.Tests.EndToEnd;
 
@@ -63,10 +61,9 @@ public sealed class EventRuleServerFixture : SftpServerFixture
 
     protected override IEventBus CreateEventBus() => Rules.Bus;
 
-    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
     {
-        var factory = new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(),
-            new EffectivePermissionsService(), connections, events);
+        var factory = base.CreateFileSystemFactory(connections, events, repository);
         _files.Inner = factory;
         return factory;
     }

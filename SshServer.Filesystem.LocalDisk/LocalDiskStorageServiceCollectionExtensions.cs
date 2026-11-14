@@ -8,12 +8,12 @@ public static class LocalDiskStorageServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the local disk storage provider ("local") in the storage provider registry, and the local disk at
-    /// <c>User.UserRootDirectory</c> as the storage of every user (until #56 adds the per-user storage configuration).
+    /// <c>User.UserRootDirectory</c> as the storage of a user without a storage configuration (<see cref="IDefaultUserStorage"/>).
     /// </summary>
     public static IServiceCollection AddLocalDiskStorage(this IServiceCollection services)
     {
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IStorageProvider, LocalDiskStorageProvider>());
-        services.TryAddSingleton<IUserStorageResolver, UserRootStorageResolver>();
+        services.TryAddSingleton<IDefaultUserStorage, UserRootDefaultStorage>();
         return services;
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.Storage;
 
 namespace FxSshSftpServer.Security
 {
@@ -91,6 +92,40 @@ namespace FxSshSftpServer.Security
             var actor = _current.Actor;
             actor.Demand(AdminPermissions.ManageUsers);
             return actor.CanSee(_inner.GetUser(username)) && _inner.RemoveUser(username);
+        }
+
+        /// <summary>
+        /// The virtual folders (#56) are not scoped: an administrator who manages users may see them (to mount them), and
+        /// one with <see cref="AdminPermissions.ManageFolders"/> may change them.
+        /// </summary>
+        public List<VirtualFolder> GetVirtualFolders()
+        {
+            var actor = _current.Actor;
+            return actor.Has(AdminPermissions.ManageFolders) || actor.Has(AdminPermissions.ManageUsers) ? _inner.GetVirtualFolders() : new List<VirtualFolder>();
+        }
+
+        public VirtualFolder GetVirtualFolder(int id)
+        {
+            var actor = _current.Actor;
+            return actor.Has(AdminPermissions.ManageFolders) || actor.Has(AdminPermissions.ManageUsers) ? _inner.GetVirtualFolder(id) : null;
+        }
+
+        public bool AddVirtualFolder(VirtualFolder folder)
+        {
+            _current.Actor.Demand(AdminPermissions.ManageFolders);
+            return _inner.AddVirtualFolder(folder);
+        }
+
+        public bool UpdateVirtualFolder(VirtualFolder folder)
+        {
+            _current.Actor.Demand(AdminPermissions.ManageFolders);
+            return _inner.UpdateVirtualFolder(folder);
+        }
+
+        public bool RemoveVirtualFolder(int id)
+        {
+            _current.Actor.Demand(AdminPermissions.ManageFolders);
+            return _inner.RemoveVirtualFolder(id);
         }
 
         /// <summary>

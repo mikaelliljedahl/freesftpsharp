@@ -27,6 +27,12 @@ using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
 
+if (VersionCommand.IsRequested(args))
+{
+    Console.WriteLine(VersionCommand.Describe(System.Reflection.Assembly.GetExecutingAssembly()));
+    return 0;
+}
+
 // "user add|list|remove" manages the users in the settings database and exits. It does not start the server.
 if (UserCommand.IsRequested(args))
     return RunUserCommand(args);
@@ -69,7 +75,7 @@ await new HostBuilder()
     services.AddS3Storage();
     services.AddAzureBlobStorage();
     services.AddGcsStorage();
-    services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
+    services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
     services.AddSshServerConnections();
