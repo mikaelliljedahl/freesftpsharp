@@ -1,4 +1,5 @@
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Unit;
 
@@ -21,6 +22,8 @@ public sealed class LocalFileSystemTests : IDisposable
         try { Directory.Delete(_tempDirectory, recursive: true); } catch { }
     }
 
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     [Theory]
     [InlineData("/../../etc/passwd", "/etc/passwd")]
     [InlineData("..\\..\\config.db", "/config.db")]
@@ -35,15 +38,15 @@ public sealed class LocalFileSystemTests : IDisposable
     [InlineData("a/./b/", "/a/b")]
     [InlineData("/a\\b/c", "/a/b/c")]
     [InlineData("/a/b/..", "/a")]
-    public void NormalizeVirtualPath_returns_a_rooted_path_without_dot_segments(string input, string expected)
+    public void VirtualPath_Normalize_returns_a_rooted_path_without_dot_segments(string input, string expected)
     {
-        Assert.Equal(expected, LocalFileSystem.NormalizeVirtualPath(input));
+        Assert.Equal(expected, VirtualPath.Normalize(input));
     }
 
     [Fact]
-    public void NormalizeVirtualPath_of_null_is_root()
+    public void VirtualPath_Normalize_of_null_is_root()
     {
-        Assert.Equal("/", LocalFileSystem.NormalizeVirtualPath(null));
+        Assert.Equal("/", VirtualPath.Normalize(null));
     }
 
     [Theory]
@@ -84,7 +87,7 @@ public sealed class LocalFileSystemTests : IDisposable
     }
 
     [Fact]
-    public void GetPhysicalPath_cannot_reach_a_sibling_directory_with_the_same_prefix()
+    public async Task GetPhysicalPath_cannot_reach_a_sibling_directory_with_the_same_prefix()
     {
         var sibling = _root + "-sibling"; // for example /tmp/x/root-sibling next to /tmp/x/root
         Directory.CreateDirectory(sibling);
@@ -93,7 +96,7 @@ public sealed class LocalFileSystemTests : IDisposable
         var physical = _fileSystem.GetPhysicalPath("/../root-sibling/secret.txt");
 
         Assert.Equal(Path.Combine(_root, "root-sibling", "secret.txt"), physical);
-        Assert.False(_fileSystem.FileExists("/../root-sibling/secret.txt"));
+        Assert.Null(await _fileSystem.StatAsync("/../root-sibling/secret.txt", true, Ct));
     }
 
     [Fact]
@@ -106,13 +109,14 @@ public sealed class LocalFileSystemTests : IDisposable
     }
 
     [Fact]
-    public void File_outside_the_root_is_not_visible()
+    public async Task File_outside_the_root_is_not_visible()
     {
         File.WriteAllText(Path.Combine(_tempDirectory, "config.db"), "secret");
 
-        Assert.False(_fileSystem.FileExists("/../config.db"));
-        Assert.False(_fileSystem.FileExists("..\\config.db"));
-        Assert.Throws<FileNotFoundException>(() => _fileSystem.OpenStreamRead("/../config.db").Dispose());
+        Assert.Null(await _fileSystem.StatAsync("/../config.db", true, Ct));
+        Assert.Null(await _fileSystem.StatAsync("..\\config.db", true, Ct));
+        var ex = await Assert.ThrowsAsync<FileSystemException>(async () => await _fileSystem.OpenAsync("/../config.db", FileOpenFlags.Read, null, Ct));
+        Assert.Equal(FileSystemError.NoSuchFile, ex.Error);
     }
 
     [Theory]
@@ -120,39 +124,47 @@ public sealed class LocalFileSystemTests : IDisposable
     [InlineData("")]
     [InlineData("/..")]
     [InlineData("/../..")]
-    public void RemoveDirectory_never_removes_the_root(string path)
+    public async Task DeleteDirectory_never_removes_the_root(string path)
     {
-        Assert.False(_fileSystem.RemoveDirectory(path));
+        var ex = await Assert.ThrowsAsync<FileSystemException>(async () => await _fileSystem.DeleteDirectoryAsync(path, Ct));
+
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
         Assert.True(Directory.Exists(_root));
     }
 
     [Theory]
     [InlineData("/")]
     [InlineData("/..")]
-    public void MoveFileOrDirectory_never_moves_the_root(string path)
+    public async Task Rename_never_moves_the_root(string path)
     {
-        Assert.False(_fileSystem.MoveFileOrDirectory(path, "/moved"));
+        var ex = await Assert.ThrowsAsync<FileSystemException>(async () => await _fileSystem.RenameAsync(path, "/moved", RenameFlags.None, Ct));
+
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
         Assert.True(Directory.Exists(_root));
         Assert.False(Directory.Exists(Path.Combine(_root, "moved")));
     }
 
     [Fact]
-    public void Write_with_a_traversal_path_lands_inside_the_root()
+    public async Task Write_with_a_traversal_path_lands_inside_the_root()
     {
-        using (var stream = _fileSystem.OpenStreamWrite("/../evil.txt", FileMode.Create))
-            stream.WriteByte(1);
+        await using (var handle = await _fileSystem.OpenAsync("/../evil.txt", FileOpenFlags.Write | FileOpenFlags.Create | FileOpenFlags.Truncate, null, Ct))
+            await handle.WriteAsync(0, new byte[] { 1 }, Ct);
 
         Assert.True(File.Exists(Path.Combine(_root, "evil.txt")));
         Assert.False(File.Exists(Path.Combine(_tempDirectory, "evil.txt")));
     }
 
     [Fact]
-    public void GetDirectories_of_a_subdirectory_has_a_parent_entry_inside_the_root()
+    public async Task List_of_a_subdirectory_has_no_dot_entries()
     {
+        // "." and ".." of a listing are added by the protocol (SftpFileSystemAdapter), inside the root.
         Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, "sub", "a.txt"), "a");
 
-        var parent = Assert.Single(_fileSystem.GetDirectories("/sub"), d => d.Name == "..");
-        Assert.Equal("/", parent.FullName);
-        Assert.DoesNotContain(_fileSystem.GetDirectories("/"), d => d.Name == "..");
+        var names = new List<string>();
+        await foreach (var entry in _fileSystem.ListAsync("/sub", Ct))
+            names.Add(entry.Name);
+
+        Assert.Equal(["a.txt"], names);
     }
 }

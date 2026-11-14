@@ -24,6 +24,7 @@ from the list when upstream has it.
 | `FxSsh: close the SFTP handles when an attached channel is force-closed` | `FxSsh/Services/Sftp/SftpService.cs` (`Attach`, `CloseAllHandles`) | A lost connection gives no CHANNEL_CLOSE, so the open files stayed open until finalization. `Attach` releases the handles on `Channel.ForceClosed`; `CloseAllHandles` continues when one handle fails to close. Test: `SftpSessionTeardownTests`. |
 | `FxSsh: log expected SFTP request failures below error level` | `FxSsh/Services/Sftp/SftpService.cs` (`ProcessRequest`, `LogFailedRequest`) | Every failed request was logged at Fail with the stack trace in the message, also a STAT of a missing path (clients probe paths all the time). Missing path, denied access and bad requests are now logged at Debug, other I/O failures (FAILURE from file operations) at Info, and only unexpected exceptions at Fail, with the exception object. Test: `tests/FreeSftpSharp.Tests/Sftp/SftpFailureLoggingTests`. |
 | `FxSsh: announce and serve the OpenSSH SFTP extensions` | `FxSsh/Services/Sftp/SftpService.cs` (`SendInit`, `ProcessExtended`), new `FxSsh/Services/Sftp/SftpExtensions.cs` | Upstream answers every SSH_FXP_EXTENDED with OP_UNSUPPORTED and announces nothing in VERSION. The engine now announces and serves `limits@openssh.com` and `expand-path@openssh.com` ("~" and "~/..." are the default directory "/", "~user" gives NO_SUCH_FILE), and `posix-rename@openssh.com`, `statvfs@openssh.com` and `fsync@openssh.com` only when the file system implements the new optional interfaces `ISftpPosixRenameFileSystem`, `ISftpStatVfsFileSystem` and `ISftpFsyncFileSystem` (upstream's own `LocalFileSystem` does not, so it announces only the first two). Read-only mode denies posix-rename and fsync and sets ST_RDONLY in statvfs. `hardlink@openssh.com` and the other extensions stay OP_UNSUPPORTED. Candidate for an upstream pull request. Test: `tests/FreeSftpSharp.Tests/Sftp/SftpExtensionTests`. |
+| `FxSsh: answer NotSupportedException of the file system with SSH_FX_OP_UNSUPPORTED` | `FxSsh/Services/Sftp/SftpService.cs` (`MapException`, `LogFailedRequest`) | A `NotSupportedException` of the file system gave SSH_FX_FAILURE. A storage backend that cannot do an operation (for example a random-access write on an object store, #51) must answer SSH_FX_OP_UNSUPPORTED. It is now mapped to OP_UNSUPPORTED and logged at Debug. Candidate for an upstream pull request. Test: `tests/FreeSftpSharp.Tests/Sftp/SftpInMemoryStorageTests`, `SftpFailureLoggingTests`. |
 
 Upstream gaps that our code handles, so no local patch is needed (candidates for upstream pull requests in
 upstream's own `LocalFileSystem`, which we do not use):
@@ -31,7 +32,7 @@ upstream's own `LocalFileSystem`, which we do not use):
 - `LocalFileSystem.RemoveFile` of a missing file answers OK (`File.Delete` does not throw); it must be
   SSH_FX_NO_SUCH_FILE. `SftpFileSystemAdapter.RemoveFile` does this.
 - `LocalFileSystem` SETSTAT/FSETSTAT ignore the permissions. `SftpFileSystemAdapter` applies them through
-  `IFileSystem.SetPermissions`.
+  `IFileSystem.SetAttributesAsync`.
 - The engine sends the exception message to the client in the STATUS message; upstream's `LocalFileSystem`
   exceptions contain physical paths. `SftpFileSystemAdapter` replaces every exception with one that has only
   the virtual path.

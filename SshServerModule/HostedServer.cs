@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Net;
 using SshServerModule.Sftp;
 using System;
@@ -271,7 +272,18 @@ namespace FxSsh.SshServerModule
             if (user == null)
                 return;
 
-            var fileSystem = new SftpFileSystemAdapter(_fileSystemFactory.GetFileSystem(username), _logger, user.Username);
+            IFileSystem storage;
+            try
+            {
+                storage = SyncBridge.Wait(_fileSystemFactory.CreateAsync(user, CancellationToken.None));
+            }
+            catch (Exception ex) when (ex is ArgumentException or FileSystemException or System.Collections.Generic.KeyNotFoundException)
+            {
+                _logger.LogError(ex, "The storage of user {Username} cannot be created; the SFTP subsystem is refused.", user.Username);
+                return;
+            }
+
+            var fileSystem = new SftpFileSystemAdapter(storage, _logger, user.Username);
             new SftpService(fileSystem).Attach(e.Channel);
             e.Agreed = true;
         }

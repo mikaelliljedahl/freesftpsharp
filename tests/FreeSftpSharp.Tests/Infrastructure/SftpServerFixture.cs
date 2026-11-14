@@ -6,6 +6,7 @@ using FxSsh.SshServerModule.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
+using SshServerModule.Storage;
 using SshServer.Interfaces;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
@@ -185,9 +186,13 @@ public class SftpServerFixture : IAsyncLifetime
         });
 
         BanTracker = new LoginBanTracker(CreateTimeProvider());
-        return new HostedServer(NullLogger<HostedServer>.Instance, new LocalFileSystemFactory(repository), repository, BanTracker,
+        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
     }
+
+    /// <summary>The storage of the hosts: the "local" provider at the user root (AddSshServerStorage + AddLocalDiskStorage).</summary>
+    private static StorageFileSystemFactory LocalDiskFileSystemFactory()
+        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
 
     private static int GetFreeTcpPort()
     {

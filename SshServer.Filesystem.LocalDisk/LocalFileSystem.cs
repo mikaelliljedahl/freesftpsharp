@@ -1,5 +1,7 @@
-﻿using SshServer.Interfaces;
+using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace SshServer.Filesystem.LocalDisk
 {
@@ -8,7 +10,7 @@ namespace SshServer.Filesystem.LocalDisk
     /// All paths that this class receives are virtual paths, where "/" is the user root directory.
     /// A virtual path can never point to a location outside the user root directory, also not through a
     /// symbolic link or junction inside the root: a path whose real path (all links followed) is outside
-    /// the real path of the root is refused with <see cref="UnauthorizedAccessException"/>. Links whose
+    /// the real path of the root is refused with <see cref="FileSystemError.PermissionDenied"/>. Links whose
     /// targets stay inside the root work. The user root itself can be a link.
     /// </summary>
     public class LocalFileSystem : IFileSystem
@@ -27,38 +29,13 @@ namespace SshServer.Filesystem.LocalDisk
         }
 
         /// <summary>
-        /// Converts a path from the client to a normalized virtual path that starts with "/".
-        /// Both "/" and "\" are separators. "." segments are removed. A ".." segment removes
-        /// the previous segment, and a ".." segment at the root stays at the root.
-        /// </summary>
-        public static string NormalizeVirtualPath(string? path)
-        {
-            var segments = new List<string>();
-            foreach (var segment in (path ?? string.Empty).Split('/', '\\'))
-            {
-                if (segment.Length == 0 || segment == ".")
-                    continue;
-
-                if (segment == "..")
-                {
-                    if (segments.Count > 0)
-                        segments.RemoveAt(segments.Count - 1);
-                    continue;
-                }
-
-                segments.Add(segment);
-            }
-
-            return "/" + string.Join('/', segments);
-        }
-
-        /// <summary>
-        /// Converts a virtual path to a full path on the local disk.
-        /// Throws <see cref="UnauthorizedAccessException"/> if the result is outside the user root directory.
+        /// Converts a virtual path to a full path on the local disk. Throws <see cref="FileSystemException"/> with
+        /// <see cref="FileSystemError.PermissionDenied"/> if the result is outside the user root directory, and with
+        /// <see cref="FileSystemError.Failure"/> for a link loop.
         /// </summary>
         public string GetPhysicalPath(string? virtualPath)
         {
-            var relativePath = NormalizeVirtualPath(virtualPath).TrimStart('/');
+            var relativePath = VirtualPath.Normalize(virtualPath).TrimStart('/');
             var fullPath = relativePath.Length == 0
                 ? _userRootDirectory
                 : Path.GetFullPath(Path.Join(_userRootDirectory, relativePath));
@@ -66,7 +43,7 @@ namespace SshServer.Filesystem.LocalDisk
             // Second line of defence: the normalization above must already prevent this.
             // The check also catches platform rules, for example Windows that removes trailing dots and spaces.
             if (!IsInside(fullPath, _userRootDirectory))
-                throw new UnauthorizedAccessException($"The path is outside the user root directory: {virtualPath}");
+                throw new FileSystemException(FileSystemError.PermissionDenied, $"The path is outside the user root directory: {virtualPath}");
 
             // The path is inside the root as text, but a symbolic link or junction on the way (or the last
             // segment itself) can point outside it. Follow the links like the operating system does and
@@ -76,7 +53,7 @@ namespace SshServer.Filesystem.LocalDisk
                 var realRoot = ResolveLinks(_userRootDirectory);
                 var realPath = ResolveLinks(fullPath);
                 if (!IsInside(realPath, realRoot))
-                    throw new UnauthorizedAccessException($"The path is a link to outside the user root directory: {virtualPath}");
+                    throw new FileSystemException(FileSystemError.PermissionDenied, $"The path is a link to outside the user root directory: {virtualPath}");
             }
 
             return fullPath;
@@ -154,7 +131,7 @@ namespace SshServer.Filesystem.LocalDisk
                 }
 
                 if (++linkCount > MaxLinks)
-                    throw new IOException("Too many levels of symbolic links.");
+                    throw new FileSystemException(FileSystemError.Failure, "Too many levels of symbolic links.");
 
                 // A relative target is relative to the directory that has the link.
                 var targetPath = OperatingSystem.IsWindows()
@@ -198,206 +175,6 @@ namespace SshServer.Filesystem.LocalDisk
             }
         }
 
-        public bool DirectoryExists(string path)
-        {
-            return new DirectoryInfo(GetPhysicalPath(path)).Exists;
-        }
-
-        public bool FileExists(string path)
-        {
-            return new FileInfo(GetPhysicalPath(path)).Exists;
-        }
-
-        public IEnumerable<Resource> GetFiles(string path)
-        {
-            var virtualDirectory = NormalizeVirtualPath(path);
-            var di = new DirectoryInfo(GetPhysicalPath(virtualDirectory));
-
-            var foundfiles = new List<Resource>();
-            foreach (var file in di.GetFiles())
-            {
-                foundfiles.Add(new Resource
-                {
-                    Type = ResourceType.File,
-                    FullName = CombineVirtualPath(virtualDirectory, file.Name),
-                    Length = (ulong)file.Length,
-                    Name = file.Name
-                });
-            }
-
-            return foundfiles;
-        }
-
-        public IEnumerable<Resource> GetDirectories(string path)
-        {
-            var virtualDirectory = NormalizeVirtualPath(path);
-            var di = new DirectoryInfo(GetPhysicalPath(virtualDirectory));
-
-            var foundDirs = new List<Resource>();
-            foreach (var dir in di.GetDirectories())
-            {
-                foundDirs.Add(new Resource
-                {
-                    Type = ResourceType.Folder,
-                    FullName = CombineVirtualPath(virtualDirectory, dir.Name),
-                    Length = 0,
-                    Name = dir.Name
-                });
-            }
-
-            if (virtualDirectory != "/")
-            {
-                // If not on root level, add the parent too. The parent is always inside the user root directory.
-                foundDirs.Add(new Resource
-                {
-                    Type = ResourceType.Folder,
-                    FullName = NormalizeVirtualPath(virtualDirectory + "/.."),
-                    Length = 0,
-                    Name = ".."
-                });
-            }
-
-            return foundDirs;
-        }
-
-        public ulong GetSize(string path)
-        {
-            var fi = new FileInfo(GetPhysicalPath(path));
-            if (fi.Exists)
-                return (ulong)fi.Length;
-            return 0;
-        }
-
-        public bool MakeDirectory(string newPath)
-        {
-            try
-            {
-                new DirectoryInfo(GetPhysicalPath(newPath)).Create();
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public Stream OpenStreamRead(string path)
-        {
-            return new FileInfo(GetPhysicalPath(path)).OpenRead();
-        }
-
-        public Stream OpenStreamWrite(string path)
-        {
-            return OpenStreamWrite(path, FileMode.OpenOrCreate);
-        }
-
-        public Stream OpenStreamWrite(string path, FileMode mode)
-        {
-            return new FileStream(GetPhysicalPath(path), mode, FileAccess.ReadWrite);
-        }
-
-        public bool RemoveDirectory(string pathToRemove)
-        {
-            var absolutepath = GetPhysicalPath(pathToRemove);
-            if (IsUserRoot(absolutepath))
-                return false; // never remove the user root directory
-
-            var di = new DirectoryInfo(absolutepath);
-            var fi = new FileInfo(absolutepath); // Renci SSH uses this command to remove a file too, so we must check if path is a dir or file
-
-            if (fi.Exists)
-            {
-                fi.Delete();
-                return true;
-            }
-
-            if (di.Exists)
-            {
-                di.Delete();
-                return true;
-            }
-
-            return false;
-        }
-
-        public bool RemoveFile(string pathToRemove)
-        {
-            var fi = new FileInfo(GetPhysicalPath(pathToRemove));
-
-            if (fi.Exists)
-            {
-                fi.Delete();
-                return true;
-            }
-            return false;
-        }
-
-        public bool MoveFileOrDirectory(string oldpath, string newpath)
-        {
-            try
-            {
-                var oldpathAbsolute = GetPhysicalPath(oldpath);
-                var newpathAbsolute = GetPhysicalPath(newpath);
-
-                if (IsUserRoot(oldpathAbsolute))
-                    return false; // never move the user root directory
-
-                var di = new DirectoryInfo(oldpathAbsolute);
-                if (di.Exists)
-                {
-                    di.MoveTo(newpathAbsolute);
-                    return true;
-                }
-
-                var fi = new FileInfo(oldpathAbsolute);
-                if (fi.Exists)
-                {
-                    fi.MoveTo(newpathAbsolute);
-                    return true;
-                }
-            }
-            catch
-            {
-                return false;
-            }
-            return false;
-        }
-
-        public DateTime GetDirectoryLastModified(string path)
-        {
-            return new DirectoryInfo(GetPhysicalPath(path)).LastWriteTimeUtc;
-        }
-
-        public DateTime GetDirectoryLastAccessed(string path)
-        {
-            return new DirectoryInfo(GetPhysicalPath(path)).LastAccessTimeUtc;
-        }
-
-        public DateTime GetFileLastModified(string path)
-        {
-            return new FileInfo(GetPhysicalPath(path)).LastWriteTimeUtc;
-        }
-
-        public DateTime GetFileLastAccessed(string path)
-        {
-            return new FileInfo(GetPhysicalPath(path)).LastAccessTimeUtc;
-        }
-
-        public FileSystemEntryInfo? GetInfo(string path)
-        {
-            var physicalPath = GetPhysicalPath(path);
-
-            var dir = new DirectoryInfo(physicalPath);
-            if (dir.Exists)
-                return new FileSystemEntryInfo(ResourceType.Folder, 0, dir.LastAccessTimeUtc, dir.LastWriteTimeUtc, GetPermissions(dir));
-
-            var file = new FileInfo(physicalPath);
-            if (file.Exists)
-                return new FileSystemEntryInfo(ResourceType.File, (ulong)file.Length, file.LastAccessTimeUtc, file.LastWriteTimeUtc, GetPermissions(file));
-
-            return null;
-        }
-
         private static uint GetPermissions(FileSystemInfo info)
         {
             if (!OperatingSystem.IsWindows())
@@ -408,35 +185,291 @@ namespace SshServer.Filesystem.LocalDisk
             return ((FileInfo)info).IsReadOnly ? 0x124u : 0x1A4u; // r--r--r-- or rw-r--r--
         }
 
-        public Stream OpenFile(string path, FileMode mode, FileAccess access)
+        // ---- IFileSystem ----
+
+        /// <summary>
+        /// Everything except symbolic links (links are followed and checked, never reported or created) and server-side
+        /// copy. On Windows only the owner write bit of the permissions is applied (read-only file).
+        /// </summary>
+        public StorageCapabilities Capabilities =>
+            StorageCapabilities.RandomAccessWrite | StorageCapabilities.Append | StorageCapabilities.Rename
+            | StorageCapabilities.SetTimes | StorageCapabilities.SetPermissions;
+
+        // The local disk is fast and FileStream does synchronous I/O, so every member completes synchronously and
+        // returns a completed ValueTask: no thread pool hop per SFTP request, and the synchronous SFTP bridge
+        // (SftpFileSystemAdapter) never blocks a thread on it.
+
+        public ValueTask<FileSystemEntry?> StatAsync(string path, bool followLinks, CancellationToken ct)
         {
-            return new FileStream(GetPhysicalPath(path), mode, access, FileShare.ReadWrite | FileShare.Delete);
+            ct.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Run(path, () => GetEntry(GetPhysicalPath(path), VirtualPath.GetName(VirtualPath.Normalize(path)))));
         }
 
-        public void SetFileLength(string path, long length)
+        public async IAsyncEnumerable<FileSystemEntry> ListAsync(string path, [EnumeratorCancellation] CancellationToken ct)
         {
-            using var stream = new FileStream(GetPhysicalPath(path), FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
-            stream.SetLength(length);
+            await Task.CompletedTask; // synchronous enumeration of the directory, one entry per MoveNextAsync
+            ct.ThrowIfCancellationRequested();
+            var virtualDirectory = VirtualPath.Normalize(path);
+            using var entries = Run(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(virtualDirectory);
+                if (!Directory.Exists(physicalPath))
+                {
+                    if (File.Exists(physicalPath))
+                        throw new FileSystemException(FileSystemError.NotADirectory, $"Not a directory: {path}");
+                    throw new FileSystemException(FileSystemError.NoSuchFile, $"No such directory: {path}");
+                }
+                return new DirectoryInfo(physicalPath).EnumerateFileSystemInfos().GetEnumerator();
+            });
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!Run(path, entries.MoveNext))
+                    yield break;
+                if (GetListEntry(virtualDirectory, entries.Current.Name) is { } entry)
+                    yield return entry;
+            }
         }
 
-        public void SetTimes(string path, DateTime? lastAccessUtc, DateTime? lastWriteUtc)
+        /// <summary>
+        /// The entry of a directory listing, or null when the user cannot reach it: a link to outside the root, a link
+        /// loop, or an entry that was removed after the listing.
+        /// </summary>
+        private FileSystemEntry? GetListEntry(string virtualDirectory, string name)
         {
-            var physicalPath = GetPhysicalPath(path);
-            FileSystemInfo info = Directory.Exists(physicalPath) ? new DirectoryInfo(physicalPath) : new FileInfo(physicalPath);
-            if (!info.Exists)
-                throw new FileNotFoundException($"No such file: {path}");
-
-            if (lastAccessUtc is { } accessed)
-                info.LastAccessTimeUtc = accessed;
-            if (lastWriteUtc is { } written)
-                info.LastWriteTimeUtc = written;
+            try
+            {
+                return GetEntry(GetPhysicalPath(VirtualPath.Combine(virtualDirectory, name)), name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FileSystemException)
+            {
+                return null;
+            }
         }
 
-        public void SetPermissions(string path, uint mode)
+        public ValueTask<IFileHandle> OpenAsync(string path, FileOpenFlags flags, FileAttributesUpdate? initial, CancellationToken ct)
         {
-            var physicalPath = GetPhysicalPath(path);
+            ct.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Run<IFileHandle>(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(path);
+                if (Directory.Exists(physicalPath))
+                    throw new FileSystemException(FileSystemError.IsADirectory, $"Is a directory: {path}");
+
+                var create = (flags & FileOpenFlags.Create) != 0;
+                var exists = File.Exists(physicalPath);
+                if (create && exists && (flags & FileOpenFlags.Exclusive) != 0)
+                    throw new FileSystemException(FileSystemError.AlreadyExists, $"Already exists: {path}");
+                if (!exists)
+                    RequireParentDirectory(physicalPath, path);
+
+                var access = default(FileAccess);
+                if ((flags & FileOpenFlags.Read) != 0) access |= FileAccess.Read;
+                if ((flags & FileOpenFlags.Write) != 0) access |= FileAccess.Write;
+                if (access == default)
+                    throw new FileSystemException(FileSystemError.Failure, $"Open for neither reading nor writing: {path}");
+
+                var stream = new FileStream(physicalPath, OpenMode(flags), access, FileShare.ReadWrite | FileShare.Delete);
+                try
+                {
+                    if (create && !exists && initial?.Permissions is { } permissions)
+                        ApplyPermissions(physicalPath, permissions, path);
+                }
+                catch
+                {
+                    stream.Dispose();
+                    throw;
+                }
+                return new LocalFileHandle(this, stream, path, flags);
+            }));
+        }
+
+        private static FileMode OpenMode(FileOpenFlags flags)
+        {
+            if ((flags & FileOpenFlags.Create) == 0)
+                return FileMode.Open;
+            if ((flags & FileOpenFlags.Exclusive) != 0)
+                return FileMode.CreateNew;
+            if ((flags & FileOpenFlags.Truncate) != 0)
+                return FileMode.Create;
+            return FileMode.OpenOrCreate;
+        }
+
+        public ValueTask CreateDirectoryAsync(string path, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Run(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(path);
+                if (Directory.Exists(physicalPath) || File.Exists(physicalPath))
+                    throw new FileSystemException(FileSystemError.AlreadyExists, $"Already exists: {path}");
+                RequireParentDirectory(physicalPath, path);
+                Directory.CreateDirectory(physicalPath);
+            });
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DeleteFileAsync(string path, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Run(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(path);
+                if (Directory.Exists(physicalPath))
+                    throw new FileSystemException(FileSystemError.IsADirectory, $"Is a directory: {path}");
+                if (!File.Exists(physicalPath))
+                    throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}");
+                File.Delete(physicalPath);
+            });
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DeleteDirectoryAsync(string path, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Run(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(path);
+                if (IsUserRoot(physicalPath))
+                    throw new FileSystemException(FileSystemError.PermissionDenied, "The user root directory cannot be removed.");
+                if (!Directory.Exists(physicalPath))
+                {
+                    if (File.Exists(physicalPath))
+                        throw new FileSystemException(FileSystemError.NotADirectory, $"Not a directory: {path}");
+                    throw new FileSystemException(FileSystemError.NoSuchFile, $"No such directory: {path}");
+                }
+
+                // A link to a directory is removed as a link; the directory it points to (maybe the root) stays.
+                if (GetLinkTarget(physicalPath) == null && Directory.EnumerateFileSystemEntries(physicalPath).Any())
+                    throw new FileSystemException(FileSystemError.DirectoryNotEmpty, $"The directory is not empty: {path}");
+                Directory.Delete(physicalPath);
+            });
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask RenameAsync(string oldPath, string newPath, RenameFlags flags, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Run(oldPath, () =>
+            {
+                var source = GetPhysicalPath(oldPath);
+                var target = GetPhysicalPath(newPath);
+                if (IsUserRoot(source) || IsUserRoot(target))
+                    throw new FileSystemException(FileSystemError.PermissionDenied, "The user root directory cannot be moved or replaced.");
+
+                var isDirectory = Directory.Exists(source);
+                if (!isDirectory && !File.Exists(source))
+                    throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {oldPath}");
+                RequireParentDirectory(target, newPath);
+                if (string.Equals(source, target, StringComparison.Ordinal))
+                    return; // rename(2) of a path to itself does nothing
+
+                var targetIsDirectory = Directory.Exists(target);
+                if (targetIsDirectory || File.Exists(target))
+                {
+                    if ((flags & RenameFlags.ReplaceExisting) == 0 || isDirectory)
+                        throw new FileSystemException(FileSystemError.AlreadyExists, $"The target already exists: {newPath}");
+                    if (targetIsDirectory)
+                        throw new FileSystemException(FileSystemError.IsADirectory, $"The target is a directory: {newPath}");
+                }
+
+                if (isDirectory)
+                    Directory.Move(source, target);
+                else
+                    // One rename(2) on Unix and MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows: the target is
+                    // replaced atomically, a reader sees either the old or the new file.
+                    File.Move(source, target, overwrite: (flags & RenameFlags.ReplaceExisting) != 0);
+            });
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask SetAttributesAsync(string path, FileAttributesUpdate update, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Run(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(path);
+                var isDirectory = Directory.Exists(physicalPath);
+                if (!isDirectory && !File.Exists(physicalPath))
+                    throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}");
+
+                if (update.Size is { } size)
+                {
+                    if (isDirectory)
+                        throw new FileSystemException(FileSystemError.IsADirectory, $"Is a directory: {path}");
+                    using var stream = new FileStream(physicalPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                    stream.SetLength(size);
+                }
+                ApplyPermissionsAndTimes(physicalPath, update, path);
+            });
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<StorageSpace?> GetStorageSpaceAsync(string path, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Run(path, () =>
+            {
+                var physicalPath = GetPhysicalPath(path);
+                if (!Directory.Exists(physicalPath) && !File.Exists(physicalPath))
+                    throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}");
+
+                try
+                {
+                    // On Unix DriveInfo takes any path (statvfs); on Windows it needs the drive root.
+                    var drive = new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(physicalPath)! : physicalPath);
+                    return new StorageSpace((ulong)drive.TotalSize, (ulong)drive.TotalFreeSpace, (ulong)drive.AvailableFreeSpace);
+                }
+                catch (ArgumentException)
+                {
+                    return (StorageSpace?)null; // for example a UNC path on Windows
+                }
+            }));
+        }
+
+        /// <summary>The entry of an existing physical path (links followed), or null when it does not exist.</summary>
+        private static FileSystemEntry? GetEntry(string physicalPath, string name)
+        {
+            var dir = new DirectoryInfo(physicalPath);
+            if (dir.Exists)
+                return new FileSystemEntry(name, FileSystemEntryType.Directory, 0, dir.LastWriteTimeUtc, dir.LastAccessTimeUtc) { Permissions = GetPermissions(dir) };
+
+            var file = new FileInfo(physicalPath);
+            if (file.Exists)
+                return new FileSystemEntry(name, FileSystemEntryType.File, file.Length, file.LastWriteTimeUtc, file.LastAccessTimeUtc) { Permissions = GetPermissions(file) };
+
+            return null;
+        }
+
+        /// <summary>The parent of a new entry must be a directory (like ENOENT and ENOTDIR of POSIX, both NoSuchFile).</summary>
+        private static void RequireParentDirectory(string physicalPath, string path)
+        {
+            var parent = Path.GetDirectoryName(physicalPath);
+            if (parent != null && !Directory.Exists(parent))
+                throw new FileSystemException(FileSystemError.NoSuchFile, $"No such directory: {path}/..");
+        }
+
+        /// <summary>Applies the permissions, then the times of an update to an existing file or directory.</summary>
+        private void ApplyPermissionsAndTimes(string physicalPath, FileAttributesUpdate update, string path)
+        {
+            if (update.Permissions is { } permissions)
+                ApplyPermissions(physicalPath, permissions, path);
+
+            if (update.HasTimes)
+            {
+                FileSystemInfo info = Directory.Exists(physicalPath) ? new DirectoryInfo(physicalPath) : new FileInfo(physicalPath);
+                if (update.LastAccessTimeUtc is { } accessed)
+                    info.LastAccessTimeUtc = accessed;
+                if (update.LastWriteTimeUtc is { } written)
+                    info.LastWriteTimeUtc = written;
+            }
+        }
+
+        private void ApplyPermissions(string physicalPath, uint mode, string path)
+        {
             if (IsUserRoot(physicalPath))
-                throw new UnauthorizedAccessException("The permissions of the user root directory cannot be changed.");
+                throw new FileSystemException(FileSystemError.PermissionDenied, "The permissions of the user root directory cannot be changed.");
 
             if (Directory.Exists(physicalPath))
             {
@@ -447,7 +480,7 @@ namespace SshServer.Filesystem.LocalDisk
 
             var file = new FileInfo(physicalPath);
             if (!file.Exists)
-                throw new FileNotFoundException($"No such file: {path}");
+                throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}");
 
             if (OperatingSystem.IsWindows())
                 file.IsReadOnly = (mode & 0x80) == 0; // like Win32-OpenSSH: no owner write bit gives a read-only file
@@ -455,54 +488,133 @@ namespace SshServer.Filesystem.LocalDisk
                 File.SetUnixFileMode(physicalPath, (UnixFileMode)(mode & 0x1FF));
         }
 
-        public void RenameReplacing(string oldPath, string newPath)
+        private static void Run(string path, Action operation) => Run(path, () => { operation(); return true; });
+
+        /// <summary>
+        /// Runs an operation of the local disk and translates its <c>System.IO</c> exceptions to
+        /// <see cref="FileSystemException"/> with the virtual path. Other exceptions are bugs and stay as they are.
+        /// </summary>
+        private static T Run<T>(string path, Func<T> operation)
         {
-            var source = GetPhysicalPath(oldPath);
-            var target = GetPhysicalPath(newPath);
-            if (IsUserRoot(source) || IsUserRoot(target))
-                throw new UnauthorizedAccessException("The user root directory cannot be moved or replaced.");
-
-            if (Directory.Exists(source))
-            {
-                if (Directory.Exists(target) || File.Exists(target))
-                    throw new IOException($"The target already exists: {newPath}");
-                Directory.Move(source, target);
-                return;
-            }
-
-            if (!File.Exists(source))
-                throw new FileNotFoundException($"No such file: {oldPath}");
-            if (Directory.Exists(target))
-                throw new IOException($"The target is a directory: {newPath}");
-            if (string.Equals(source, target, StringComparison.Ordinal))
-                return; // rename(2) of a path to itself does nothing
-
-            // One rename(2) on Unix and MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows: the target is
-            // replaced atomically, a reader sees either the old or the new file.
-            File.Move(source, target, overwrite: true);
-        }
-
-        public StorageSpace? GetStorageSpace(string path)
-        {
-            var physicalPath = GetPhysicalPath(path);
-            if (!Directory.Exists(physicalPath) && !File.Exists(physicalPath))
-                throw new FileNotFoundException($"No such file: {path}");
-
             try
             {
-                // On Unix DriveInfo takes any path (statvfs); on Windows it needs the drive root.
-                var drive = new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(physicalPath)! : physicalPath);
-                return new StorageSpace((ulong)drive.TotalSize, (ulong)drive.TotalFreeSpace, (ulong)drive.AvailableFreeSpace);
+                return operation();
             }
-            catch (ArgumentException)
+            catch (Exception ex) when (Translate(ex, path) is { } translated)
             {
-                return null; // for example a UNC path on Windows
+                throw translated;
             }
         }
 
-        private static string CombineVirtualPath(string virtualDirectory, string name)
+        private static FileSystemException? Translate(Exception ex, string path) => ex switch
         {
-            return virtualDirectory == "/" ? "/" + name : virtualDirectory + "/" + name;
+            FileSystemException own => own,
+            FileNotFoundException or DirectoryNotFoundException => new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}", ex),
+            UnauthorizedAccessException => new FileSystemException(FileSystemError.PermissionDenied, $"Permission denied: {path}", ex),
+            IOException => new FileSystemException(FileSystemError.Failure, $"Failure: {path}", ex),
+            ArgumentException or NotSupportedException => new FileSystemException(FileSystemError.InvalidPath, $"Invalid path: {path}", ex),
+            _ => null,
+        };
+
+        /// <summary>An open file on the local disk. Positional I/O on one <see cref="FileStream"/>.</summary>
+        private sealed class LocalFileHandle(LocalFileSystem owner, FileStream stream, string path, FileOpenFlags flags) : IFileHandle
+        {
+            private bool _disposed;
+
+            public ValueTask<int> ReadAsync(long offset, Memory<byte> buffer, CancellationToken ct)
+            {
+                ct.ThrowIfCancellationRequested();
+                Check(FileOpenFlags.Read);
+                return ValueTask.FromResult(Run(path, () =>
+                {
+                    stream.Position = offset;
+                    return stream.Read(buffer.Span);
+                }));
+            }
+
+            public ValueTask WriteAsync(long offset, ReadOnlyMemory<byte> data, CancellationToken ct)
+            {
+                ct.ThrowIfCancellationRequested();
+                Check(FileOpenFlags.Write);
+                Run(path, () =>
+                {
+                    // FileOpenFlags.Append: every write goes to the end of the file.
+                    stream.Position = (flags & FileOpenFlags.Append) != 0 ? stream.Length : offset;
+                    stream.Write(data.Span);
+                });
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask FlushAsync(CancellationToken ct)
+            {
+                ct.ThrowIfCancellationRequested();
+                Check(FileOpenFlags.None);
+                Run(path, () => stream.Flush(flushToDisk: true));
+                return ValueTask.CompletedTask;
+            }
+
+            /// <summary>The attributes of the open file itself (fstat), also when its path was removed or replaced.</summary>
+            public ValueTask<FileSystemEntry> StatAsync(CancellationToken ct)
+            {
+                ct.ThrowIfCancellationRequested();
+                Check(FileOpenFlags.None);
+                return ValueTask.FromResult(Run(path, () =>
+                {
+                    var handle = stream.SafeFileHandle;
+                    var permissions = OperatingSystem.IsWindows()
+                        ? ((File.GetAttributes(handle) & FileAttributes.ReadOnly) != 0 ? 0x124u : 0x1A4u)
+                        : (uint)File.GetUnixFileMode(handle) & 0x1FF;
+                    // The length includes the data that is not flushed yet.
+                    return new FileSystemEntry(VirtualPath.GetName(VirtualPath.Normalize(path)), FileSystemEntryType.File, stream.Length,
+                        File.GetLastWriteTimeUtc(handle), File.GetLastAccessTimeUtc(handle)) { Permissions = permissions };
+                }));
+            }
+
+            public ValueTask SetAttributesAsync(FileAttributesUpdate update, CancellationToken ct)
+            {
+                ct.ThrowIfCancellationRequested();
+                Check(FileOpenFlags.None);
+                Run(path, () =>
+                {
+                    if (update.Size is { } size)
+                        stream.SetLength(size);
+                    if (update.HasTimes)
+                        stream.Flush(); // a later flush of buffered data would change the write time again
+                    if (update.Permissions != null || update.HasTimes)
+                        owner.ApplyPermissionsAndTimes(owner.GetPhysicalPath(path), update, path);
+                });
+                return ValueTask.CompletedTask;
+            }
+
+            /// <summary>
+            /// Flushes and closes the file. A failed flush (for example a full disk) is thrown, and the file is closed
+            /// in all cases.
+            /// </summary>
+            public ValueTask DisposeAsync()
+            {
+                if (_disposed)
+                    return ValueTask.CompletedTask;
+                _disposed = true;
+
+                try
+                {
+                    Run(path, stream.Flush);
+                }
+                finally
+                {
+                    try { stream.Dispose(); } catch (IOException) { /* the flush error, if any, is reported */ }
+                }
+                return ValueTask.CompletedTask;
+            }
+
+            private void Check(FileOpenFlags access)
+            {
+                if (_disposed)
+                    throw new FileSystemException(FileSystemError.Failure, $"The file is closed: {path}");
+                if ((flags & access) != access)
+                    throw new FileSystemException(FileSystemError.PermissionDenied, $"The file is not open for {access}: {path}");
+            }
         }
+
     }
 }

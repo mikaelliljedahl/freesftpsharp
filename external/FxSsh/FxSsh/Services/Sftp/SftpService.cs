@@ -426,7 +426,7 @@ namespace FxSsh.Services.Sftp
         {
             switch (ex)
             {
-                case FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException or ArgumentException:
+                case FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException or ArgumentException or NotSupportedException:
                     Log.Debug($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex.GetType().Name}: {ex.Message}");
                     break;
                 case IOException:
@@ -1034,6 +1034,9 @@ namespace FxSsh.Services.Sftp
                 FileNotFoundException or DirectoryNotFoundException => (SSH_FX_NO_SUCH_FILE, ex.Message),
                 UnauthorizedAccessException => (SSH_FX_PERMISSION_DENIED, ex.Message),
                 ArgumentException => (SSH_FX_BAD_MESSAGE, ex.Message),
+                // The file system cannot do this operation (for example a
+                // random-access write on an object store).
+                NotSupportedException => (SSH_FX_OP_UNSUPPORTED, ex.Message),
                 IOException => (SSH_FX_FAILURE, ex.Message),
                 _ => (SSH_FX_FAILURE, ex.Message),
             };

@@ -12,6 +12,7 @@ using FxSsh.SshServerModule;
 
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
+using SshServerModule.Storage;
 
 using FxSshSftpServer.Security;
 
@@ -52,8 +53,9 @@ builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:Bind
 
 Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);
-Log.Debug("AddLocalFileSystemHosting...");
-builder.Services.AddLocalFileSystemHosting();
+Log.Debug("AddSshServerStorage...");
+builder.Services.AddSshServerStorage();
+builder.Services.AddLocalDiskStorage(); // the "local" storage provider
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();

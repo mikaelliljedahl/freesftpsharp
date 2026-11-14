@@ -52,6 +52,20 @@ public sealed class SftpFailureLoggingTests : SftpEngineTestBase
     }
 
     [Fact]
+    public void Operation_that_the_storage_does_not_support_is_logged_at_debug_level()
+    {
+        using var client = new SftpEngineClient(new Storage.InMemoryFileSystem(SshServer.Interfaces.Storage.StorageCapabilities.None));
+        client.Service.OnData(Init());
+        Assert.Equal(SSH_FX_OK, client.MakeDirectory("/dir"));
+
+        Assert.Equal(SSH_FX_OP_UNSUPPORTED, client.Rename("/dir", "/moved"));
+
+        var entry = Assert.Single(_sink.SftpFailures());
+        Assert.Equal(LogLevel.Debug, entry.Level);
+        Assert.Null(entry.Exception);
+    }
+
+    [Fact]
     public void Unexpected_exception_is_logged_as_an_error_with_the_exception()
     {
         using var client = new SftpEngineClient(new ThrowingFileSystem(() => new InvalidOperationException("bug in the file system")));

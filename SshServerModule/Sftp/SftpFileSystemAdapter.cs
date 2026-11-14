@@ -1,39 +1,49 @@
+#nullable enable
 using FxSsh.Services.Sftp;
 using Microsoft.Extensions.Logging;
-using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using System.Threading;
 
 namespace SshServerModule.Sftp
 {
     /// <summary>
-    /// Gives the upstream FxSsh SFTP engine (<see cref="SftpService"/>) access to one user's
-    /// <see cref="IFileSystem"/>.
+    /// Gives the upstream FxSsh SFTP engine (<see cref="SftpService"/>) access to one user's <see cref="IFileSystem"/>.
     /// <para>
-    /// The engine sends the paths of the client unchanged. The <see cref="IFileSystem"/> resolves them as
-    /// virtual paths, where "/" is the user root, and it is the security boundary: a path can never leave
-    /// the user root (<c>LocalFileSystem.GetPhysicalPath</c>), and the user root cannot be removed, moved
-    /// or changed.
+    /// The engine sends the paths of the client unchanged. The <see cref="IFileSystem"/> resolves them as virtual paths,
+    /// where "/" is the user root, and it is the security boundary: a path can never leave the user root, and the user
+    /// root cannot be removed, moved or changed.
     /// </para>
     /// <para>
-    /// The engine maps exceptions to SSH_FX status codes: <see cref="FileNotFoundException"/> and
-    /// <see cref="DirectoryNotFoundException"/> give NO_SUCH_FILE, <see cref="UnauthorizedAccessException"/>
-    /// gives PERMISSION_DENIED, and other exceptions give FAILURE. The engine sends the exception message
-    /// to the client, so this adapter replaces every exception from the file system with one that has only
-    /// the virtual path in its message. The physical path of the user root is never sent to the client.
+    /// The engine is synchronous and the storage is asynchronous: every call waits through <see cref="SyncBridge"/>
+    /// (see there why this cannot deadlock). The engine gives no cancellation, so the calls use
+    /// <see cref="CancellationToken.None"/>.
+    /// </para>
+    /// <para>
+    /// Errors: the storage throws <see cref="FileSystemException"/>. This adapter maps each <see cref="FileSystemError"/>
+    /// to the exception type that the engine maps to the SSH_FX status code: NoSuchFile gives NO_SUCH_FILE,
+    /// PermissionDenied gives PERMISSION_DENIED, OpNotSupported gives OP_UNSUPPORTED, InvalidPath gives BAD_MESSAGE, and
+    /// the others give FAILURE (SFTP version 3 has no own code for them); IsADirectory of OPEN and REMOVE gives
+    /// PERMISSION_DENIED. The engine sends the exception message to the client, so the new exception has only the
+    /// virtual path in its message. Any other exception is a bug: it is logged as an error and gives FAILURE.
     /// </para>
     /// </summary>
     public sealed class SftpFileSystemAdapter : ISftpFileSystem, ISftpPosixRenameFileSystem, ISftpStatVfsFileSystem, ISftpFsyncFileSystem
     {
         private const uint RegularFileType = 0x8000;
         private const uint DirectoryType = 0x4000;
+        private const uint DefaultFilePermissions = 0x1A4;      // rw-r--r--, for a storage without permissions
+        private const uint DefaultDirectoryPermissions = 0x1ED; // rwxr-xr-x
         private const string OwnExceptionKey = "FreeSftpSharp.SftpMessage";
 
         /// <summary>The block size of the statvfs reply; the byte counts of the storage are given in these blocks.</summary>
         private const ulong StatVfsBlockSize = 4096;
         private const ulong MaxNameLength = 255;
+
+        private static readonly CancellationToken None = CancellationToken.None;
 
         private readonly IFileSystem _fileSystem;
         private readonly ILogger _logger;
@@ -82,24 +92,22 @@ namespace SshServerModule.Sftp
 
         public ISftpFileHandle OpenFile(string path, SftpOpenFlags flags, SftpFileAttributes attributes)
         {
-            var access = default(FileAccess);
-            if ((flags & SftpOpenFlags.Read) != 0) access |= FileAccess.Read;
-            if ((flags & SftpOpenFlags.Write) != 0) access |= FileAccess.Write;
-            var mode = MapMode(flags);
-            var append = (flags & SftpOpenFlags.Append) != 0;
-
-            if ((access & FileAccess.Write) != 0)
-                _logger.LogInformation("User {Username} opens {Path} for writing ({Mode}).", _username, path, mode);
+            // The values of FileOpenFlags are the SSH_FXF_* flags. The engine has already rejected TRUNC or EXCL
+            // without CREAT. The attributes of OPEN are not applied (as before issue #51).
+            var openFlags = (FileOpenFlags)(uint)flags;
+            if ((openFlags & FileOpenFlags.Write) != 0)
+                _logger.LogInformation("User {Username} opens {Path} for writing ({Flags}).", _username, path, openFlags);
             else
                 _logger.LogDebug("User {Username} opens {Path} for reading.", _username, path);
 
             try
             {
-                if (_fileSystem.DirectoryExists(path))
-                    throw Own(new UnauthorizedAccessException($"Is a directory: {path}"));
-
-                var stream = _fileSystem.OpenFile(path, mode, access);
-                return new FileHandle(this, stream, path, append);
+                var handle = SyncBridge.Wait(_fileSystem.OpenAsync(path, openFlags, null, None));
+                return new FileHandle(this, handle, path);
+            }
+            catch (FileSystemException ex) when (ex.Error == FileSystemError.IsADirectory)
+            {
+                throw Own(new UnauthorizedAccessException($"Is a directory: {path}"));
             }
             catch (Exception ex)
             {
@@ -111,25 +119,17 @@ namespace SshServerModule.Sftp
         {
             try
             {
-                if (!_fileSystem.DirectoryExists(path))
-                {
-                    if (_fileSystem.FileExists(path))
-                        throw Own(new IOException($"Not a directory: {path}"));
-                    throw Own(new DirectoryNotFoundException($"No such directory: {path}"));
-                }
+                var directory = Stat(path) ?? throw new FileSystemException(FileSystemError.NoSuchFile, $"No such directory: {path}");
+                if (!directory.IsDirectory)
+                    throw new FileSystemException(FileSystemError.NotADirectory, $"Not a directory: {path}");
 
-                var entries = new List<SftpFileEntry>
+                var parent = Stat(path + "/..") ?? directory; // the parent of the root is the root
+                var first = new[]
                 {
-                    Entry(".", path),
-                    Entry("..", path + "/.."),
+                    new SftpFileEntry { FileName = ".", Attributes = ToAttributes(directory) },
+                    new SftpFileEntry { FileName = "..", Attributes = ToAttributes(parent) },
                 };
-                // GetDirectories also gives ".." below the root; "." and ".." are added above for every directory.
-                foreach (var dir in _fileSystem.GetDirectories(path).Where(d => d.Name != ".." && d.Name != "."))
-                    entries.Add(Entry(dir.Name, dir.FullName));
-                foreach (var file in _fileSystem.GetFiles(path))
-                    entries.Add(Entry(file.Name, file.FullName));
-
-                return new DirectoryHandle(entries.Where(e => e.Attributes != null).ToArray());
+                return new DirectoryHandle(this, first, _fileSystem.ListAsync(path, None).GetAsyncEnumerator(None), path);
             }
             catch (Exception ex)
             {
@@ -141,8 +141,9 @@ namespace SshServerModule.Sftp
         {
             try
             {
-                var info = _fileSystem.GetInfo(path) ?? throw Own(new FileNotFoundException($"No such file: {path}"));
-                return ToAttributes(info);
+                var entry = SyncBridge.Wait(_fileSystem.StatAsync(path, followLinks, None))
+                    ?? throw new FileSystemException(FileSystemError.NoSuchFile, $"No such file: {path}");
+                return ToAttributes(entry);
             }
             catch (Exception ex)
             {
@@ -155,9 +156,7 @@ namespace SshServerModule.Sftp
             _logger.LogDebug("User {Username} sets the attributes of {Path}.", _username, path);
             try
             {
-                if (_fileSystem.GetInfo(path) == null)
-                    throw Own(new FileNotFoundException($"No such file: {path}"));
-                ApplyAttributes(path, attributes, stream: null);
+                SyncBridge.Wait(_fileSystem.SetAttributesAsync(path, ToUpdate(attributes), None));
             }
             catch (Exception ex)
             {
@@ -170,10 +169,11 @@ namespace SshServerModule.Sftp
             _logger.LogInformation("User {Username} removes the file {Path}.", _username, path);
             try
             {
-                if (_fileSystem.DirectoryExists(path))
-                    throw Own(new UnauthorizedAccessException($"Is a directory, use RMDIR: {path}"));
-                if (!_fileSystem.RemoveFile(path))
-                    throw Own(new FileNotFoundException($"No such file: {path}"));
+                SyncBridge.Wait(_fileSystem.DeleteFileAsync(path, None));
+            }
+            catch (FileSystemException ex) when (ex.Error == FileSystemError.IsADirectory)
+            {
+                throw Own(new UnauthorizedAccessException($"Is a directory, use RMDIR: {path}"));
             }
             catch (Exception ex)
             {
@@ -181,17 +181,13 @@ namespace SshServerModule.Sftp
             }
         }
 
+        /// <summary>SSH_FXP_RENAME: SFTP version 3 does not overwrite an existing target.</summary>
         public void Rename(string oldPath, string newPath)
         {
             _logger.LogInformation("User {Username} renames {OldPath} to {NewPath}.", _username, oldPath, newPath);
             try
             {
-                if (_fileSystem.GetInfo(oldPath) == null)
-                    throw Own(new FileNotFoundException($"No such file: {oldPath}"));
-                if (_fileSystem.GetInfo(newPath) != null)
-                    throw Own(new IOException($"The target already exists: {newPath}")); // SFTP v3: RENAME does not overwrite
-                if (!_fileSystem.MoveFileOrDirectory(oldPath, newPath))
-                    throw Own(new IOException($"Cannot rename {oldPath} to {newPath}."));
+                SyncBridge.Wait(_fileSystem.RenameAsync(oldPath, newPath, RenameFlags.None, None));
             }
             catch (Exception ex)
             {
@@ -205,7 +201,7 @@ namespace SshServerModule.Sftp
             _logger.LogInformation("User {Username} renames {OldPath} to {NewPath} (replacing).", _username, oldPath, newPath);
             try
             {
-                _fileSystem.RenameReplacing(oldPath, newPath);
+                SyncBridge.Wait(_fileSystem.RenameAsync(oldPath, newPath, RenameFlags.ReplaceExisting, None));
             }
             catch (Exception ex)
             {
@@ -221,8 +217,8 @@ namespace SshServerModule.Sftp
         {
             try
             {
-                var space = _fileSystem.GetStorageSpace(path)
-                    ?? throw Own(new IOException($"The storage space is not known: {path}"));
+                var space = SyncBridge.Wait(_fileSystem.GetStorageSpaceAsync(path, None))
+                    ?? throw new FileSystemException(FileSystemError.Failure, $"The storage space is not known: {path}");
                 return new SftpFileSystemStats
                 {
                     BlockSize = StatVfsBlockSize,
@@ -239,7 +235,7 @@ namespace SshServerModule.Sftp
             }
         }
 
-        /// <summary>fsync@openssh.com: writes the data of an open file to the storage.</summary>
+        /// <summary>fsync@openssh.com: writes the data of an open file to the storage (<see cref="IFileHandle.FlushAsync"/>).</summary>
         public void Sync(ISftpFileHandle handle)
         {
             if (handle is not FileHandle file)
@@ -252,14 +248,9 @@ namespace SshServerModule.Sftp
             _logger.LogInformation("User {Username} creates the directory {Path}.", _username, path);
             try
             {
-                if (_fileSystem.GetInfo(path) != null)
-                    throw Own(new IOException($"Already exists: {path}"));
-                if (!_fileSystem.DirectoryExists(path + "/.."))
-                    throw Own(new DirectoryNotFoundException($"No such directory: {path}/.."));
-                if (!_fileSystem.MakeDirectory(path))
-                    throw Own(new IOException($"Cannot create the directory {path}."));
+                SyncBridge.Wait(_fileSystem.CreateDirectoryAsync(path, None));
                 if (attributes?.Permissions is { } permissions)
-                    _fileSystem.SetPermissions(path, permissions);
+                    SyncBridge.Wait(_fileSystem.SetAttributesAsync(path, new FileAttributesUpdate { Permissions = permissions }, None));
             }
             catch (Exception ex)
             {
@@ -272,14 +263,7 @@ namespace SshServerModule.Sftp
             _logger.LogInformation("User {Username} removes the directory {Path}.", _username, path);
             try
             {
-                if (!_fileSystem.DirectoryExists(path))
-                {
-                    if (_fileSystem.FileExists(path))
-                        throw Own(new IOException($"Not a directory: {path}"));
-                    throw Own(new DirectoryNotFoundException($"No such directory: {path}"));
-                }
-                if (!_fileSystem.RemoveDirectory(path))
-                    throw Own(new UnauthorizedAccessException($"Cannot remove the directory {path}."));
+                SyncBridge.Wait(_fileSystem.DeleteDirectoryAsync(path, None));
             }
             catch (Exception ex)
             {
@@ -287,71 +271,40 @@ namespace SshServerModule.Sftp
             }
         }
 
-        private SftpFileEntry Entry(string name, string path)
-        {
-            FileSystemEntryInfo info;
-            try
-            {
-                info = _fileSystem.GetInfo(path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                info = null; // for example removed after the listing
-            }
-            return new SftpFileEntry { FileName = name, Attributes = info == null ? null : ToAttributes(info) };
-        }
+        private FileSystemEntry? Stat(string path) => SyncBridge.Wait(_fileSystem.StatAsync(path, followLinks: true, None));
 
-        private static SftpFileAttributes ToAttributes(FileSystemEntryInfo info)
+        private static SftpFileAttributes ToAttributes(FileSystemEntry entry)
         {
-            var isDirectory = info.Type == ResourceType.Folder;
+            var isDirectory = entry.IsDirectory;
+            var permissions = entry.Permissions ?? (isDirectory ? DefaultDirectoryPermissions : DefaultFilePermissions);
             return new SftpFileAttributes
             {
-                Size = isDirectory ? null : info.Length,
-                Permissions = (isDirectory ? DirectoryType : RegularFileType) | (info.Permissions & 0x1FF),
-                AccessTime = ToUnixTime(info.LastAccessUtc),
-                ModificationTime = ToUnixTime(info.LastWriteUtc),
+                Size = isDirectory ? null : (ulong)Math.Max(0, entry.Size),
+                UserId = entry.UserId,
+                GroupId = entry.GroupId,
+                Permissions = (isDirectory ? DirectoryType : RegularFileType) | (permissions & 0x1FF),
+                AccessTime = ToUnixTime(entry.LastAccessTimeUtc),
+                ModificationTime = ToUnixTime(entry.LastWriteTimeUtc),
             };
         }
 
         /// <summary>
-        /// Applies size, permissions and times (SSH_FXP_SETSTAT and SSH_FXP_FSETSTAT). The uid and gid
-        /// are ignored: the server has no user or group ids to give.
+        /// The size, permissions and times of SSH_FXP_SETSTAT and SSH_FXP_FSETSTAT. The uid and gid are ignored: the
+        /// server has no user or group ids to give.
         /// </summary>
-        private void ApplyAttributes(string path, SftpFileAttributes attributes, Stream stream)
+        private static FileAttributesUpdate ToUpdate(SftpFileAttributes? attributes)
         {
             if (attributes == null)
-                return;
-
-            if (attributes.Size is { } size)
+                return new FileAttributesUpdate();
+            if (attributes.Size > long.MaxValue)
+                throw new FileSystemException(FileSystemError.Failure, "The size is too large.");
+            return new FileAttributesUpdate
             {
-                if (size > long.MaxValue)
-                    throw Own(new IOException("The size is too large."));
-                if (stream != null)
-                    stream.SetLength((long)size);
-                else
-                    _fileSystem.SetFileLength(path, (long)size);
-            }
-
-            if (attributes.Permissions is { } permissions)
-                _fileSystem.SetPermissions(path, permissions);
-
-            if (attributes.AccessTime != null || attributes.ModificationTime != null)
-            {
-                stream?.Flush(); // a later flush of buffered data would change the write time again
-                _fileSystem.SetTimes(path, FromUnixTime(attributes.AccessTime), FromUnixTime(attributes.ModificationTime));
-            }
-        }
-
-        private static FileMode MapMode(SftpOpenFlags flags)
-        {
-            // The engine has already rejected TRUNC or EXCL without CREAT.
-            if ((flags & SftpOpenFlags.Create) == 0)
-                return FileMode.Open;
-            if ((flags & SftpOpenFlags.Exclusive) != 0)
-                return FileMode.CreateNew;
-            if ((flags & SftpOpenFlags.Truncate) != 0)
-                return FileMode.Create;
-            return FileMode.OpenOrCreate;
+                Size = (long?)attributes.Size,
+                Permissions = attributes.Permissions,
+                LastAccessTimeUtc = FromUnixTime(attributes.AccessTime),
+                LastWriteTimeUtc = FromUnixTime(attributes.ModificationTime),
+            };
         }
 
         private static uint ToUnixTime(DateTime utc)
@@ -371,74 +324,88 @@ namespace SshServerModule.Sftp
         }
 
         /// <summary>
-        /// Replaces an exception of the file system with one of the same kind for the engine, with only the
-        /// virtual path in its message. The original exception, which can contain the physical path, is
-        /// logged here: at debug level when a client can cause it (missing path, denied access, I/O error
-        /// such as an existing target), at error level otherwise. An unexpected exception becomes an
-        /// <see cref="InvalidOperationException"/>, which the engine answers with SSH_FX_FAILURE and logs as
-        /// an error.
+        /// Replaces an exception of the file system with the exception type that the engine maps to the SSH_FX code of
+        /// its <see cref="FileSystemError"/>, with only the virtual path in its message. The original exception is logged
+        /// here: at debug level for a <see cref="FileSystemException"/> (a client can cause it), at error level otherwise.
+        /// An unexpected exception becomes an <see cref="InvalidOperationException"/>, which the engine answers with
+        /// SSH_FX_FAILURE and logs as an error.
         /// </summary>
         private Exception Translate(Exception ex, string path)
         {
             if (ex.Data.Contains(OwnExceptionKey))
                 return ex;
 
-            if (ex is IOException or UnauthorizedAccessException or ArgumentException)
-                _logger.LogDebug(ex, "SFTP operation of user {Username} on {Path} failed.", _username, path);
-            else
-                _logger.LogError(ex, "SFTP operation of user {Username} on {Path} failed unexpectedly.", _username, path);
-
-            return ex switch
+            if (ex is not FileSystemException fileSystemException)
             {
-                FileNotFoundException => Own(new FileNotFoundException($"No such file: {path}")),
-                DirectoryNotFoundException => Own(new DirectoryNotFoundException($"No such file: {path}")),
-                UnauthorizedAccessException => Own(new UnauthorizedAccessException($"Permission denied: {path}")),
-                ArgumentException => Own(new ArgumentException($"Bad request: {path}")),
-                IOException => Own(new IOException($"Failure: {path}")),
-                _ => Own(new InvalidOperationException($"Internal error: {path}")),
-            };
+                _logger.LogError(ex, "SFTP operation of user {Username} on {Path} failed unexpectedly.", _username, path);
+                return Own(new InvalidOperationException($"Internal error: {path}"));
+            }
+
+            _logger.LogDebug(ex, "SFTP operation of user {Username} on {Path} failed.", _username, path);
+            return Own(fileSystemException.Error switch
+            {
+                FileSystemError.NoSuchFile => new FileNotFoundException($"No such file: {path}"),
+                FileSystemError.PermissionDenied => new UnauthorizedAccessException($"Permission denied: {path}"),
+                FileSystemError.OpNotSupported => new NotSupportedException($"Operation not supported by the storage: {path}"),
+                FileSystemError.InvalidPath => new ArgumentException($"Bad request: {path}"),
+                FileSystemError.NotADirectory => new IOException($"Not a directory: {path}"),
+                FileSystemError.IsADirectory => new IOException($"Is a directory: {path}"),
+                FileSystemError.DirectoryNotEmpty => new IOException($"The directory is not empty: {path}"),
+                FileSystemError.AlreadyExists => new IOException($"Already exists: {path}"),
+                FileSystemError.QuotaExceeded => new IOException($"Quota exceeded: {path}"),
+                _ => new IOException($"Failure: {path}"),
+            });
         }
 
         private sealed class FileHandle : ISftpFileHandle
         {
             private readonly SftpFileSystemAdapter _owner;
-            private readonly Stream _stream;
+            private readonly IFileHandle _handle;
             private readonly string _path;
-            private readonly bool _append;
             private bool _disposed;
 
-            public FileHandle(SftpFileSystemAdapter owner, Stream stream, string path, bool append)
+            public FileHandle(SftpFileSystemAdapter owner, IFileHandle handle, string path)
             {
                 _owner = owner;
-                _stream = stream;
+                _handle = handle;
                 _path = path;
-                _append = append;
             }
 
             public int Read(long offset, Span<byte> buffer)
             {
+                // The engine gives a span; the storage needs memory that survives an await.
+                var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
                 try
                 {
-                    _stream.Position = offset;
-                    return _stream.Read(buffer);
+                    var read = SyncBridge.Wait(_handle.ReadAsync(offset, rented.AsMemory(0, buffer.Length), None));
+                    rented.AsSpan(0, read).CopyTo(buffer);
+                    return read;
                 }
                 catch (Exception ex)
                 {
                     throw _owner.Translate(ex, _path);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(rented);
                 }
             }
 
             public void Write(long offset, ReadOnlySpan<byte> data)
             {
+                var rented = ArrayPool<byte>.Shared.Rent(data.Length);
                 try
                 {
-                    // SSH_FXF_APPEND: every write goes to the end of the file.
-                    _stream.Position = _append ? _stream.Length : offset;
-                    _stream.Write(data);
+                    data.CopyTo(rented);
+                    SyncBridge.Wait(_handle.WriteAsync(offset, rented.AsMemory(0, data.Length), None));
                 }
                 catch (Exception ex)
                 {
                     throw _owner.Translate(ex, _path);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(rented);
                 }
             }
 
@@ -446,12 +413,7 @@ namespace SshServerModule.Sftp
             {
                 try
                 {
-                    var info = _owner._fileSystem.GetInfo(_path);
-                    var attributes = info != null && info.Type == ResourceType.File
-                        ? ToAttributes(info)
-                        : new SftpFileAttributes { Permissions = RegularFileType | 0x1A4 }; // removed or replaced while open
-                    attributes.Size = (ulong)_stream.Length; // includes data that is not flushed yet
-                    return attributes;
+                    return ToAttributes(SyncBridge.Wait(_handle.StatAsync(None)));
                 }
                 catch (Exception ex)
                 {
@@ -463,7 +425,7 @@ namespace SshServerModule.Sftp
             {
                 try
                 {
-                    _owner.ApplyAttributes(_path, attributes, _stream);
+                    SyncBridge.Wait(_handle.SetAttributesAsync(ToUpdate(attributes), None));
                 }
                 catch (Exception ex)
                 {
@@ -471,18 +433,11 @@ namespace SshServerModule.Sftp
                 }
             }
 
-            /// <summary>
-            /// Writes the buffered data to the storage. A <see cref="FileStream"/> flushes to the disk (fsync);
-            /// another stream flushes to its backend.
-            /// </summary>
             public void Sync()
             {
                 try
                 {
-                    if (_stream is FileStream fileStream)
-                        fileStream.Flush(flushToDisk: true);
-                    else
-                        _stream.Flush();
+                    SyncBridge.Wait(_handle.FlushAsync(None));
                 }
                 catch (Exception ex)
                 {
@@ -491,8 +446,8 @@ namespace SshServerModule.Sftp
             }
 
             /// <summary>
-            /// Flushes and closes the file. A failed flush (for example a full disk) is reported to the
-            /// client in the CLOSE status, and the file is closed in all cases.
+            /// Flushes and closes the file. A failed flush (for example a full disk) is reported to the client in the
+            /// CLOSE status; the storage closes the file in all cases.
             /// </summary>
             public void Dispose()
             {
@@ -502,40 +457,73 @@ namespace SshServerModule.Sftp
 
                 try
                 {
-                    _stream.Flush();
+                    SyncBridge.Wait(_handle.DisposeAsync());
                 }
                 catch (Exception ex)
                 {
-                    try { _stream.Dispose(); } catch (Exception) { /* the flush error is reported */ }
                     throw _owner.Translate(ex, _path);
                 }
-                _stream.Dispose();
             }
         }
 
+        /// <summary>
+        /// "." and "..", then the entries of the storage, read as the client asks for them: a large directory is never
+        /// held in memory as a whole.
+        /// </summary>
         private sealed class DirectoryHandle : ISftpDirectoryHandle
         {
-            private readonly SftpFileEntry[] _entries;
-            private int _next;
+            private readonly SftpFileSystemAdapter _owner;
+            private readonly SftpFileEntry[] _first;
+            private readonly IAsyncEnumerator<FileSystemEntry> _entries;
+            private readonly string _path;
+            private int _nextFirst;
+            private bool _done;
 
-            public DirectoryHandle(SftpFileEntry[] entries)
+            public DirectoryHandle(SftpFileSystemAdapter owner, SftpFileEntry[] first, IAsyncEnumerator<FileSystemEntry> entries, string path)
             {
+                _owner = owner;
+                _first = first;
                 _entries = entries;
+                _path = path;
             }
 
             public SftpFileEntry[] ReadEntries(int maxCount)
             {
-                var count = Math.Min(maxCount, _entries.Length - _next);
-                if (count <= 0)
-                    return Array.Empty<SftpFileEntry>();
+                var batch = new List<SftpFileEntry>();
+                while (batch.Count < maxCount && _nextFirst < _first.Length)
+                    batch.Add(_first[_nextFirst++]);
 
-                var batch = _entries.AsSpan(_next, count).ToArray();
-                _next += count;
-                return batch;
+                try
+                {
+                    while (batch.Count < maxCount && !_done)
+                    {
+                        if (!SyncBridge.Wait(_entries.MoveNextAsync()))
+                        {
+                            _done = true;
+                            break;
+                        }
+                        var entry = _entries.Current;
+                        batch.Add(new SftpFileEntry { FileName = entry.Name, Attributes = ToAttributes(entry) });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw _owner.Translate(ex, _path);
+                }
+
+                return batch.ToArray();
             }
 
             public void Dispose()
             {
+                try
+                {
+                    SyncBridge.Wait(_entries.DisposeAsync());
+                }
+                catch (Exception ex)
+                {
+                    throw _owner.Translate(ex, _path);
+                }
             }
         }
     }
