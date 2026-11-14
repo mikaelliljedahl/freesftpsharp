@@ -113,7 +113,14 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
   (`IEventBus.AskAsync`). The first deny wins; the protocol answers "permission denied" and the storage is not touched.
 - **Audit log.** The `AuditSink` writes every event to the `AuditEntries` table of the settings database; the
   `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
-  admin UI page "Audit" and later the REST API read it through `IAuditLog`.
+  admin UI page "Audit" and the REST API (`GET /api/v1/audit`) read it through `IAuditLog`.
+- **Actor.** Every `ProviderEvent` has the actor of the change (#134): the administrator, with its API key for a REST API
+  call (`AdminActor.AuditName`, "name (API key ci)"), "self" for a change of users in the web client, else "system"
+  (the command line, the logins, the jobs and the event rules). The admin services that publish their own events
+  (administrators, roles, webhooks, event rules, API keys) take the `AdminActor`. The settings repository is a
+  singleton, so it reads the actor of the call from `AuditActorContext` (an `AsyncLocal` in one singleton, not a
+  parameter of every method); `AdminScopedSettingsRepository` sets it around each change, so the admin UI and the
+  REST API need no code of their own.
 - **Webhooks** (#66) are the plug-in `SshServer.Webhooks` (`AddWebhooks()`), with the store `IWebhookStore` of the
   settings database. The `WebhookSink` writes one outbox row (`WebhookDeliveries`) per matching asynchronous webhook,
   and the `WebhookDispatcher` (a hosted service) sends the rows with retries; it claims a row with a lease column, so
@@ -253,7 +260,8 @@ plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Au
 - **Chain.** The providers run in the order of `Auth:Providers` (default: the database, then the plug-ins); the first
   success or failure wins, "not handled" asks the next one. An exception of a provider is a failure (fail closed).
 - **Ownership.** `User.AuthenticationProvider` (null: the database) names the one provider that checks a stored user.
-- **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). The
+- **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). Its
+  JSON form is `UserAttributes` (#136), with the names and types of the REST API user; the HTTP hook answers with it. The
   `ExternalUserProvisioner` makes the user in memory; the protocol checks it like a stored user and calls
   `IUserAuthenticator.Save` when the login is verified (SSH: after the signature of a public key). The status and the
   expiry stay local.
@@ -315,6 +323,12 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
   removes only the groups of its role for its users.
 - **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
   request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
+- **Single sign-on.** The OpenID Connect sign-in (#73, `FxSshSftpServer/Security/Oidc`, `AddOidcSignIn()`, see
+  [OIDC.md](OIDC.md)) registers one handler per configured area (`OidcAdmin` for the admin UI, `OidcClient` for the web
+  client), with its own callback path. Each handler signs in to the local cookie scheme of its area with a local
+  principal (no tokens), so it never opens the other area. The account check is `AdminOidcAccounts` and
+  `ClientOidcAccounts`; the new users of the web client come from the `ExternalUserProvisioner` of the authentication
+  providers (#64) with the provider name `oidc`. Nothing is registered without configuration.
 - **One application layer for the UI and the API.** The claims, the policies, `CurrentAdmin` and the scoped views are in
   `SshServer.Administration`; the admin UI (`FxSshSftpServer`) and the REST API (`SshServer.Api`) both reference it.
 

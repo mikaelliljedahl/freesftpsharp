@@ -88,6 +88,7 @@ public class AdminUiComponentContext : BunitContext
         Services.AddSingleton<IAdminStore>(AdminStore);
         Services.AddSingleton(Administration);
         // The same scoped services as the web host (AdminAuthenticationSetup.AddAdminAuthentication).
+        Services.AddSingleton<SshServer.Interfaces.Audit.AuditActorContext>();
         Services.AddScoped<CurrentAdmin>();
         Services.AddScoped<AdminScopedSettingsRepository>();
         Services.AddScoped<ScopedAuditLog>();

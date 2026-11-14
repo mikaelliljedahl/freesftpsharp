@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
+using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Storage;
 
@@ -22,16 +23,20 @@ namespace SshServer.Administration
     /// may read them (to give them to users). A scoped administrator sees only the groups of its role, creates groups with
     /// its role, and adds or removes only those groups for its users: a group outside its scope stays as it is.</item>
     /// </list>
+    /// Every change is made with the administrator as the actor of its provider event (<see cref="AuditActorContext"/>,
+    /// #134): its name, and the name of the API key of a REST API call (<see cref="AdminActor.AuditName"/>).
     /// </summary>
     public sealed class AdminScopedSettingsRepository : ISettingsRepository
     {
         private readonly ISettingsRepository _inner;
         private readonly CurrentAdmin _current;
+        private readonly AuditActorContext _actors;
 
-        public AdminScopedSettingsRepository(ISettingsRepository inner, CurrentAdmin current)
+        public AdminScopedSettingsRepository(ISettingsRepository inner, CurrentAdmin current, AuditActorContext actors)
         {
             _inner = inner;
             _current = current;
+            _actors = actors;
         }
 
         /// <summary>Every signed-in administrator may read the settings (the dashboard shows them).</summary>
@@ -46,8 +51,10 @@ namespace SshServer.Administration
 
         public bool UpdateServerSettings(ServerSettings updatedSettings)
         {
-            _current.Actor.Demand(AdminPermissions.ManageSettings);
-            return _inner.UpdateServerSettings(updatedSettings);
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageSettings);
+            using (As(actor))
+                return _inner.UpdateServerSettings(updatedSettings);
         }
 
         /// <summary>The user, or null when there is none or it is not visible to the administrator.</summary>
@@ -77,7 +84,8 @@ namespace SshServer.Administration
                     throw new AdminAccessDeniedException("You can only create users with your own role.");
             }
             DemandGroupChanges(actor, null, newUser);
-            return _inner.AddUser(newUser);
+            using (As(actor))
+                return _inner.AddUser(newUser);
         }
 
         public bool UpdateUser(User updatedUser)
@@ -90,14 +98,18 @@ namespace SshServer.Administration
             if (actor.ScopeRoleId != null)
                 updatedUser.RoleId = stored.RoleId;
             DemandGroupChanges(actor, stored, updatedUser);
-            return _inner.UpdateUser(updatedUser);
+            using (As(actor))
+                return _inner.UpdateUser(updatedUser);
         }
 
         public bool RemoveUser(string username)
         {
             var actor = _current.Actor;
             actor.Demand(AdminPermissions.ManageUsers);
-            return actor.CanSee(_inner.GetUser(username)) && _inner.RemoveUser(username);
+            if (!actor.CanSee(_inner.GetUser(username)))
+                return false;
+            using (As(actor))
+                return _inner.RemoveUser(username);
         }
 
         /// <summary>
@@ -118,20 +130,26 @@ namespace SshServer.Administration
 
         public bool AddVirtualFolder(VirtualFolder folder)
         {
-            _current.Actor.Demand(AdminPermissions.ManageFolders);
-            return _inner.AddVirtualFolder(folder);
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageFolders);
+            using (As(actor))
+                return _inner.AddVirtualFolder(folder);
         }
 
         public bool UpdateVirtualFolder(VirtualFolder folder)
         {
-            _current.Actor.Demand(AdminPermissions.ManageFolders);
-            return _inner.UpdateVirtualFolder(folder);
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageFolders);
+            using (As(actor))
+                return _inner.UpdateVirtualFolder(folder);
         }
 
         public bool RemoveVirtualFolder(int id)
         {
-            _current.Actor.Demand(AdminPermissions.ManageFolders);
-            return _inner.RemoveVirtualFolder(id);
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageFolders);
+            using (As(actor))
+                return _inner.RemoveVirtualFolder(id);
         }
 
         /// <summary>The groups in the scope of an administrator who manages groups or users.</summary>
@@ -158,7 +176,8 @@ namespace SshServer.Administration
                 if (group.RoleId != scope)
                     throw new AdminAccessDeniedException("You can only create groups with your own role.");
             }
-            return _inner.AddGroup(group);
+            using (As(actor))
+                return _inner.AddGroup(group);
         }
 
         public bool UpdateGroup(Group group)
@@ -170,15 +189,22 @@ namespace SshServer.Administration
                 return false;
             if (actor.ScopeRoleId != null)
                 group.RoleId = stored.RoleId;
-            return _inner.UpdateGroup(group);
+            using (As(actor))
+                return _inner.UpdateGroup(group);
         }
 
         public bool RemoveGroup(int id)
         {
             var actor = _current.Actor;
             actor.Demand(AdminPermissions.ManageGroups);
-            return actor.CanSee(_inner.GetGroup(id)) && _inner.RemoveGroup(id);
+            if (!actor.CanSee(_inner.GetGroup(id)))
+                return false;
+            using (As(actor))
+                return _inner.RemoveGroup(id);
         }
+
+        /// <summary>The actor of the provider events of the inner call.</summary>
+        private IDisposable As(AdminActor actor) => _actors.Begin(actor.AuditName);
 
         private static bool CanReadGroups(AdminActor actor) =>
             actor.Has(AdminPermissions.ManageGroups) || actor.Has(AdminPermissions.ManageUsers);

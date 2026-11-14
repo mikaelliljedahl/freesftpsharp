@@ -12,7 +12,7 @@ provider; with `Settings:Provider=LiteDb` the page says that they are off.
 
 | Trigger | When the rule runs |
 | --- | --- |
-| On events | After one of the selected events, in the background, for example `File.Upload`, `File.Delete`, `Auth.LoginFailed`, `Auth.IpBanned`, `Provider.Add`. A rule on `File.PreUpload`, `File.PreDownload` or `File.PreDelete` runs **before** the operation: the client waits, and when an action fails (or the rule does not end within `EventRules:SyncTimeoutSeconds`) the operation is refused with "permission denied". Such a rule cannot have other events. |
+| On events | After one of the selected events, in the background, for example `File.Upload`, `File.Delete`, `Auth.LoginFailed`, `Auth.IpBanned`, `Auth.IdpLogin` (a sign-in through OpenID Connect, [OIDC.md](OIDC.md)), `Provider.Add`. A rule on `File.PreUpload`, `File.PreDownload` or `File.PreDelete` runs **before** the operation: the client waits, and when an action fails (or the rule does not end within `EventRules:SyncTimeoutSeconds`) the operation is refused with "permission denied". Such a rule cannot have other events. |
 | On a schedule | A cron expression with five fields (minute hour day month weekday, for example `0 3 * * *`) or a macro such as `@hourly`, in a time zone (an IANA id such as `Europe/Stockholm`; empty is UTC). After a stop of the server, the missed occurrences give one run, not one each. |
 | On demand | Only the **Run now** button. Scheduled rules have it too. |
 

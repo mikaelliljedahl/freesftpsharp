@@ -1,7 +1,9 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
+using FxSshSftpServer.Security.Oidc;
 using FxSshSftpServer.WebClient;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -35,8 +37,9 @@ namespace FxSshSftpServer.Pages.Client
         private readonly ILogger<LoginModel> _logger;
 
         public LoginModel(PasswordLoginService login, ClientLoginThrottle throttle, ClientLoginFlow flow,
-            ClientPendingLogin pending, ILogger<LoginModel> logger)
+            ClientPendingLogin pending, IOptions<ClientOidcOptions> oidc, ILogger<LoginModel> logger)
         {
+            Oidc = oidc.Value;
             _login = login;
             _throttle = throttle;
             _flow = flow;
@@ -56,16 +59,38 @@ namespace FxSshSftpServer.Pages.Client
 
         public string ErrorMessage { get; private set; }
 
+        /// <summary>The OpenID Connect sign-in (#73). Its button shows only when the handler is registered.</summary>
+        public ClientOidcOptions Oidc { get; }
+
+        public bool OidcEnabled { get; private set; }
+
+        /// <summary>The password form; gone with <see cref="OidcSignInOptions.DisableLocalLogin"/>.</summary>
+        public bool ShowLocalLogin => !(Oidc.IsEnabled && Oidc.DisableLocalLogin);
+
         public async Task<IActionResult> OnGetAsync()
         {
             var current = await HttpContext.AuthenticateAsync(ClientAuth.Scheme);
             if (current.Succeeded && ClientClaims.Session(current.Principal) != null)
                 return LocalRedirect(ClientAuth.BasePath);
+            OidcEnabled = Oidc.IsEnabled && await OidcSignInSetup.IsEnabledAsync(HttpContext, OidcSignInSetup.ClientScheme);
+            ErrorMessage = OidcRefusalText.Message(OidcRefusalText.Parse(Request.Query[OidcRefusalText.QueryName]), Oidc.DisplayName);
             return Page();
+        }
+
+        /// <summary>"Sign in with ..." (a link: a form would break the form-action CSP with the redirect to the provider): the code flow at the provider, back to <see cref="OidcSignInSetup.ClientCallbackPath"/>.</summary>
+        public async Task<IActionResult> OnGetOidcAsync()
+        {
+            if (!Oidc.IsEnabled || !await OidcSignInSetup.IsEnabledAsync(HttpContext, OidcSignInSetup.ClientScheme))
+                return NotFound();
+            var target = ClientLoginFlow.IsClientUrl(this, ReturnUrl) ? ReturnUrl : ClientAuth.BasePath;
+            return Challenge(new AuthenticationProperties { RedirectUri = OidcSignInSetup.ClientDonePath + "?ReturnUrl=" + Uri.EscapeDataString(target) },
+                OidcSignInSetup.ClientScheme);
         }
 
         public async Task<IActionResult> OnPostAsync()
         {
+            if (!ShowLocalLogin)
+                return NotFound();
             var client = HttpContext.Connection.RemoteIpAddress?.ToString();
             _pending.Clear(HttpContext);
 
@@ -101,6 +126,7 @@ namespace FxSshSftpServer.Pages.Client
 
         private IActionResult Failed(string message, int statusCode)
         {
+            OidcEnabled = Oidc.IsEnabled;
             ErrorMessage = message;
             Password = null;
             ModelState.Remove(nameof(Password));

@@ -263,6 +263,9 @@ OpenSSH connects with its default settings.
   [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md#share-links).
 - FTP and FTPS (issue #72, opt-in): the same users and storage over FTP with explicit TLS (required by default),
   passive ports in a configured range, MLSD and resume, for FileZilla, WinSCP, lftp and curl. See [docs/FTP.md](docs/FTP.md).
+- OpenID Connect sign-in (issue #73, opt-in): administrators and web client users sign in with Keycloak, Entra ID or
+  another identity provider; required role, accounts created at the first sign-in with group mapping, and the
+  password form can be turned off. See [docs/OIDC.md](docs/OIDC.md).
 
 
 ### Features planned for the future

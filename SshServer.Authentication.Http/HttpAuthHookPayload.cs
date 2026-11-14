@@ -1,16 +1,18 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SshServer.Interfaces.Authentication;
-using SshServer.Interfaces.Permissions;
 
 namespace SshServer.Authentication.Http;
 
 /// <summary>
-/// The JSON of the HTTP authentication hook (issue #64), in snake_case like the external authentication hook of SFTPGo.
-/// <para>Request: <c>{"username", "password" (password logins), "public_key" (an authorized_keys line, key logins),
-/// "method" ("password", "publickey", "keyboard-interactive"), "ip", "protocol"}</c>.</para>
-/// <para>Answer 200: a user, every field optional: <c>{"username" (must be the name of the request), "primary_group",
-/// "groups", "permissions" ({"/": ["List", "Download"]}), "allowed_ips", "max_sessions", "description"}</c>.</para>
+/// The JSON of the HTTP authentication hook (issue #64).
+/// <para>Request (snake_case, unchanged): <c>{"username", "password" (password logins), "public_key" (an authorized_keys
+/// line, key logins), "method" ("password", "publickey", "keyboard-interactive"), "ip", "protocol"}</c>.</para>
+/// <para>Answer 200: a <see cref="UserAttributes"/> (#136), the names and types of the user of the REST API, every field
+/// optional: <c>{"username" (must be the name of the request), "primaryGroup", "groups", "permissions"
+/// ({"/": ["List", "Download"]}), "onlyWhitelistedIps", "whitelistedIps", "maxSessions", "allowedProtocols" (["sftp", "webdav"]), "description"}</c>.</para>
+/// <para>Deprecated: the snake_case answer of the first version (<c>primary_group</c>, <c>allowed_ips</c>,
+/// <c>max_sessions</c>) is still read for one release; <see cref="ParseUser"/> tells when an answer used it.</para>
 /// </summary>
 public static class HttpAuthHookPayload
 {
@@ -31,9 +33,18 @@ public static class HttpAuthHookPayload
         return json.ToJsonString();
     }
 
-    /// <summary>Reads the answer of a 200. Throws <see cref="FormatException"/> when it is not a valid user for <paramref name="username"/>.</summary>
-    public static ExternalUser ParseUser(string? body, string username)
+    /// <summary>The snake_case names of the deprecated answer, and their names in <see cref="UserAttributes"/>.</summary>
+    internal static readonly IReadOnlyList<(string Legacy, string Current)> LegacyNames =
+        [("primary_group", "primaryGroup"), ("allowed_ips", "whitelistedIps"), ("max_sessions", "maxSessions")];
+
+    /// <summary>
+    /// Reads the answer of a 200. Throws <see cref="FormatException"/> when it is not a valid user for
+    /// <paramref name="username"/>. <paramref name="legacyFormat"/> is true when the answer has a snake_case name of the
+    /// deprecated format.
+    /// </summary>
+    public static ExternalUser ParseUser(string? body, string username, out bool legacyFormat)
     {
+        legacyFormat = false;
         if (string.IsNullOrWhiteSpace(body))
             return new ExternalUser();
 
@@ -46,22 +57,39 @@ public static class HttpAuthHookPayload
         {
             throw new FormatException("the answer is not JSON");
         }
-        if (node is not JsonObject user)
+        if (node is not JsonObject json)
             throw new FormatException("the answer is not a JSON object");
 
-        var name = String(user, "username");
-        if (name != null && !string.Equals(name, username, StringComparison.OrdinalIgnoreCase))
-            throw new FormatException("the answer is for another user");
-
-        return new ExternalUser
+        foreach (var (legacy, current) in LegacyNames)
         {
-            PrimaryGroup = String(user, "primary_group"),
-            Groups = Strings(user, "groups"),
-            Permissions = Permissions(user),
-            AllowedIps = Strings(user, "allowed_ips"),
-            MaxSessions = user["max_sessions"] is { } max ? Int(max, "max_sessions") : null,
-            Description = String(user, "description"),
-        };
+            if (!json.ContainsKey(legacy))
+                continue;
+            if (json.Any(p => string.Equals(p.Key, current, StringComparison.OrdinalIgnoreCase)))
+                throw new FormatException($"the answer has both \"{legacy}\" and \"{current}\"");
+            legacyFormat = true;
+            var value = json[legacy];
+            json.Remove(legacy);
+            json[current] = value;
+        }
+
+        UserAttributes? user;
+        try
+        {
+            user = json.Deserialize<UserAttributes>(UserAttributes.JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            var name = ex.Path?.TrimStart('$', '.').Split('.', '[')[0];
+            if (legacyFormat && LegacyNames.FirstOrDefault(n => string.Equals(n.Current, name, StringComparison.OrdinalIgnoreCase)).Legacy is { } legacyName)
+                name = legacyName;
+            throw new FormatException(string.IsNullOrEmpty(name) ? "a value has the wrong type" : $"\"{name}\" has the wrong type");
+        }
+        if (user == null)
+            return new ExternalUser();
+
+        if (user.Username != null && !string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase))
+            throw new FormatException("the answer is for another user");
+        return user.ToExternalUser();
     }
 
     private static string AuthorizedKeysLine(byte[] blob)
@@ -75,46 +103,5 @@ public static class HttpAuthHookPayload
                 type = System.Text.Encoding.ASCII.GetString(blob, 4, length);
         }
         return $"{type} {Convert.ToBase64String(blob)}";
-    }
-
-    private static string? String(JsonObject json, string name) => json[name] switch
-    {
-        null => null,
-        JsonValue value when value.TryGetValue<string>(out var text) => text,
-        _ => throw new FormatException($"\"{name}\" is not a string"),
-    };
-
-    private static int Int(JsonNode node, string name) =>
-        node is JsonValue value && value.TryGetValue<int>(out var number) ? number : throw new FormatException($"\"{name}\" is not a number");
-
-    private static List<string>? Strings(JsonObject json, string name) => json[name] switch
-    {
-        null => null,
-        JsonArray array => array.Select(item => item is JsonValue v && v.TryGetValue<string>(out var s) ? s : throw new FormatException($"\"{name}\" is not a list of strings")).ToList(),
-        _ => throw new FormatException($"\"{name}\" is not a list"),
-    };
-
-    private static Dictionary<string, FilePermissions>? Permissions(JsonObject json)
-    {
-        if (json["permissions"] is null)
-            return null;
-        if (json["permissions"] is not JsonObject paths)
-            throw new FormatException("\"permissions\" is not an object");
-        var result = new Dictionary<string, FilePermissions>(StringComparer.Ordinal);
-        foreach (var (path, value) in paths)
-        {
-            if (value is not JsonArray names)
-                throw new FormatException($"the permissions of {path} are not a list");
-            var flags = FilePermissions.None;
-            foreach (var item in names)
-            {
-                if (item is not JsonValue v || !v.TryGetValue<string>(out var text)
-                    || !Enum.TryParse<FilePermissions>(text, ignoreCase: true, out var flag) || int.TryParse(text, out _))
-                    throw new FormatException($"unknown permission in {path}");
-                flags |= flag;
-            }
-            result[path] = flags;
-        }
-        return result;
     }
 }

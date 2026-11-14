@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces.Admins;
@@ -73,6 +74,8 @@ namespace FxSshSftpServer.Security
             // The circuit checks its login again periodically; the scoped services check the permissions themselves.
             services.AddScoped<AuthenticationStateProvider, AdminRevalidatingAuthenticationStateProvider>();
             services.AddScoped<CurrentAdmin>();
+            // The scoped repository sets the administrator as the actor of the provider events (#134).
+            services.TryAddSingleton<SshServer.Interfaces.Audit.AuditActorContext>();
             services.AddScoped<AdminScopedSettingsRepository>();
             services.AddScoped<ScopedAuditLog>();
             services.AddScoped<ScopedConnections>();
@@ -138,11 +141,12 @@ namespace FxSshSftpServer.Security
                 AdminCreateCommand.Switch,
                 AdminPasswordCommand.Switch);
 
-            // The web client of the users (#69) and its share links (#70) do not need an administrator: they and the files of their pages stay open.
+            // The web client of the users (#69), its share links (#70) and its OpenID Connect sign-in (#73) do not need an administrator: they and the files of their pages stay open.
             var clientEnabled = services.GetRequiredService<IOptions<WebClient.WebClientOptions>>().Value.Enabled;
             return app.Use(async (HttpContext context, Func<Task> next) =>
             {
                 if (clientEnabled && (WebClient.WebClientSetup.IsClientPath(context.Request.Path) || WebClient.ShareAccess.IsSharePath(context.Request.Path)
+                                      || Oidc.OidcSignInSetup.IsClientPath(context.Request.Path)
                                       || IsStaticFile(context.Request.Path)))
                 {
                     await next();

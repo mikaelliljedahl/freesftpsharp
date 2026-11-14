@@ -1,0 +1,11 @@
+@page "/client/signin-done"
+@model SignInDoneModel
+@{
+    ViewData["Title"] = "Signed in";
+}
+@section Head {
+    <meta http-equiv="refresh" content="0;url=@Model.Target" />
+}
+<div class="client-narrow">
+    <p>Signed in. <a id="continue" href="@Model.Target">Continue</a></p>
+</div>

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using SshServer.Administration;
 using SshServer.Api.ApiKeys;
+using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 
 namespace SshServer.Api.Endpoints;
