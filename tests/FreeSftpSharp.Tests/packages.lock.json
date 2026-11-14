@@ -702,6 +702,11 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
+      "Microsoft.Win32.SystemEvents": {
+        "type": "Transitive",
+        "resolved": "6.0.0",
+        "contentHash": "hqTM5628jSsQiv+HGpiq3WKBl2c8v1KZfby2J6Pr7pEPlK9waPdgEO6b8A/+/xn/yZ9ulv8HuqK71ONy2tg67A=="
+      },
       "MimeKit.Core": {
         "type": "Transitive",
         "resolved": "5.0.0",
@@ -779,6 +784,14 @@
         "type": "Transitive",
         "resolved": "1.9.0",
         "contentHash": "eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw=="
+      },
+      "QRCoder": {
+        "type": "Transitive",
+        "resolved": "1.8.1",
+        "contentHash": "aGfRFpU/IPexAtEOEXCNxC3fMCAqgn6kqALRvXt6LxVAW0VolSDGHiyrY+o2CJgTITOsMpsrsDi7svMJaJ9Vfg==",
+        "dependencies": {
+          "System.Drawing.Common": "6.0.0"
+        }
       },
       "Serilog": {
         "type": "Transitive",
@@ -904,6 +917,14 @@
         "resolved": "11.0.0",
         "contentHash": "lKore9DXE1q8o6ss6/M7++xBpn2FMS0axaAypBspYLqY5OT1ZRPLzFGwF18l61aXfXTPpwkx5tYh4zMUHoAv/g=="
       },
+      "System.Drawing.Common": {
+        "type": "Transitive",
+        "resolved": "6.0.0",
+        "contentHash": "NfuoKUiP2nUWwKZN6twGqXioIe1zVD0RIj2t976A+czLHr2nY454RwwXs6JU9Htc6mwqL6Dn/nEL3dpVf2jOhg==",
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "6.0.0"
+        }
+      },
       "System.IO.Hashing": {
         "type": "Transitive",
         "resolved": "10.0.9",
@@ -1018,6 +1039,7 @@
           "SshServer.Filesystem.S3": "[1.0.0, )",
           "SshServer.Observability": "[1.0.0, )",
           "SshServer.Settings.Sql": "[1.0.0, )",
+          "SshServer.TwoFactor": "[1.0.0, )",
           "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
         }
@@ -1094,6 +1116,15 @@
           "Microsoft.EntityFrameworkCore.Sqlite": "[11.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )",
           "SshServer.Settings.LiteDb": "[1.0.0, )"
+        }
+      },
+      "sshserver.twofactor": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.DataProtection.Abstractions": "[11.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "QRCoder": "[1.8.1, )",
+          "SshServer.Interfaces": "[1.0.0, )"
         }
       },
       "sshserver.webhooks": {

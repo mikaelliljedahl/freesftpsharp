@@ -32,6 +32,9 @@ public class AdminUiFactory : WebApplicationFactory<Program>
     /// <summary>The administrators and roles of the host. Seed it before the first request.</summary>
     public InMemoryAdminStore AdminStore { get; } = new();
 
+    /// <summary>The TOTP enrolments of the host (#63).</summary>
+    public InMemoryTwoFactorStore TwoFactorStore { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Production");
@@ -57,6 +60,8 @@ public class AdminUiFactory : WebApplicationFactory<Program>
             services.AddSingleton<SshServer.Interfaces.EventRules.IEventRuleStore>(new SshServer.Settings.Sql.EventRules.DisabledEventRuleStore());
             services.RemoveAll<IAdminStore>();
             services.AddSingleton<IAdminStore>(AdminStore);
+            services.RemoveAll<SshServer.Interfaces.TwoFactor.ITwoFactorStore>();
+            services.AddSingleton<SshServer.Interfaces.TwoFactor.ITwoFactorStore>(TwoFactorStore);
 
             var sshServer = services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(HostedServer)).ToList();
             foreach (var descriptor in sshServer)

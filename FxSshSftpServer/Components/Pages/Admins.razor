@@ -2,7 +2,9 @@
 @using System.Globalization
 @using System.Threading
 @attribute [Authorize(Policy = AdminPolicies.ManageAdmins)]
+@using SshServer.Interfaces.TwoFactor
 @inject AdminAdministrationService Administration
+@inject TwoFactorAdministration TwoFactor
 @inject CurrentAdmin Current
 @inject ToastService Toasts
 
@@ -41,6 +43,10 @@
                                     @if (admin.Status != AdminStatus.Enabled)
                                     {
                                         <span class="badge text-bg-secondary ms-1">disabled</span>
+                                    }
+                                    @if (twoFactorAdmins.Contains(admin.Id))
+                                    {
+                                        <span class="badge text-bg-success ms-1" title="Two-factor authentication (TOTP)">2FA</span>
                                     }
                                     @if (admin.ScopeRoleId is { } scope)
                                     {
@@ -154,6 +160,18 @@
                             <label class="form-check-label" for="admin-enabled">Enabled</label>
                         </div>
 
+                        @if (!form.IsNew)
+                        {
+                            <fieldset class="border rounded p-3 mb-3">
+                                <legend class="float-none w-auto px-2 fs-6 mb-0">Two-factor authentication</legend>
+                                <TwoFactorPanel Target="TwoFactorTarget.Admin(form.Username)" OnChanged="LoadAsync" />
+                                @if (!TwoFactor.IsSelf(TwoFactorTarget.Admin(form.Username)))
+                                {
+                                    <div class="form-text">Each administrator sets up its own app (menu "Two-factor authentication").</div>
+                                }
+                            </fieldset>
+                        }
+
                         <div class="d-flex justify-content-end gap-2">
                             <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
                             <button type="submit" class="btn btn-primary" disabled="@saving"><i class="bi bi-floppy"></i> Save</button>
@@ -172,6 +190,7 @@
 @code {
     private IReadOnlyList<Admin> admins = Array.Empty<Admin>();
     private IReadOnlyList<Role> roles = Array.Empty<Role>();
+    private IReadOnlySet<int> twoFactorAdmins = new HashSet<int>();
     private AdminForm form;
     private string pendingDelete;
     private bool saving;
@@ -184,6 +203,7 @@
         var actor = Current.Actor;
         admins = await Administration.ListAdminsAsync(actor, CancellationToken.None);
         roles = await Administration.ListRolesAsync(actor, CancellationToken.None);
+        twoFactorAdmins = await TwoFactor.ListEnabledAsync(TwoFactorSubjectKind.Admin, CancellationToken.None);
     }
 
     private void StartNew() => form = AdminForm.New();

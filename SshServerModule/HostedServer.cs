@@ -15,6 +15,7 @@ using SshServer.Interfaces.Connections;
 using SshServerModule.Connections;
 using SshServer.Interfaces.Net;
 using SshServer.Interfaces.Users;
+using SshServer.Interfaces.TwoFactor;
 using SshServerModule.Sftp;
 using System;
 using System.Collections.Generic;
@@ -46,6 +47,13 @@ namespace FxSsh.SshServerModule
         private readonly IConnectionRegistry _connections;
         private readonly IEventBus _events;
         private readonly IEffectiveUserSettingsService _userSettings;
+        private readonly ITwoFactorVerifier _twoFactor;
+
+        /// <summary>The prompt of the TOTP verification code (keyboard-interactive, echo off).</summary>
+        internal const string CodePrompt = "Verification code: ";
+
+        /// <summary>The prompt of the password when keyboard-interactive is the password step (echo off).</summary>
+        internal const string PasswordPrompt = "Password: ";
 
         /// <summary>The protocol name of the auth events.</summary>
         internal const string SshProtocol = "SSH";
@@ -55,10 +63,12 @@ namespace FxSsh.SshServerModule
         /// <param name="connections">The open connections, shared with the admin UI (AddSshServerConnections). Null: a private registry.</param>
         /// <param name="events">The event bus for the auth and system events (AddSshServerEvents). Null: no events.</param>
         /// <param name="userSettings">The effective settings of the users with their groups (AddSshServerStorage). Null: one over <paramref name="settingsRepository"/>.</param>
+        /// <param name="twoFactor">The TOTP second factor (AddTwoFactor, #63). Null: no user has a second factor.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
             LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IConnectionRegistry connections = null,
-            IEventBus events = null, IEffectiveUserSettingsService userSettings = null)
+            IEventBus events = null, ITwoFactorVerifier twoFactor = null, IEffectiveUserSettingsService userSettings = null)
         {
+            _twoFactor = twoFactor;
             _userSettings = userSettings ?? new EffectiveUserSettingsService(settingsRepository);
             _connections = connections ?? new ConnectionRegistry(TimeProvider.System);
             _options = options?.Value;
@@ -223,26 +233,37 @@ namespace FxSsh.SshServerModule
             /// <summary>The user and method of the last request that was accepted as one step of a multi-step login.</summary>
             public User PendingUser;
             public AuthMethods PendingMethod;
+            public bool PendingTotp;
+
+            /// <summary>True when the open keyboard-interactive prompt asks for the verification code, false: the password.</summary>
+            public bool PromptAsksForCode;
         }
 
         void OnUserAuth(UserAuthService service, UserAuthArgs e, AuthAttempt attempt, Guid connectionId)
         {
             e.Result = false;
             e.PartialSuccess = false;
+            e.InfoRequest = null;
             attempt.AcceptedUsername = null;
             attempt.PendingUser = null;
-            var failure = Authenticate(e, attempt, connectionId, out var user, out var method);
-            service.AuthenticationsThatCanContinue = attempt.Progress.MethodsThatCanContinue(user)
+
+            // Keyboard-interactive (RFC 4256): the request only gets the prompt; the response is checked below.
+            if (e.AuthMethod == AuthMethodRules.KeyboardInteractiveName && e.Responses == null && SendPrompt(e, attempt))
+                return;
+
+            var failure = Authenticate(e, attempt, connectionId, out var user, out var method, out var totp);
+            service.AuthenticationsThatCanContinue = attempt.Progress.MethodsThatCanContinue(user, totp)
                 ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
 
             if (e.Result)
             {
-                if (!attempt.Progress.IsLastStep(user))
+                if (!attempt.Progress.IsLastStep(user, totp))
                 {
                     // Partial success (RFC 4252 section 5.1): FxSsh calls OnUserAuthPartiallySucceeded after the check.
                     e.PartialSuccess = true;
                     attempt.PendingUser = user;
                     attempt.PendingMethod = method;
+                    attempt.PendingTotp = totp;
                     return;
                 }
                 attempt.AcceptedMethod = attempt.Progress.Describe(method);
@@ -257,10 +278,31 @@ namespace FxSsh.SshServerModule
                     Timestamp = Now, Username = e.Username, RemoteIp = RemoteIp(e.Session), Protocol = SshProtocol,
                     Method = e.AuthMethod, Reason = failure, SessionId = connectionId.ToString(),
                 });
-            if (e.AuthMethod == "password")
+            if (e.AuthMethod == "password" || e.Responses != null) // a password, or a password or code over keyboard-interactive
                 RecordFailedLogin(e.Session);
             // Failed public keys are not counted: clients offer each key of their agent, so a user with several keys
             // would be banned. A wrong public key cannot be guessed like a password.
+        }
+
+        /// <summary>
+        /// Sets the prompt of a keyboard-interactive request: the verification code when it is the code step of the user,
+        /// otherwise the password. An unknown user or a refused method gets the password prompt too, and fails with the
+        /// response, so the prompt does not tell whether a user exists. False when no prompt is sent (a banned address).
+        /// </summary>
+        bool SendPrompt(UserAuthArgs e, AuthAttempt attempt)
+        {
+            if (e.Session.RemoteEndPoint is IPEndPoint remote && _bans.IsBanned(remote.Address))
+                return false;
+
+            var user = _settingsRepository.GetUser(e.Username);
+            var asksForCode = false;
+            if (user != null && TwoFactorEnabled(user) is { } totp && attempt.Progress.Check(user, AuthMethods.KeyboardInteractive, totp) == null)
+                asksForCode = attempt.Progress.KeyboardInteractiveAsksForCode(user, totp);
+
+            attempt.PromptAsksForCode = asksForCode;
+            e.InfoRequest = new KeyboardInteractiveInfoRequest("", "",
+                [new KeyboardInteractivePrompt(asksForCode ? CodePrompt : PasswordPrompt, false)]);
+            return true;
         }
 
         /// <summary>One step of a multi-step login is verified (for a public key: after the signature check).</summary>
@@ -269,21 +311,44 @@ namespace FxSsh.SshServerModule
             var user = attempt.PendingUser;
             if (user == null)
                 return;
-            attempt.Progress.CompleteStep(user, attempt.PendingMethod);
-            var next = attempt.Progress.MethodsThatCanContinue(user) ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
+            attempt.Progress.CompleteStep(user, attempt.PendingMethod, attempt.PendingTotp);
+            var next = attempt.Progress.MethodsThatCanContinue(user, attempt.PendingTotp) ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
             service.AuthenticationsThatCanContinue = next;
             _logger.LogInformation("Step {Step} of the login of {Username} ({Method}) succeeded; the next step is {Next}.",
                 attempt.Progress.Completed.Count, e.Username, e.AuthMethod, string.Join(",", next));
         }
 
         /// <summary>
-        /// Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null. <paramref name="user"/>
-        /// is the stored user (null when it is unknown), <paramref name="method"/> the method of the request.
+        /// Whether the user has a TOTP second factor. Null when it cannot be read: then the login is refused (fail closed).
         /// </summary>
-        string Authenticate(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, out User user, out AuthMethods method)
+        bool? TwoFactorEnabled(User user)
+        {
+            if (_twoFactor == null)
+                return false;
+            try
+            {
+                return SyncBridge.Wait(new ValueTask<bool>(_twoFactor.IsEnabledAsync(TwoFactorSubject.ForUser(user), CancellationToken.None)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "The second factor of user {Username} cannot be read; the login is refused.", user.Username);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null. <paramref name="user"/>
+        /// is the stored user (null when it is unknown), <paramref name="method"/> the method of the request,
+        /// <paramref name="totp"/> whether the user has a TOTP second factor.
+        /// </summary>
+        string Authenticate(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, out User user, out AuthMethods method, out bool totp)
         {
             method = AuthMethodRules.FromSshName(e.AuthMethod);
             user = null;
+            totp = false;
+            // A keyboard-interactive response to the password prompt costs the time of a password check in every case.
+            var passwordLike = method == AuthMethods.Password
+                               || (method == AuthMethods.KeyboardInteractive && e.Responses != null && !attempt.PromptAsksForCode);
             if (e.Session.RemoteEndPoint is IPEndPoint remote && _bans.IsBanned(remote.Address))
             {
                 // Banned while this session was open: no more attempts on it.
@@ -296,7 +361,7 @@ namespace FxSsh.SshServerModule
             if (user == null)
             {
                 attempt.Progress.Reset();
-                if (method == AuthMethods.Password)
+                if (passwordLike)
                     UserLogics.SimulatePasswordCheck(); // same time as for a real user
                 _logger.LogInformation("Authentication ({Method}) failed for unknown user {Username} from {RemoteEndPoint}.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
@@ -304,11 +369,13 @@ namespace FxSsh.SshServerModule
             }
 
             // Status, expiry, password age and session limit (issue #61): refused like a wrong credential, in the same time.
-            var lifecycle = UserLoginRules.Refusal(user, method, Now.UtcDateTime, _settingsRepository.ServerSettings.PasswordMaxAgeDays)
+            // A password over keyboard-interactive is a password too (for the password age).
+            var lifecycle = UserLoginRules.Refusal(user, passwordLike ? AuthMethods.Password : method, Now.UtcDateTime,
+                                _settingsRepository.ServerSettings.PasswordMaxAgeDays)
                             ?? UserLoginRules.SessionLimitRefusal(user, _connections.CountSessions(user.Username, connectionId));
             if (lifecycle != null)
             {
-                if (method == AuthMethods.Password)
+                if (passwordLike)
                     UserLogics.SimulatePasswordCheck();
                 _logger.LogInformation("Authentication ({Method}) of {Username} from {RemoteEndPoint} refused: {Reason}.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint, lifecycle);
@@ -323,10 +390,14 @@ namespace FxSsh.SshServerModule
                 return "the address is not in the whitelist of the user";
             }
 
-            var refusal = attempt.Progress.Check(user, method, settings.AllowedAuthMethods);
+            if (TwoFactorEnabled(user) is not { } hasTotp)
+                return "the second factor cannot be checked";
+            totp = hasTotp;
+
+            var refusal = attempt.Progress.Check(user, method, totp, settings.AllowedAuthMethods);
             if (refusal != null)
             {
-                if (method == AuthMethods.Password)
+                if (passwordLike)
                     UserLogics.SimulatePasswordCheck(); // the same time as a wrong password
                 _logger.LogInformation("Authentication ({Method}) of {Username} refused: {Reason}.", e.AuthMethod, e.Username, refusal);
                 return refusal;
@@ -343,10 +414,58 @@ namespace FxSsh.SshServerModule
                     e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
                     _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
                     return e.Result ? null : "wrong password";
+                case AuthMethods.KeyboardInteractive:
+                    return VerifyKeyboardInteractive(e, attempt, user, totp);
                 default:
                     _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
                     return "the method is not supported";
             }
+        }
+
+        /// <summary>Checks the response to the keyboard-interactive prompt: the verification code or the password.</summary>
+        string VerifyKeyboardInteractive(UserAuthArgs e, AuthAttempt attempt, User user, bool totp)
+        {
+            var answer = e.Responses is [var single] ? single : null;
+            if (attempt.PromptAsksForCode != attempt.Progress.KeyboardInteractiveAsksForCode(user, totp))
+            {
+                // The second factor of the user changed between the prompt and the response.
+                if (!attempt.PromptAsksForCode)
+                    UserLogics.SimulatePasswordCheck();
+                _logger.LogInformation("Keyboard-interactive authentication of {Username} refused: the login changed during the prompt.", e.Username);
+                return "the login changed during the prompt";
+            }
+
+            if (!attempt.PromptAsksForCode)
+            {
+                e.Result = UserLogics.VerifyUserPassword(user, answer ?? "", _settingsRepository, _logger);
+                _logger.LogInformation("Password authentication (keyboard-interactive) of {Username}. Successful: {Result}", e.Username, e.Result);
+                return e.Result ? null : "wrong password";
+            }
+
+            TwoFactorCheck check;
+            try
+            {
+                check = SyncBridge.Wait(new ValueTask<TwoFactorCheck>(_twoFactor.VerifyAsync(TwoFactorSubject.ForUser(user), answer, CancellationToken.None)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "The verification code of user {Username} cannot be checked; the login is refused.", e.Username);
+                return "the second factor cannot be checked";
+            }
+
+            e.Result = check is TwoFactorCheck.Valid or TwoFactorCheck.RecoveryCode;
+            if (check == TwoFactorCheck.RecoveryCode)
+                _logger.LogWarning("User {Username} logged in with a recovery code from {RemoteEndPoint}.", e.Username, e.Session.RemoteEndPoint);
+            else
+                _logger.LogInformation("Verification code of {Username}: {Result}.", e.Username, check);
+            return check switch
+            {
+                TwoFactorCheck.Valid or TwoFactorCheck.RecoveryCode => null,
+                TwoFactorCheck.Replayed => "the verification code was used already",
+                TwoFactorCheck.LockedOut => "too many wrong verification codes",
+                TwoFactorCheck.NotEnabled => "the second factor is not set up any more",
+                _ => "wrong verification code",
+            };
         }
 
         void RecordFailedLogin(Session session)

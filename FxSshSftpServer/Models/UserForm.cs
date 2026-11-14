@@ -60,6 +60,9 @@ namespace FxSshSftpServer.Models
         /// <summary>The value of <see cref="MultiStep"/> for [Password, PublicKey].</summary>
         public const string PasswordThenKey = "password,publickey";
 
+        /// <summary>The value of <see cref="MultiStep"/> for [PublicKey, KeyboardInteractive] (the key, then the TOTP code, #63).</summary>
+        public const string KeyThenKeyboardInteractive = "publickey,keyboard-interactive";
+
         public bool AllowPassword { get; set; } = true;
 
         public bool AllowPublicKey { get; set; } = true;
@@ -67,7 +70,7 @@ namespace FxSshSftpServer.Models
         /// <summary>The allowed methods that the form does not show (keyboard-interactive, #63); they are kept as stored.</summary>
         public AuthMethods OtherAllowedMethods { get; set; } = AuthMethods.KeyboardInteractive;
 
-        /// <summary>Empty (one method is enough), <see cref="KeyThenPassword"/> or <see cref="PasswordThenKey"/>.</summary>
+        /// <summary>Empty (one method is enough), <see cref="KeyThenPassword"/>, <see cref="PasswordThenKey"/> or <see cref="KeyThenKeyboardInteractive"/>.</summary>
         public string MultiStep { get; set; } = "";
 
         public DateTime? LastLoginAt { get; set; }
@@ -159,6 +162,7 @@ namespace FxSshSftpServer.Models
         {
             KeyThenPassword => new List<AuthMethods> { AuthMethods.PublicKey, AuthMethods.Password },
             PasswordThenKey => new List<AuthMethods> { AuthMethods.Password, AuthMethods.PublicKey },
+            KeyThenKeyboardInteractive => new List<AuthMethods> { AuthMethods.PublicKey, AuthMethods.KeyboardInteractive },
             _ => null,
         };
 

@@ -13,7 +13,7 @@ namespace FxSsh.Messages
     /// remains as protocol documentation and is no longer read at runtime.
     ///
     /// Server -> client messages (ServiceAcceptMessage, KeyExchangeXReplyMessage,
-    /// FailureMessage, SuccessMessage, PublicKeyOkMessage, ChannelSuccessMessage,
+    /// FailureMessage, SuccessMessage, PublicKeyOkMessage, InfoRequestMessage, ChannelSuccessMessage,
     /// ChannelFailureMessage) are deliberately NOT registered: a server never
     /// receives them, so an inbound packet of those types falls through to
     /// UnknownMessage and gets an SSH_MSG_UNIMPLEMENTED reply, as before.
@@ -37,6 +37,7 @@ namespace FxSsh.Messages
             [NewKeysMessage.MessageNumber] = () => new NewKeysMessage(),
             [KeyExchangeXInitMessage.MessageNumber] = () => new KeyExchangeXInitMessage(),
             [RequestMessage.MessageNumber] = () => new RequestMessage(),
+            [InfoResponseMessage.MessageNumber] = () => new InfoResponseMessage(),
             [GlobalRequestMessage.MessageNumber] = () => new GlobalRequestMessage(),
             [RequestSuccessMessage.MessageNumber] = () => new RequestSuccessMessage(),
             [RequestFailureMessage.MessageNumber] = () => new RequestFailureMessage(),

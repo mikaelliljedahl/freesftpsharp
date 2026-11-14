@@ -77,6 +77,33 @@ public sealed class SshNetUserLifecycleTests : IClassFixture<LifecycleServerFixt
     }
 
     [Fact]
+    public async Task An_old_password_is_refused_as_the_keyboard_interactive_step_and_a_new_one_works()
+    {
+        // The key first, then the password over keyboard-interactive (#63): the password step checks the password age too.
+        var key = TestUserKeys.Ed25519();
+        var username = AddUser(key, user =>
+        {
+            user.PasswordChangedAt = DateTime.UtcNow.AddDays(-91);
+            user.RequireAllOf = [AuthMethods.PublicKey, AuthMethods.KeyboardInteractive];
+        });
+
+        using (var client = KeyThenKeyboardInteractiveClient(username, key))
+            Assert.Throws<SshAuthenticationException>(() => client.Connect());
+        var failed = await _server.Sink.WaitForAsync<AuthEvent>(e => e.Type == AuthEventType.LoginFailed && e.Username == username);
+        Assert.Equal(("keyboard-interactive", "the password is older than 90 days"), (failed[0].Method, failed[0].Reason));
+
+        var user = _server.Repository.GetUser(username);
+        user.PasswordChangedAt = DateTime.UtcNow;
+        _server.Repository.UpdateUser(user);
+        using (var client = KeyThenKeyboardInteractiveClient(username, key))
+        {
+            client.Connect();
+            Assert.True(client.IsConnected);
+            Assert.Contains(_server.Connections.GetAll(), c => c.Username == username && c.AuthMethod == "publickey,keyboard-interactive");
+        }
+    }
+
+    [Fact]
     public void A_user_that_expires_later_can_log_in()
     {
         var username = AddUser(null, user => user.ExpiresAt = DateTime.UtcNow.AddDays(1));
@@ -198,6 +225,20 @@ public sealed class SshNetUserLifecycleTests : IClassFixture<LifecycleServerFixt
         var client = new SftpClient(SftpServerFixture.Host, _server.Port, username, key.ToPrivateKeyFile());
         client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(15);
         return client;
+    }
+
+    /// <summary>A client with the key and then keyboard-interactive, which answers the prompt with the password.</summary>
+    private SftpClient KeyThenKeyboardInteractiveClient(string username, TestUserKey key)
+    {
+        var interactive = new KeyboardInteractiveAuthenticationMethod(username);
+        interactive.AuthenticationPrompt += (_, e) =>
+        {
+            foreach (var prompt in e.Prompts)
+                prompt.Response = TestCredentials.Password;
+        };
+        var info = new ConnectionInfo(SftpServerFixture.Host, _server.Port, username,
+            new PrivateKeyAuthenticationMethod(username, key.ToPrivateKeyFile()), interactive) { Timeout = TimeSpan.FromSeconds(15) };
+        return new SftpClient(info);
     }
 
     private static async Task<bool> WaitUntilAsync(Func<bool> condition)

@@ -11,6 +11,7 @@ using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Settings.Sql.TwoFactor;
 
 namespace SshServer.Settings.Sql;
 
@@ -60,6 +61,7 @@ public class SettingsDbContext : DbContext
     public DbSet<Admin> Admins => Set<Admin>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Group> Groups => Set<Group>();
+    public DbSet<TwoFactorRecord> TwoFactorEnrolments => Set<TwoFactorRecord>();
     public DbSet<EventRule> EventRules => Set<EventRule>();
     public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
 
@@ -191,6 +193,21 @@ public class SettingsDbContext : DbContext
             b.Property(a => a.Permissions).HasConversion<string>().HasMaxLength(512);
             b.PrimitiveCollection(a => a.AllowedIps).IsRequired(false);
             b.HasOne<Role>().WithMany().HasForeignKey(a => a.ScopeRoleId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TwoFactorRecord>(b =>
+        {
+            // Exactly one owner: a user or an administrator.
+            b.ToTable("TwoFactorEnrolments", t => t.HasCheckConstraint("CK_TwoFactorEnrolments_Owner",
+                "(UserId IS NULL AND AdminId IS NOT NULL) OR (UserId IS NOT NULL AND AdminId IS NULL)"));
+            b.HasKey(r => r.Id);
+            b.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<Admin>().WithMany().HasForeignKey(r => r.AdminId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(r => r.UserId).IsUnique();
+            b.HasIndex(r => r.AdminId).IsUnique();
+            b.Property(r => r.ProtectedSecret).IsRequired().HasMaxLength(1024);
+            b.PrimitiveCollection(r => r.RecoveryCodeHashes).IsRequired();
+            b.Property(r => r.Version).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<AuditEntry>(b =>

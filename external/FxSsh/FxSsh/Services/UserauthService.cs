@@ -8,7 +8,8 @@ namespace FxSsh.Services
 {
     /// <summary>
     /// Implements the "ssh-userauth" service (RFC 4252): validates "password",
-    /// "publickey" and optionally "none" authentication requests by delegating
+    /// "publickey", "keyboard-interactive" (RFC 4256) and optionally "none"
+    /// authentication requests by delegating
     /// the accept/reject decision to the <see cref="UserAuth"/> event, and
     /// registers the service the client asked to start (usually
     /// "ssh-connection") once authentication succeeds.
@@ -34,9 +35,18 @@ namespace FxSsh.Services
 
         /// <summary>
         /// Raised for every authentication attempt with the credentials the
-        /// client presented ("password", "publickey" or "none"). The handler
-        /// must set <see cref="UserAuthArgs.Result"/> to true to accept; with
-        /// no handler subscribed, every attempt is rejected.
+        /// client presented ("password", "publickey", "keyboard-interactive"
+        /// or "none"). The handler must set <see cref="UserAuthArgs.Result"/>
+        /// to true to accept; with no handler subscribed, every attempt is
+        /// rejected.
+        /// <para>
+        /// For "keyboard-interactive" (RFC 4256) the event is raised for the
+        /// request (<see cref="UserAuthArgs.Responses"/> is null) and again,
+        /// with the same args, for each SSH_MSG_USERAUTH_INFO_RESPONSE. To ask
+        /// the client, the handler sets <see cref="UserAuthArgs.InfoRequest"/>
+        /// and leaves <see cref="UserAuthArgs.Result"/> false; the service sends
+        /// SSH_MSG_USERAUTH_INFO_REQUEST and waits for the answers.
+        /// </para>
         /// </summary>
         public event EventHandler<UserAuthArgs> UserAuth;
 
@@ -72,9 +82,22 @@ namespace FxSsh.Services
         {
         }
 
+        /// <summary>
+        /// The keyboard-interactive exchange that waits for an
+        /// SSH_MSG_USERAUTH_INFO_RESPONSE, or null.
+        /// </summary>
+        private PendingKeyboardInteractive _pendingKeyboardInteractive;
+
+        private sealed record PendingKeyboardInteractive(UserAuthArgs Args, string Username, string ServiceName, int PromptCount);
+
         internal void HandleMessageCore(UserAuthServiceMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
+
+            // RFC 4256 section 3.4: a new request ends the keyboard-interactive
+            // exchange that waits for responses.
+            if (message is RequestMessage)
+                _pendingKeyboardInteractive = null;
 
             // Compile-time dispatch replacing the former (dynamic) binder.
             // Concrete RequestMessage subclasses are matched before the
@@ -85,7 +108,9 @@ namespace FxSsh.Services
                 case NoneRequestMessage m: HandleMessage(m); break;
                 case PasswordRequestMessage m: HandleMessage(m); break;
                 case PublicKeyRequestMessage m: HandleMessage(m); break;
+                case KeyboardInteractiveRequestMessage m: HandleMessage(m); break;
                 case RequestMessage m: HandleMessage(m); break;
+                case InfoResponseMessage m: HandleMessage(m); break;
             }
         }
 
@@ -106,6 +131,10 @@ namespace FxSsh.Services
                 case "password":
                     var pswdMsg = Message.LoadFrom<PasswordRequestMessage>(message);
                     HandleMessage(pswdMsg);
+                    break;
+                case "keyboard-interactive":
+                    var kbdMsg = Message.LoadFrom<KeyboardInteractiveRequestMessage>(message);
+                    HandleMessage(kbdMsg);
                     break;
                 case "hostbased":
                 default:
@@ -249,6 +278,84 @@ namespace FxSsh.Services
                 Log.Warn($"Unsupported key algorithm: {message.KeyAlgorithmName}.");
                 SendFailure();
             }
+        }
+
+        private void HandleMessage(KeyboardInteractiveRequestMessage message)
+        {
+            var args = UserAuthArgs.ForKeyboardInteractive(_session, message.Username, message.Submethods);
+            UserAuth?.Invoke(this, args);
+            CompleteKeyboardInteractive(args, message.Username, message.ServiceName);
+        }
+
+        private void HandleMessage(InfoResponseMessage message)
+        {
+            var pending = _pendingKeyboardInteractive;
+            _pendingKeyboardInteractive = null;
+            if (pending == null)
+            {
+                // RFC 4256 section 3.4 does not allow a response without a
+                // request; ignore it, the client gets no answer to it.
+                Log.Warn("Keyboard-interactive response without a pending request; ignored.");
+                return;
+            }
+
+            if (message.Responses.Count != pending.PromptCount)
+            {
+                Log.Warn($"Auth failed: keyboard-interactive, user {pending.Username}: {message.Responses.Count} responses for {pending.PromptCount} prompts.");
+                SendFailure();
+                return;
+            }
+
+            var args = pending.Args;
+            args.Result = false;
+            args.PartialSuccess = false;
+            args.InfoRequest = null;
+            args.Responses = message.Responses;
+            try
+            {
+                UserAuth?.Invoke(this, args);
+            }
+            finally
+            {
+                // The responses can be secrets; the args stay attached to the
+                // session after the login.
+                args.Responses = [];
+            }
+            CompleteKeyboardInteractive(args, pending.Username, pending.ServiceName);
+        }
+
+        /// <summary>
+        /// Answers a keyboard-interactive request or response after the
+        /// <see cref="UserAuth"/> handler: another round of prompts, success,
+        /// partial success or failure.
+        /// </summary>
+        private void CompleteKeyboardInteractive(UserAuthArgs args, string username, string serviceName)
+        {
+            if (!args.Result && args.InfoRequest is { } request)
+            {
+                _pendingKeyboardInteractive = new PendingKeyboardInteractive(args, username, serviceName, request.Prompts.Count);
+                Log.Debug($"Keyboard-interactive: {request.Prompts.Count} prompt(s) sent, user {username}.");
+                _session.SendMessage(new InfoRequestMessage(request));
+                return;
+            }
+
+            if (args.Result && args.PartialSuccess)
+            {
+                SendPartialSuccess("keyboard-interactive", username, args);
+                return;
+            }
+
+            if (args.Result)
+            {
+                Log.Info($"Auth succeeded: keyboard-interactive, user {username}.");
+                _session.RegisterService(serviceName, args);
+                Succeed?.Invoke(this, serviceName);
+                _session.SendMessage(new SuccessMessage());
+                return;
+            }
+
+            Log.Warn($"Auth failed: keyboard-interactive, user {username}.");
+            SendFailure();
         }
 
         private void SendFailure()

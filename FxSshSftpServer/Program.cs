@@ -1,4 +1,4 @@
-using FxSsh.SshServerModule.Security;
+﻿using FxSsh.SshServerModule.Security;
 using System;
 
 using Microsoft.AspNetCore.Builder;
@@ -20,6 +20,7 @@ using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
+using SshServer.TwoFactor;
 using SshServer.EventRules;
 using SshServer.Observability;
 
@@ -59,7 +60,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
-builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook and storage secrets
+builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook, storage and TOTP secrets
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -77,6 +78,7 @@ builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
+builder.Services.AddTwoFactor(builder.Configuration); // TOTP second factor (#63): off until a user or administrator sets up an app
 builder.Services.AddEventRules(builder.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 Log.Debug("AddSshServerStorage...");

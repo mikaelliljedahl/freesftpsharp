@@ -16,6 +16,9 @@ using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces.Groups;
 using SshServerModule.Connections;
+using SshServer.Interfaces.Events;
+using SshServer.TwoFactor;
+using FreeSftpSharp.Tests.Events;
 using SshServerModule.Storage;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.S3;
@@ -43,6 +46,9 @@ public class AdminUiComponentContext : BunitContext
     public StorageOptionsCodec Codec { get; }
     public InMemoryAdminStore AdminStore { get; } = new();
     public AdminAdministrationService Administration { get; }
+    public InMemoryTwoFactorStore TwoFactorStore { get; } = new();
+    public TwoFactorService TwoFactor { get; }
+    public RecordingEventBus Events { get; } = new();
 
     private readonly BunitAuthorizationContext _authorization;
 
@@ -59,6 +65,7 @@ public class AdminUiComponentContext : BunitContext
         Bans = new LoginBanTracker(Clock);
         Registry = new ConnectionRegistry(Clock);
         Administration = new AdminAdministrationService(AdminStore, Repository, time: Clock, hashIterations: PasswordHasher.MinimumIterations);
+        TwoFactor = TwoFactorTestKit.CreateService(Clock, TwoFactorStore);
 
         Services.AddSingleton<ISettingsRepository>(Repository);
         Services.AddSingleton<IIpBanService>(Bans);
@@ -80,6 +87,9 @@ public class AdminUiComponentContext : BunitContext
         Services.AddScoped<AdminScopedSettingsRepository>();
         Services.AddScoped<ScopedAuditLog>();
         Services.AddScoped<ScopedConnections>();
+        Services.AddSingleton(TwoFactor);
+        Services.AddSingleton<IEventBus>(Events);
+        Services.AddScoped<TwoFactorAdministration>();
         Services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
         Services.AddScoped(sp => new VirtualFolderService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
         Services.AddScoped(sp => new GroupService(sp.GetRequiredService<AdminScopedSettingsRepository>()));

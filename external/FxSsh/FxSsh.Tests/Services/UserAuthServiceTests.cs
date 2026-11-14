@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Net.Sockets;
@@ -359,6 +360,221 @@ namespace FxSsh.Tests.Services
             Assert.AreEqual(1, partial);
             await Assert.ThrowsExactlyAsync<TimeoutException>(
                 () => registered.Task.WaitAsync(TimeSpan.FromMilliseconds(400)));
+        }
+
+        private static RequestMessage KeyboardInteractiveRequest() =>
+            LoadRequest(
+                w => w.Write("keyboard-interactive", Encoding.ASCII),
+                w => w.Write("", Encoding.UTF8),
+                w => w.Write("", Encoding.UTF8));
+
+        private static InfoResponseMessage InfoResponse(params string[] responses)
+        {
+            var writer = TestMessages.Payload(InfoResponseMessage.MessageNumber).Write((uint)responses.Length);
+            foreach (var response in responses)
+                writer.Write(response, Encoding.UTF8);
+            var message = new InfoResponseMessage();
+            message.Load(writer.ToByteArray());
+            return message;
+        }
+
+        private static KeyboardInteractiveInfoRequest CodePrompt() =>
+            new("", "", new[] { new KeyboardInteractivePrompt("Verification code: ", false) });
+
+        [TestMethod]
+        public async Task KeyboardInteractive_sends_the_prompts_and_succeeds_with_the_right_response()
+        {
+            var service = new UserAuthService(_session);
+            var calls = new List<(IReadOnlyList<string>? Responses, string Method, string User)>();
+            service.UserAuth += (_, e) =>
+            {
+                calls.Add((e.Responses?.ToArray(), e.AuthMethod, e.Username));
+                if (e.Responses == null)
+                    e.InfoRequest = new KeyboardInteractiveInfoRequest("Login", "Enter the code.",
+                        new[] { new KeyboardInteractivePrompt("Verification code: ", false), new KeyboardInteractivePrompt("Name: ", true) });
+                else
+                    e.Result = e.Responses[0] == "123456" && e.Responses[1] == "ü";
+            };
+            var registered = new TaskCompletionSource<SshService>();
+            _session.ServiceRegistered += (_, s) => registered.TrySetResult(s);
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+
+            // SSH_MSG_USERAUTH_INFO_REQUEST: name, instruction, language tag, prompts with echo flags (RFC 4256 section 3.2).
+            var reader = new SshDataReader(ReceivePayload());
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, reader.ReadByte());
+            Assert.AreEqual("Login", reader.ReadString(Encoding.UTF8));
+            Assert.AreEqual("Enter the code.", reader.ReadString(Encoding.UTF8));
+            Assert.AreEqual("", reader.ReadString(Encoding.UTF8));
+            Assert.AreEqual(2u, reader.ReadUInt32());
+            Assert.AreEqual("Verification code: ", reader.ReadString(Encoding.UTF8));
+            Assert.IsFalse(reader.ReadBoolean());
+            Assert.AreEqual("Name: ", reader.ReadString(Encoding.UTF8));
+            Assert.IsTrue(reader.ReadBoolean());
+            Assert.IsFalse(registered.Task.IsCompleted);
+
+            service.HandleMessageCore(InfoResponse("123456", "ü"));
+
+            Assert.AreEqual(SuccessMessage.MessageNumber, ReceivePayload()[0]);
+            var svc = await registered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsInstanceOfType(svc, typeof(ConnectionService));
+            Assert.AreEqual(2, calls.Count);
+            Assert.IsNull(calls[0].Responses);
+            Assert.AreEqual("keyboard-interactive", calls[0].Method);
+            Assert.AreEqual(Username, calls[0].User);
+            CollectionAssert.AreEqual(new[] { "123456", "ü" }, (System.Collections.ICollection)calls[1].Responses!);
+        }
+
+        [TestMethod]
+        public void KeyboardInteractive_with_a_wrong_response_fails()
+        {
+            var service = new UserAuthService(_session);
+            service.UserAuth += (_, e) =>
+            {
+                if (e.Responses == null)
+                    e.InfoRequest = CodePrompt();
+                else
+                    e.Result = e.Responses[0] == "123456";
+            };
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, ReceivePayload()[0]);
+            service.HandleMessageCore(InfoResponse("654321"));
+
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+        }
+
+        [TestMethod]
+        public void KeyboardInteractive_without_prompts_from_the_handler_fails_at_once()
+        {
+            var service = new UserAuthService(_session);
+            service.UserAuth += (_, e) => e.Result = false;
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+        }
+
+        [TestMethod]
+        public void KeyboardInteractive_with_another_number_of_responses_fails_without_asking_the_handler()
+        {
+            var service = new UserAuthService(_session);
+            var responsesSeen = 0;
+            service.UserAuth += (_, e) =>
+            {
+                if (e.Responses == null)
+                    e.InfoRequest = CodePrompt();
+                else
+                {
+                    responsesSeen++;
+                    e.Result = true;
+                }
+            };
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, ReceivePayload()[0]);
+            service.HandleMessageCore(InfoResponse("123456", "extra"));
+
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+            Assert.AreEqual(0, responsesSeen);
+        }
+
+        [TestMethod]
+        public async Task KeyboardInteractive_response_without_a_request_is_ignored()
+        {
+            var service = new UserAuthService(_session);
+            var calls = 0;
+            service.UserAuth += (_, e) =>
+            {
+                calls++;
+                e.Result = true;
+            };
+            var registered = new TaskCompletionSource<SshService>();
+            _session.ServiceRegistered += (_, s) => registered.TrySetResult(s);
+
+            service.HandleMessageCore(InfoResponse("123456"));
+
+            Assert.AreEqual(0, calls);
+            await Assert.ThrowsExactlyAsync<TimeoutException>(
+                () => registered.Task.WaitAsync(TimeSpan.FromMilliseconds(400)));
+        }
+
+        [TestMethod]
+        public void KeyboardInteractive_response_after_a_new_request_belongs_to_the_new_request_only()
+        {
+            var service = new UserAuthService(_session);
+            service.UserAuth += (_, e) =>
+            {
+                if (e.AuthMethod == "keyboard-interactive" && e.Responses == null)
+                    e.InfoRequest = CodePrompt();
+                else if (e.Responses != null)
+                    e.Result = true;
+            };
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, ReceivePayload()[0]);
+            // A new request (RFC 4256 section 3.4) ends the exchange: the old prompts get no response.
+            service.HandleMessageCore(PasswordRequest("wrong-password"));
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+            service.HandleMessageCore(InfoResponse("123456"));
+            service.HandleMessageCore(PasswordRequest("wrong-password"));
+
+            // The response was ignored: the next packet is the failure of the second password request.
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+        }
+
+        [TestMethod]
+        public void KeyboardInteractive_partial_success_answers_failure_with_partial_success()
+        {
+            var service = new UserAuthService(_session);
+            service.UserAuth += (_, e) =>
+            {
+                if (e.Responses == null)
+                    e.InfoRequest = CodePrompt();
+                else
+                {
+                    e.Result = true;
+                    e.PartialSuccess = true;
+                }
+            };
+            var partial = new List<string>();
+            service.PartialSucceed += (_, e) =>
+            {
+                partial.Add(e.AuthMethod);
+                service.AuthenticationsThatCanContinue = new[] { "publickey" };
+            };
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, ReceivePayload()[0]);
+            service.HandleMessageCore(InfoResponse("123456"));
+
+            Assert.AreEqual(("publickey", true), ReadFailure(ReceivePayload()));
+            CollectionAssert.AreEqual(new[] { "keyboard-interactive" }, partial);
+        }
+
+        [TestMethod]
+        public void KeyboardInteractive_can_ask_a_second_round_and_clears_the_responses_afterwards()
+        {
+            var service = new UserAuthService(_session);
+            UserAuthArgs? seen = null;
+            var round = 0;
+            service.UserAuth += (_, e) =>
+            {
+                seen = e;
+                if (e.Responses == null || round++ == 0)
+                    e.InfoRequest = CodePrompt();
+                else
+                    e.Result = false;
+            };
+
+            service.HandleMessageCore(KeyboardInteractiveRequest());
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, ReceivePayload()[0]);
+            service.HandleMessageCore(InfoResponse("first"));
+            Assert.AreEqual(InfoRequestMessage.MessageNumber, ReceivePayload()[0]);
+            service.HandleMessageCore(InfoResponse("second"));
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+
+            Assert.AreEqual(0, seen!.Responses!.Count);
         }
 
         [TestMethod]
