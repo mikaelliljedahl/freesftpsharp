@@ -56,6 +56,9 @@ namespace FxSshSftpServer.Pages.Client
 
         public bool AllowsPublicKeys { get; private set; }
 
+        /// <summary>The external provider that manages the password (#64), or null: then the page offers the change.</summary>
+        public string PasswordManagedBy { get; private set; }
+
         private string Username => User.Identity!.Name;
 
         private CancellationToken Ct => HttpContext.RequestAborted;
@@ -132,6 +135,7 @@ namespace FxSshSftpServer.Pages.Client
                 return Challenge(ClientAuth.Scheme);
             Keys = _account.ListPublicKeys(Username);
             AllowsPublicKeys = (user.AllowedAuthMethods & AuthMethods.PublicKey) != 0;
+            PasswordManagedBy = ExternalCredentials.PasswordManagedBy(user);
             TwoFactor = await _account.GetTwoFactorStatusAsync(Username, Ct);
             Sessions = _account.ListSessions(Username);
             return Page();

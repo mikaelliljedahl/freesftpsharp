@@ -17,6 +17,9 @@ time"). Nothing changes until a provider is configured.
 - **Just in time.** A user that is not stored is created after the provider accepted the login, with the groups (and
   optionally the permissions, networks and session limit) the provider gives. The next logins update these values. For
   an SSH public key the user is saved only after the client proved that it has the private key.
+- **No local password.** The provider manages the password of its users: the web client does not offer "Change
+  password" and refuses it, the admin UI disables the password fields, and the REST API refuses a `password` for such a
+  user ("The password of this account is managed by ldap."). The password age never applies to them.
 - **The local rules still apply.** Status, expiry, session limit, the allowed networks and login methods of the user
   and its groups, the TOTP second factor and the multi-step logins work as for a local user. Disable a user in the
   admin UI to lock it out, whatever the provider says. A refused login looks like a wrong password to the client.

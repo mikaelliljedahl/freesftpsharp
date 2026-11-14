@@ -257,7 +257,9 @@ namespace FxSshSftpServer.Models
             if (UsesDefaultStorage && !GroupProvidesStorage && string.IsNullOrWhiteSpace(UserRootDirectory))
                 yield return new ValidationResult("Enter the root directory of the user on the server.", new[] { nameof(UserRootDirectory) });
 
-            if (!string.IsNullOrEmpty(NewPassword))
+            if (!string.IsNullOrEmpty(AuthenticationProvider) && !string.IsNullOrEmpty(NewPassword))
+                yield return new ValidationResult(ExternalCredentials.PasswordManagedMessage(AuthenticationProvider), new[] { nameof(NewPassword) });
+            else if (!string.IsNullOrEmpty(NewPassword))
             {
                 if (NewPassword.Length < MinimumPasswordLength)
                     yield return new ValidationResult($"The password must have at least {MinimumPasswordLength} characters.", new[] { nameof(NewPassword) });

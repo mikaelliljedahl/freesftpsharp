@@ -300,8 +300,8 @@
                             @if (form.AuthenticationProvider is { } owner)
                             {
                                 <div class="alert alert-info small py-2" id="external-provider-note">
-                                    This user signs in through the authentication provider <strong>@owner</strong>, which checks its
-                                    password and keys. A password or key set here is not used.
+                                    @SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(owner)
+                                    The provider checks the password and the keys of the user; a key set here is not used.
                                 </div>
                             }
                             <div class="small text-body-secondary mb-2">
@@ -318,12 +318,12 @@
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label" for="new-password">New password</label>
-                                    <InputText id="new-password" type="password" class="form-control" @bind-Value="form.NewPassword" autocomplete="new-password" />
+                                    <InputText id="new-password" type="password" class="form-control" disabled="@(form.AuthenticationProvider != null)" @bind-Value="form.NewPassword" autocomplete="new-password" />
                                     <ValidationMessage For="() => form.NewPassword" />
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label" for="confirm-password">Repeat the password</label>
-                                    <InputText id="confirm-password" type="password" class="form-control" @bind-Value="form.ConfirmPassword" autocomplete="new-password" />
+                                    <InputText id="confirm-password" type="password" class="form-control" disabled="@(form.AuthenticationProvider != null)" @bind-Value="form.ConfirmPassword" autocomplete="new-password" />
                                     <ValidationMessage For="() => form.ConfirmPassword" />
                                 </div>
                             </div>
