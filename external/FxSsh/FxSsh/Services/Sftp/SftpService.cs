@@ -334,7 +334,7 @@ namespace FxSsh.Services.Sftp
             Task.Delay(-1, _cancellationTokenSource.Token).Wait();
         }
 
-        /// <summary>Release every open handle (session teardown).</summary>
+        /// <summary>Release every open handle (session teardown); a file that the client did not close is aborted.</summary>
         public void Dispose()
         {
             CloseAllHandles();
@@ -349,7 +349,7 @@ namespace FxSsh.Services.Sftp
                 // fails to close (for example a flush on a full disk).
                 foreach (var entry in _mapOfHandle.Values)
                 {
-                    try { entry.Dispose(); }
+                    try { entry.Abort(); }
                     catch (Exception ex) { Log.Warn($"SFTP: closing a handle failed: {ex.Message}"); }
                 }
                 _mapOfHandle.Clear();
@@ -893,6 +893,13 @@ namespace FxSsh.Services.Sftp
             public void Dispose()
             {
                 FileHandle?.Dispose();
+                DirectoryHandle?.Dispose();
+            }
+
+            /// <summary>Session teardown without a CLOSE request: an open file is aborted.</summary>
+            public void Abort()
+            {
+                FileHandle?.Abort();
                 DirectoryHandle?.Dispose();
             }
         }

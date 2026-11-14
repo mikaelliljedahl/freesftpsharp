@@ -217,6 +217,63 @@ public sealed class S3FileSystemTests
     }
 
     [Fact]
+    public async Task An_abort_after_parts_were_sent_aborts_the_multipart_upload_and_leaves_no_object()
+    {
+        var fs = CreateFileSystem(partSize: 64 * KiB, concurrency: 1);
+        var handle = await fs.OpenAsync("/a.bin", WriteNew, null, Ct);
+        await handle.WriteAsync(0, RandomBytes(150 * KiB), Ct);
+        await handle.FlushAsync(Ct);
+        Assert.Equal(1, _s3.OpenUploads);
+
+        await handle.AbortAsync();
+
+        Assert.Equal(1, _s3.CallCount("AbortMultipartUpload"));
+        Assert.Equal(0, _s3.CallCount("CompleteMultipartUpload"));
+        Assert.Equal(0, _s3.OpenUploads);
+        Assert.Empty(_s3.Keys);
+        await handle.DisposeAsync(); // does nothing
+        Assert.Empty(_s3.Keys);
+    }
+
+    [Fact]
+    public async Task An_abort_of_a_small_file_stores_nothing()
+    {
+        var fs = CreateFileSystem(partSize: 64 * KiB);
+        var handle = await fs.OpenAsync("/small.txt", WriteNew, null, Ct);
+        await handle.WriteAsync(0, "partial"u8.ToArray(), Ct);
+
+        await handle.AbortAsync();
+
+        Assert.Equal(0, _s3.CallCount("PutObject"));
+        Assert.Empty(_s3.Keys);
+    }
+
+    [Fact]
+    public async Task An_abort_of_a_new_file_without_data_stores_no_empty_object()
+    {
+        var fs = CreateFileSystem();
+        var handle = await fs.OpenAsync("/empty.txt", WriteNew, null, Ct);
+
+        await handle.AbortAsync();
+
+        Assert.Empty(_s3.Keys);
+    }
+
+    [Fact]
+    public async Task An_abort_of_an_overwrite_keeps_the_old_object()
+    {
+        _s3.Seed("users/alice/a.bin", "old"u8.ToArray());
+        var fs = CreateFileSystem(partSize: 64 * KiB, concurrency: 1);
+        var handle = await fs.OpenAsync("/a.bin", WriteNew, null, Ct);
+        await handle.WriteAsync(0, RandomBytes(150 * KiB), Ct);
+
+        await handle.AbortAsync();
+
+        Assert.Equal("old"u8.ToArray(), _s3.Content("users/alice/a.bin"));
+        Assert.Equal(0, _s3.OpenUploads);
+    }
+
+    [Fact]
     public async Task A_failed_part_aborts_the_multipart_upload_and_leaves_no_object()
     {
         _s3.Fail = (operation, request) => operation == "UploadPart" && ((UploadPartRequest)request).PartNumber == 2
