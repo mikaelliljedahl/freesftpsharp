@@ -7,6 +7,7 @@ namespace SshServer.Filesystem.S3;
 /// <see cref="S3ReadBuffer"/>); the first write starts an <see cref="S3Upload"/>, and reads then see only the data
 /// that is not sent yet. Writes are sequential: only a write at the current end of the file is accepted. The object
 /// changes only at <see cref="DisposeAsync"/>: the upload is completed, or a new or truncated file is stored empty.
+/// <see cref="AbortAsync"/> drops the upload instead and the object stays as it was.
 /// <para>
 /// The operations of one handle run one after the other: the SFTP engine can close the handles of a lost session from
 /// another thread while a request of that session still runs, and the buffers must not be freed under a running write.
@@ -141,6 +142,33 @@ internal sealed class S3FileHandle : IFileHandle
                 else if (_existing == null)
                     await _store.PutAsync(_key, [], 0, CancellationToken.None).ConfigureAwait(false); // a new or truncated file
             }, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _reader?.Dispose();
+            _upload?.Dispose();
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Drops the unfinished upload (AbortMultipartUpload): the session was lost, so no object is made and no stored
+    /// parts stay. A file that is open for reading only is closed as usual.
+    /// </summary>
+    public async ValueTask AbortAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false); // waits for a running operation
+        if (_disposed)
+        {
+            _gate.Release();
+            return;
+        }
+        _disposed = true;
+
+        try
+        {
+            if (_upload != null)
+                await S3Errors.RunAsync(_path, () => _upload.AbortAsync(), CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {

@@ -346,9 +346,7 @@ use it: no S3 client is created and no setting is needed.
   an update that changes nothing (the same size, no fields) works. statvfs (`df`) fails: an object store has no size.
 - **Errors**: 404 is `NoSuchFile`, 403 is `PermissionDenied`, every other S3 error is `Failure`; the log has the status,
   the S3 error code and the request id, never the bucket or the endpoint.
-- **Known limit**: a lost connection during an upload completes the object with the data received so far (like a
-  partial file on a local disk). An abort on disconnect needs an abort path in the storage interface (follow-up of #53).
-  Add a lifecycle rule `AbortIncompleteMultipartUpload` to the bucket for uploads that the server could not abort.
+- **Lost connection**: a session that ends without an SSH_FXP_CLOSE for an open file aborts the upload (AbortMultipartUpload): no object appears and the old object stays. Add a lifecycle rule `AbortIncompleteMultipartUpload` to the bucket for uploads that the server could not abort (a crash of the server).
 
 ### IAM permissions
 
