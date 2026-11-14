@@ -14,9 +14,9 @@ namespace FxSshSftpServer.WebClient
     /// <summary>The login throttle of the web client: its own counter, apart from the admin login.</summary>
     public sealed class ClientLoginThrottle
     {
-        public ClientLoginThrottle(Security.LoginThrottle throttle) => Throttle = throttle;
+        public ClientLoginThrottle(SshServer.Administration.LoginThrottle throttle) => Throttle = throttle;
 
-        public Security.LoginThrottle Throttle { get; }
+        public SshServer.Administration.LoginThrottle Throttle { get; }
     }
 
     /// <summary>
