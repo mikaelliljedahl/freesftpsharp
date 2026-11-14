@@ -4,7 +4,7 @@ namespace SshServer.Interfaces.Storage;
 /// An open file from <see cref="IFileSystem.OpenAsync"/>. All I/O is positional; the handle has no cursor. Failures
 /// throw <see cref="FileSystemException"/>. <see cref="IAsyncDisposable.DisposeAsync"/> writes the buffered data and
 /// closes the file; a failure of that last write is thrown, and the file is closed in all cases. A second dispose
-/// does nothing.
+/// does nothing. <see cref="AbortAsync"/> ends the file without completing it, for a session that is lost.
 /// </summary>
 public interface IFileHandle : IAsyncDisposable
 {
@@ -35,4 +35,14 @@ public interface IFileHandle : IAsyncDisposable
 
     /// <summary>Changes the attributes of the open file (SFTP FSETSTAT), see <see cref="IFileSystem.SetAttributesAsync"/>.</summary>
     ValueTask SetAttributesAsync(FileAttributesUpdate update, CancellationToken ct);
+
+    /// <summary>
+    /// Ends the file without completing it: the session was lost before the client closed the file, so what was written
+    /// is not a finished file. A storage that publishes a file only when it is closed (an object store) drops the
+    /// unfinished upload and leaves no object. The default closes the file like <see cref="IAsyncDisposable.DisposeAsync"/>,
+    /// which is right for a storage that keeps partial data (a disk). The handle is closed in all cases and a later
+    /// dispose or abort does nothing. A decorator that wraps a handle must forward this call, or the default hides the
+    /// abort from the storage below.
+    /// </summary>
+    ValueTask AbortAsync() => DisposeAsync();
 }

@@ -385,6 +385,31 @@ public abstract class FileSystemConformanceTests<TFixture> : IDisposable
     }
 
     [Fact]
+    public async Task Abort_closes_the_handle_and_a_later_dispose_or_abort_does_nothing()
+    {
+        var handle = await Fs.OpenAsync("/aborted.txt", WriteNew, null, Ct);
+        await handle.WriteAsync(0, Encoding.ASCII.GetBytes("partial"), Ct);
+
+        await handle.AbortAsync();
+
+        await AssertErrorAsync(FileSystemError.Failure, async () => await handle.WriteAsync(0, new byte[1], Ct));
+        await handle.DisposeAsync();
+        await handle.AbortAsync();
+    }
+
+    [Fact]
+    public async Task Abort_of_a_file_that_is_open_for_reading_keeps_the_file()
+    {
+        await using (var writer = await Fs.OpenAsync("/kept.txt", WriteNew, null, Ct))
+            await writer.WriteAsync(0, Encoding.ASCII.GetBytes("data"), Ct);
+
+        var handle = await Fs.OpenAsync("/kept.txt", FileOpenFlags.Read, null, Ct);
+        await handle.AbortAsync();
+
+        Assert.Equal("data", await ReadTextAsync("/kept.txt"));
+    }
+
+    [Fact]
     public async Task Handle_stat_gives_the_size_of_the_written_data_before_close()
     {
         await using var handle = await Fs.OpenAsync("/a.bin", WriteNew, null, Ct);
