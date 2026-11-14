@@ -17,6 +17,16 @@ dotnet test FreeSftpSharp.sln --filter "FullyQualifiedName~Wrong_password_is_rej
 
 Show each test and its time: add `--logger "console;verbosity=normal"`.
 
+The settings tests on PostgreSQL and SQL Server (#75) run when their server is set, for example with containers:
+
+```sh
+docker run -d -p 5432:5432 -e POSTGRES_USER=freesftpsharp -e POSTGRES_PASSWORD=freesftpsharp-ci-only postgres:17.11-alpine
+docker run -d -p 1433:1433 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=Freesftpsharp-ci-only1 mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+export FREESFTPSHARP_TEST_POSTGRES="Host=127.0.0.1;Username=freesftpsharp;Password=freesftpsharp-ci-only;Database=postgres"
+export FREESFTPSHARP_TEST_SQLSERVER="Server=127.0.0.1,1433;User Id=sa;Password=Freesftpsharp-ci-only1;TrustServerCertificate=True"
+dotnet test FreeSftpSharp.sln --filter "FullyQualifiedName~SettingsProviderTests|FullyQualifiedName~MultiNodeTests"
+```
+
 The suite takes about 10 seconds. It needs no network, no admin rights and no `config.db`. Each test class
 gets its own server on a free port and its own temporary directory, so the classes run in parallel.
 
@@ -68,7 +78,11 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Settings/SqlSettingsRepositoryTests` | unit (in-memory SQLite) | default settings of a new database, update of settings, add/get/update/remove of users with all fields (also permissions and path filters), unknown users, case-insensitive duplicate usernames, persistence in a file, a database of the previous schema is migrated (new columns get their defaults, the stored values stay; users of a database before #59 get `/` = All; before #58 the old CSP key becomes one `ssh-rsa` entry that logs in, the password stays, all methods are allowed, the old column is cleared and a second start adds nothing), keys with all fields, allowed methods and steps are stored |
 | `Settings/QuotaSettingsTests`, `Observability/QuotaMetricsTests` | unit (in-memory SQLite) | the migration of a database before #62 (no quotas), the quotas of a user and of a mount are saved and changed (with the changed fields of the event), the counters (insert, increment, scan, reset, remove), two nodes add to one counter; the quota gauges by scope |
 | `Settings/LiteDbImportTests` | unit (temp files) | a `config.db` made with the LiteDB repository is imported into a new SQLite database (settings, host key, users), the file is not changed, no second import, no `config.db` gives new defaults, the LiteDB repository stores permissions and path filters and the import copies them, the old key of a user (CSP blob) becomes a key entry in the import and in the LiteDB repository |
-| `Settings/SettingsConfigurationTests` | unit | `Settings:Provider`, `ConnectionStrings:Settings` and `Settings:LiteDbPath`: defaults, paths relative to the app directory, LiteDb selection, unknown provider, `AddSshServerSettings` registrations |
+| `Settings/SettingsConfigurationTests` | unit | `Settings:Provider`, `ConnectionStrings:Settings` and `Settings:LiteDbPath`: defaults, paths relative to the app directory, LiteDb selection, unknown provider, PostgreSQL and SQL Server selected by name, a server provider without a connection string, `AddSshServerSettings` registrations |
+| `Settings/Providers/SettingsProviderTests` | integration (SQLite file; PostgreSQL and SQL Server when `FREESFTPSHARP_TEST_POSTGRES` / `FREESFTPSHARP_TEST_SQLSERVER` is set, CI: service containers on Linux) | every test on every provider (#75), each on a new database: the migrations and no pending model change, a user with every field and names without case, groups and mounted folders, administrators, roles and API keys, the token signing key shared by nodes, quota increments of two nodes, the webhook lease, the claim of a scheduled rule, the two-factor version check, the audit query and retention, the shared bans, the node heartbeat with connections, disconnect requests and stale nodes, the settings version, the data protection keys shared by two nodes |
+| `Cluster/MultiNodeTests` | end-to-end (two in-process nodes with SSH.NET, on every provider like `SettingsProviderTests`) | `Cluster:Enabled` (#75): a user created on node A logs in on node B, an address banned on A is refused on B and lifting it on B lifts it on A, A lists a connection of B (with its node) and closes it, a change on A reaches the caches of B |
+| `Proxy/ProxyProtocolReaderTests`, `Proxy/ProxyProtocolOptionsTests` | unit | the PROXY protocol header (#75): v1 TCP4/TCP6/UNKNOWN, v2 IPv4/IPv6/LOCAL with TLVs, the bytes after the header stay; malformed v1 lines (fields, spaces, addresses, ports, length, case), unknown v2 versions, commands, families and protocols, short or huge address blocks, a broken signature, no header; the `Proxy` section |
+| `Proxy/ProxyProtocolEndToEndTests` | end-to-end (SSH.NET through a PROXY v2 forwarder) | behind the balancer the connection and the login event have the real client address; a connection without a header, with a malformed header, or from a source that is not allowed is refused before the SSH identification |
 | `Settings/ListenConfigurationTests` | unit | `SshServer:Port` / `SshServer:BindToAddress`: options binding (array, comma separated, `--port`/`--bind` switch mappings), precedence configuration over the stored settings (stored settings unchanged), port validation 1-65535 |
 | `EndToEnd/ConfiguredPortTests` | end-to-end (SSH.NET) | the stored port is 1, the configured port is a free one: SSH.NET connects on the configured port, nothing listens on the stored port, the stored setting is not changed |
 | `Unit/HostKeysTests` | unit | the stored RSA host key (base64 CSP blob or PEM) converts to PEM with the same key, a public-only blob is rejected, host key algorithms are ecdsa-sha2-nistp256, rsa-sha2-512, rsa-sha2-256 (no ssh-rsa), an ECDSA key is made once and saved |
@@ -168,6 +182,11 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
   `minioadmin`) and `_BUCKET` (default `freesftpsharp-tests`, created when missing). `SftpServerFixture.CreateFileSystemFactory`
   can be overridden for another backend (`S3SftpServerFixture`). `Storage/Gcs/GcsTestServer` is the emulator of the GCS
   tests (`FREESFTPSHARP_TEST_GCS_ENDPOINT`, optionally `_BUCKET`); `GcsSftpServerFixture` is its server fixture.
+- `Settings/Providers/TestDatabase` is a new, empty settings database of one provider for one test: a SQLite file, or a
+  new database on the PostgreSQL or SQL Server of `FREESFTPSHARP_TEST_POSTGRES` / `FREESFTPSHARP_TEST_SQLSERVER` (a
+  connection string of a user that may create databases; the test is skipped without it), removed afterwards.
+  `TestDatabase.Providers` is the `MemberData` of a test for every provider. `Cluster/TestNode` starts one node with the
+  registrations of ServerConsoleApp on such a database (`Cluster:Enabled`, a poll interval of one second).
 - `Storage/InMemoryFileSystem` is an `IFileSystem` in memory with configurable capabilities. It is only in the test
   project. Use it as the backend of SFTP tests (`new SftpEngineClient(new InMemoryFileSystem())`) and to test a storage
   decorator alone.

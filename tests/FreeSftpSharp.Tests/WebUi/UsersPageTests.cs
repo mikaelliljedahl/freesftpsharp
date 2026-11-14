@@ -37,7 +37,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         Assert.Contains("alice", page.Find("#user-table").TextContent);
         Assert.Contains("bob", page.Find("#user-table").TextContent);
 
-        page.Find("#user-search").Input("ali");
+        page.Input("#user-search", "ali");
 
         Assert.Contains("alice", page.Find("#user-table").TextContent);
         Assert.DoesNotContain("bob", page.Find("#user-table").TextContent);
@@ -48,14 +48,14 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("carol");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#new-password").Change("long-enough-1");
-        page.Find("#confirm-password").Change("long-enough-1");
-        page.Find("#user-whitelist-mode").Change(true);
-        page.Find("#user-whitelist").Change("10.0.0.0/8\n::1");
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "carol");
+        page.Change("#root-directory", _root.Path);
+        page.Change("#new-password", "long-enough-1");
+        page.Change("#confirm-password", "long-enough-1");
+        page.Change("#user-whitelist-mode", true);
+        page.Change("#user-whitelist", "10.0.0.0/8\n::1");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("carol")), SaveTimeout);
         var user = Repository.GetUser("carol");
@@ -71,11 +71,11 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("dave");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#user-whitelist").Change("10.0.0.0/40");
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "dave");
+        page.Change("#root-directory", _root.Path);
+        page.Change("#user-whitelist", "10.0.0.0/40");
+        page.Submit("#user-form");
 
         Assert.Contains("Not a valid network: 10.0.0.0/40", page.Markup);
         Assert.Null(Repository.GetUser("dave"));
@@ -88,10 +88,10 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change(username);
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", username);
+        page.Change("#root-directory", _root.Path);
+        page.Submit("#user-form");
 
         Assert.Contains(message, page.Markup);
         Assert.Empty(Repository.GetAllUsers());
@@ -104,12 +104,12 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("erin");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#new-password").Change(password);
-        page.Find("#confirm-password").Change(confirm);
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "erin");
+        page.Change("#root-directory", _root.Path);
+        page.Change("#new-password", password);
+        page.Change("#confirm-password", confirm);
+        page.Submit("#user-form");
 
         Assert.Contains(message, page.Markup);
         Assert.Null(Repository.GetUser("erin"));
@@ -120,12 +120,12 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#root-directory").Change(Path.Combine(_root.Path, "does-not-exist"));
+        page.Click("#add-user");
+        page.Change("#root-directory", Path.Combine(_root.Path, "does-not-exist"));
 
         Assert.NotNull(page.Find("#root-missing"));
 
-        page.Find("#root-directory").Change(_root.Path);
+        page.Change("#root-directory", _root.Path);
         Assert.Empty(page.FindAll("#root-missing"));
     }
 
@@ -136,12 +136,12 @@ public sealed class UsersPageTests : AdminUiComponentContext
         var oldHash = Repository.GetUser("frank").HashedPassword;
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
         Assert.True(page.Find("#username").HasAttribute("readonly"));
         var newRoot = Path.Combine(_root.Path, "sub");
         Directory.CreateDirectory(newRoot);
-        page.Find("#root-directory").Change(newRoot);
-        page.Find("#user-form").Submit();
+        page.Change("#root-directory", newRoot);
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal(newRoot, Repository.GetUser("frank").UserRootDirectory), SaveTimeout);
         Assert.Equal(oldHash, Repository.GetUser("frank").HashedPassword);
@@ -158,7 +158,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         var page = Render<Users>();
 
         Assert.Contains("2 keys", page.Find("#user-table").TextContent);
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
         Assert.Equal("2026-10-30 08:15", page.Find("#last-login").TextContent);
         Assert.Equal(new[] { ed25519.Entry.Fingerprint, rsa.Entry.Fingerprint }, page.FindAll(".key-fingerprint").Select(e => e.TextContent));
@@ -172,22 +172,22 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("paula");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
         Assert.True(page.Find("#allow-sftp").HasAttribute("checked"));
         Assert.True(page.Find("#allow-ftp").HasAttribute("checked"));
-        page.Find("#allow-webdav").Change(false);
-        page.Find("#allow-web").Change(false);
-        page.Find("#user-form").Submit();
+        page.Change("#allow-webdav", false);
+        page.Change("#allow-web", false);
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal(UserProtocols.Sftp | UserProtocols.Ftp, Repository.GetUser("paula").AllowedProtocols), SaveTimeout);
-        page.Find(".edit-user").Click();
-        page.Find("#allow-ftp").Change(false);
-        page.Find("#user-form").Submit();
+        page.Click(".edit-user");
+        page.Change("#allow-ftp", false);
+        page.Submit("#user-form");
         page.WaitForAssertion(() => Assert.Equal(UserProtocols.Sftp, Repository.GetUser("paula").AllowedProtocols), SaveTimeout);
         page.WaitForAssertion(() => Assert.Contains("SFTP", page.Find("#user-table").TextContent), SaveTimeout);
 
-        page.Find("#allow-sftp").Change(false);
-        page.Find("#user-form").Submit();
+        page.Change("#allow-sftp", false);
+        page.Submit("#user-form");
         Assert.Contains("Allow at least one protocol.", page.Markup);
         Assert.Equal(UserProtocols.Sftp, Repository.GetUser("paula").AllowedProtocols);
     }
@@ -197,11 +197,11 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         AddUser("quinn");
         var page = Render<Users>();
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
         Assert.NotNull(page.Find("#no-app-passwords"));
 
-        page.Find("#app-password-name").Change("Finder");
-        page.Find("#create-app-password").Click();
+        page.Change("#app-password-name", "Finder");
+        page.Click("#create-app-password");
 
         var secret = page.Find("#new-app-password").TextContent;
         var stored = Assert.Single(Repository.GetUser("quinn").AppPasswords!);
@@ -210,11 +210,11 @@ public sealed class UsersPageTests : AdminUiComponentContext
         Assert.True(stored.Matches(secret));
         Assert.Contains("Finder", page.Find("#app-password-table").TextContent);
 
-        page.Find("#create-app-password").Click();
+        page.Click("#create-app-password");
         Assert.Contains("Enter a name", page.Find("#app-password-error").TextContent);
         Assert.Empty(page.FindAll("#new-app-password"));
 
-        page.Find(".remove-app-password").Click();
+        page.Click(".remove-app-password");
         Assert.Null(Repository.GetUser("quinn").AppPasswords);
         Assert.NotNull(page.Find("#no-app-passwords"));
     }
@@ -227,10 +227,10 @@ public sealed class UsersPageTests : AdminUiComponentContext
         var second = TestUserKeys.EcdsaNistP256();
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#new-keys").Change(first.AuthorizedKeysLine + "\n" + second.AuthorizedKeysLine);
-        page.Find("#new-keys-expiry").Change("2027-03-01");
-        page.Find("#add-keys").Click();
+        page.Click(".edit-user");
+        page.Change("#new-keys", first.AuthorizedKeysLine + "\n" + second.AuthorizedKeysLine);
+        page.Change("#new-keys-expiry", "2027-03-01");
+        page.Click("#add-keys");
 
         var keys = Repository.GetUser("lisa").PublicKeys!;
         Assert.Equal(new[] { first.Entry.KeyBase64, second.Entry.KeyBase64 }, keys.Select(k => k.KeyBase64));
@@ -244,9 +244,9 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("mona");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#new-keys").Change("from=\"10.0.0.0/8\" " + TestUserKeys.Ed25519().AuthorizedKeysLine);
-        page.Find("#add-keys").Click();
+        page.Click(".edit-user");
+        page.Change("#new-keys", "from=\"10.0.0.0/8\" " + TestUserKeys.Ed25519().AuthorizedKeysLine);
+        page.Click("#add-keys");
 
         Assert.Contains("options", page.Find("#key-error").TextContent);
         Assert.Null(Repository.GetUser("mona").PublicKeys);
@@ -258,16 +258,16 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("nina");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#multi-step").Change(FxSshSftpServer.Models.UserForm.KeyThenPassword);
-        page.Find("#user-form").Submit();
+        page.Click(".edit-user");
+        page.Change("#multi-step", FxSshSftpServer.Models.UserForm.KeyThenPassword);
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal([AuthMethods.PublicKey, AuthMethods.Password], Repository.GetUser("nina").RequireAllOf), SaveTimeout);
         Assert.Equal(AuthMethods.All, Repository.GetUser("nina").AllowedAuthMethods);
 
-        page.Find("#multi-step").Change("");
-        page.Find("#allow-password").Change(false);
-        page.Find("#user-form").Submit();
+        page.Change("#multi-step", "");
+        page.Change("#allow-password", false);
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Null(Repository.GetUser("nina").RequireAllOf), SaveTimeout);
         Assert.Equal(AuthMethods.PublicKey | AuthMethods.KeyboardInteractive, Repository.GetUser("nina").AllowedAuthMethods);
@@ -279,10 +279,10 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("olga");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#allow-password").Change(false);
-        page.Find("#multi-step").Change(FxSshSftpServer.Models.UserForm.KeyThenPassword);
-        page.Find("#user-form").Submit();
+        page.Click(".edit-user");
+        page.Change("#allow-password", false);
+        page.Change("#multi-step", FxSshSftpServer.Models.UserForm.KeyThenPassword);
+        page.Submit("#user-form");
 
         Assert.Contains("not an allowed method", page.Find("#user-form").TextContent);
         Assert.Null(Repository.GetUser("olga").RequireAllOf);
@@ -295,10 +295,10 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("petra");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#allow-password").Change(false);
-        page.Find("#allow-public-key").Change(false);
-        page.Find("#user-form").Submit();
+        page.Click(".edit-user");
+        page.Change("#allow-password", false);
+        page.Change("#allow-public-key", false);
+        page.Submit("#user-form");
 
         Assert.Contains("Allow the password, the public key or both.", page.Find("#user-form").TextContent);
         Assert.Equal(AuthMethods.All, Repository.GetUser("petra").AllowedAuthMethods);
@@ -310,10 +310,10 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("henry");
         var page = Render<Users>();
 
-        page.Find(".delete-user").Click();
+        page.Click(".delete-user");
         Assert.Contains("Delete the user", page.Find(".modal").TextContent);
 
-        page.Find(".modal .btn-secondary").Click();
+        page.Click(".modal .btn-secondary");
 
         Assert.Empty(page.FindAll(".modal"));
         Assert.NotNull(Repository.GetUser("henry"));
@@ -325,8 +325,8 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("ivan");
         var page = Render<Users>();
 
-        page.Find(".delete-user").Click();
-        page.Find(".confirm-button").Click();
+        page.Click(".delete-user");
+        page.Click(".confirm-button");
 
         Assert.Null(Repository.GetUser("ivan"));
         Assert.NotNull(page.Find("#no-users"));
@@ -340,8 +340,8 @@ public sealed class UsersPageTests : AdminUiComponentContext
         download.SetVoidResult();
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#generate-key").Click();
+        page.Click(".edit-user");
+        page.Click("#generate-key");
 
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("judy").PublicKeys), TimeSpan.FromSeconds(30));
         var invocation = Assert.Single(download.Invocations);
@@ -358,8 +358,8 @@ public sealed class UsersPageTests : AdminUiComponentContext
         download.SetVoidResult();
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#generate-ed25519-key").Click();
+        page.Click(".edit-user");
+        page.Click("#generate-ed25519-key");
 
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("jane").PublicKeys), SaveTimeout);
         var entry = Assert.Single(Repository.GetUser("jane").PublicKeys!);
@@ -382,9 +382,9 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("kim", "secret-password", remove.Entry, keep.Entry);
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.FindAll(".remove-key")[0].Click();
-        page.Find(".confirm-button").Click();
+        page.Click(".edit-user");
+        page.Click(".remove-key", 0);
+        page.Click(".confirm-button");
 
         Assert.Equal(keep.Entry.KeyBase64, Assert.Single(Repository.GetUser("kim").PublicKeys!).KeyBase64);
         Assert.Single(page.FindAll(".key-row"));
@@ -402,7 +402,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
+        page.Click("#add-user");
 
         Assert.Single(page.FindAll(".permission-row"));
         Assert.Equal("/", page.Find("#permission-path-0").GetAttribute("value"));
@@ -418,17 +418,17 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("grace");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
-        page.Find("#permission-0-Delete").Change(false);
-        page.Find("#add-permission").Click();
-        page.Find("#permission-path-1").Change("/incoming/");
+        page.Click(".edit-user");
+        page.Change("#permission-0-Delete", false);
+        page.Click("#add-permission");
+        page.Change("#permission-path-1", "/incoming/");
         foreach (var flag in PermissionRowColumns().Where(f => f != FilePermissions.Upload))
-            page.Find($"#permission-1-{flag}").Change(false);
-        page.Find("#add-filter").Click();
+            page.Change($"#permission-1-{flag}", false);
+        page.Click("#add-filter");
         Assert.Equal("/", page.Find("#filter-path-0").GetAttribute("value"));
-        page.Find("#filter-denied-0").Change("*.exe, *.bat");
-        page.Find("#filter-hidden-0").Change(".git");
-        page.Find("#user-form").Submit();
+        page.Change("#filter-denied-0", "*.exe, *.bat");
+        page.Change("#filter-hidden-0", ".git");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal(2, Repository.GetUser("grace").Permissions!.Count), SaveTimeout);
         var user = Repository.GetUser("grace");
@@ -448,16 +448,16 @@ public sealed class UsersPageTests : AdminUiComponentContext
         stored.PathFilters = new() { ["/a"] = new PathFilter { AllowedPatterns = ["*.csv"] } };
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
         Assert.Equal(["/", "/a", "/b"], page.FindAll(".permission-row input[type=text]").Select(i => i.GetAttribute("value")));
         Assert.True(page.Find("#permission-0-Download").HasAttribute("checked"));
         Assert.False(page.Find("#permission-0-List").HasAttribute("checked"));
         Assert.Equal("*.csv", page.Find("#filter-allowed-0").GetAttribute("value"));
 
-        page.FindAll(".remove-permission")[1].Click(); // "/b"
-        page.Find(".remove-filter").Click();
-        page.Find("#user-form").Submit();
+        page.Click(".remove-permission", 1); // "/b"
+        page.Click(".remove-filter");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.Equal(2, Repository.GetUser("heidi").Permissions!.Count), SaveTimeout);
         Assert.False(Repository.GetUser("heidi").Permissions!.ContainsKey("/b"));
@@ -472,12 +472,12 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("ivan");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#add-permission").Click();
-        page.Find("#permission-path-1").Change(path);
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "ivan");
+        page.Change("#root-directory", _root.Path);
+        page.Click("#add-permission");
+        page.Change("#permission-path-1", path);
+        page.Submit("#user-form");
 
         Assert.Contains(message, page.Markup);
         Assert.Null(Repository.GetUser("ivan"));
@@ -488,12 +488,12 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("judy");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#add-filter").Click();
-        page.Find("#filter-denied-0").Change("bin/*.exe");
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "judy");
+        page.Change("#root-directory", _root.Path);
+        page.Click("#add-filter");
+        page.Change("#filter-denied-0", "bin/*.exe");
+        page.Submit("#user-form");
 
         Assert.Contains("a pattern matches a name, not a path", page.Markup);
         Assert.Null(Repository.GetUser("judy"));
@@ -504,16 +504,16 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("quota-user");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#quota-size").Change("1.5");
-        page.Find("#quota-files").Change("100");
-        page.Find("#quota-download").Change("10");
-        page.Find("#bandwidth-download").Change("256");
-        page.Find("#add-bandwidth-override").Click();
-        page.Find("#override-sources-0").Change("10.0.0.0/8, 192.168.0.0/16");
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "quota-user");
+        page.Change("#root-directory", _root.Path);
+        page.Change("#quota-size", "1.5");
+        page.Change("#quota-files", "100");
+        page.Change("#quota-download", "10");
+        page.Change("#bandwidth-download", "256");
+        page.Click("#add-bandwidth-override");
+        page.Change("#override-sources-0", "10.0.0.0/8, 192.168.0.0/16");
+        page.Submit("#user-form");
 
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("quota-user")), SaveTimeout);
         var user = Repository.GetUser("quota-user");
@@ -530,18 +530,18 @@ public sealed class UsersPageTests : AdminUiComponentContext
     {
         var page = Render<Users>();
 
-        page.Find("#add-user").Click();
-        page.Find("#username").Change("no-limits");
-        page.Find("#root-directory").Change(_root.Path);
-        page.Find("#add-bandwidth-override").Click();
-        page.Find("#override-sources-0").Change("10.0.0.0/40");
-        page.Find("#user-form").Submit();
+        page.Click("#add-user");
+        page.Change("#username", "no-limits");
+        page.Change("#root-directory", _root.Path);
+        page.Click("#add-bandwidth-override");
+        page.Change("#override-sources-0", "10.0.0.0/40");
+        page.Submit("#user-form");
 
         Assert.Contains("Not a valid network: 10.0.0.0/40", page.Markup);
         Assert.Null(Repository.GetUser("no-limits"));
 
-        page.Find(".remove-override").Click();
-        page.Find("#user-form").Submit();
+        page.Click(".remove-override");
+        page.Submit("#user-form");
         page.WaitForAssertion(() => Assert.NotNull(Repository.GetUser("no-limits")), SaveTimeout);
         var user = Repository.GetUser("no-limits");
         Assert.Null(user.DiskQuota);
@@ -566,7 +566,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         Quotas.AddTransfer(scope, 512, 0);
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
         var usage = page.Find("#quota-usage").TextContent;
         Assert.Contains("1 MiB of 2 MiB", usage);
@@ -574,11 +574,11 @@ public sealed class UsersPageTests : AdminUiComponentContext
         Assert.Contains("never scanned", usage);
         Assert.Contains("uploaded 512 bytes of 1 KiB", page.Find("#transfer-usage").TextContent);
 
-        page.Find("#rescan-quota").Click();
+        page.Click("#rescan-quota");
         Assert.True(QuotaScans.IsUserPending("counted"));
         Assert.Contains("scan queued", page.Find("#quota-usage").TextContent);
 
-        page.Find("#reset-transfer").Click();
+        page.Click("#reset-transfer");
         page.WaitForAssertion(() => Assert.Equal(0, Quotas.Current(scope).UploadedBytes));
         page.WaitForAssertion(() => Assert.Contains("uploaded 0 bytes", page.Find("#transfer-usage").TextContent));
     }
@@ -589,7 +589,7 @@ public sealed class UsersPageTests : AdminUiComponentContext
         AddUser("plain");
         var page = Render<Users>();
 
-        page.Find(".edit-user").Click();
+        page.Click(".edit-user");
 
         Assert.Empty(page.FindAll("#quota-usage"));
         Assert.NotEmpty(page.FindAll("#quota-fieldset"));

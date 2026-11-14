@@ -17,7 +17,8 @@ namespace SshServerModule.Connections
     /// reads the provider events of the settings store, so the admin UI, the command line and the REST API need no code:
     /// a user that is disabled or removed loses its sessions. <see cref="UserLifecycleService"/> calls
     /// <see cref="CloseSessionsAsync"/> for a user that expired. Each close is logged and published as a
-    /// <see cref="SystemEventType.SessionsClosed"/> event, which is in the audit log with the reason.
+    /// <see cref="SystemEventType.SessionsClosed"/> event, which is in the audit log with the reason. With several nodes
+    /// (issue #75) it closes the sessions on the other nodes too, through <see cref="IClusterConnections"/>.
     /// </summary>
     public sealed class UserSessionCloser : IEventSink
     {
@@ -25,7 +26,7 @@ namespace SshServerModule.Connections
         public const string DisabledReason = "The account was disabled.";
         public const string RemovedReason = "The account was removed.";
 
-        private readonly IConnectionRegistry _connections;
+        private readonly IClusterConnections _connections;
         private readonly Func<IEventBus?> _events;
         private readonly TimeProvider _time;
         private readonly ILogger _logger;
@@ -34,9 +35,10 @@ namespace SshServerModule.Connections
         /// The event bus, asked when it is needed: the bus holds this sink, so it cannot be a constructor dependency.
         /// </param>
         public UserSessionCloser(IConnectionRegistry connections, Func<IEventBus?>? events = null, TimeProvider? time = null,
-            ILogger<UserSessionCloser>? logger = null)
+            ILogger<UserSessionCloser>? logger = null, IClusterConnections? cluster = null)
         {
-            _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+            ArgumentNullException.ThrowIfNull(connections);
+            _connections = cluster ?? new LocalClusterConnections(connections);
             _events = events ?? (() => null);
             _time = time ?? TimeProvider.System;
             _logger = (ILogger?)logger ?? NullLogger.Instance;

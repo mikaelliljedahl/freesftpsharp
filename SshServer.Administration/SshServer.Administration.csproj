@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
+    <ProjectReference Include="..\SshServer.TwoFactor\SshServer.TwoFactor.csproj" />
   </ItemGroup>
 
 </Project>

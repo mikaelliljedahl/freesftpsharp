@@ -54,11 +54,11 @@ public sealed class TwoFactorAdministrationTests : AdminUiComponentContext
         var page = Render<AccountTwoFactor>();
         page.WaitForElement("#two-factor-off");
 
-        page.Find("#two-factor-setup").Click();
+        page.Click("#two-factor-setup");
         page.WaitForElement("#two-factor-qr svg");
         var secret = page.Find("#two-factor-secret").TextContent.Replace(" ", "");
-        page.Find("#two-factor-confirm-code").Change(Now(secret));
-        page.Find("#two-factor-confirm").Click();
+        page.Change("#two-factor-confirm-code", Now(secret));
+        page.Click("#two-factor-confirm");
 
         page.WaitForAssertion(() => Assert.Equal(10, page.FindAll(".recovery-code").Count), Timeout);
         var admin = (await AdminStore.GetAdminAsync("admin", Ct))!;
@@ -66,7 +66,7 @@ public sealed class TwoFactorAdministrationTests : AdminUiComponentContext
         Assert.Contains(Events.Published.OfType<ProviderEvent>(),
             e => e.ObjectType == ProviderObjectType.Admin && e.ObjectName == "admin" && e.ChangedFields.Contains("TwoFactor") && e.Actor == "admin");
 
-        page.Find("#recovery-codes-done").Click();
+        page.Click("#recovery-codes-done");
         page.WaitForElement("#two-factor-on");
         Assert.Empty(page.FindAll(".recovery-code"));
     }
@@ -75,11 +75,12 @@ public sealed class TwoFactorAdministrationTests : AdminUiComponentContext
     public async Task A_wrong_confirmation_code_leaves_the_second_factor_off()
     {
         var page = Render<AccountTwoFactor>();
-        page.WaitForElement("#two-factor-setup").Click();
+        page.WaitForElement("#two-factor-setup");
+        page.Click("#two-factor-setup");
         page.WaitForElement("#two-factor-qr svg");
 
-        page.Find("#two-factor-confirm-code").Change("000000");
-        page.Find("#two-factor-confirm").Click();
+        page.Change("#two-factor-confirm-code", "000000");
+        page.Click("#two-factor-confirm");
 
         page.WaitForElement("#two-factor-error");
         Assert.Empty(await TwoFactorStore.ListEnabledAsync(TwoFactorSubjectKind.Admin, Ct));
@@ -127,10 +128,10 @@ public sealed class TwoFactorAdministrationTests : AdminUiComponentContext
         var page = Render<Users>();
         page.WaitForAssertion(() => Assert.Single(page.FindAll("#user-table .badge"), b => b.TextContent == "2FA"));
 
-        page.FindAll(".edit-user").First(b => b.GetAttribute("aria-label") == "Edit alice").Click();
+        PageEvents.Trigger(() => page.FindAll(".edit-user").First(b => b.GetAttribute("aria-label") == "Edit alice"), e => e.Click());
         page.WaitForElement("#two-factor-on");
-        page.Find("#two-factor-reset").Click();
-        page.Find(".confirm-button").Click();
+        page.Click("#two-factor-reset");
+        page.Click(".confirm-button");
 
         page.WaitForElement("#two-factor-off", Timeout);
         Assert.False(await TwoFactor.IsEnabledAsync(TwoFactorSubject.ForUser(user), Ct));
