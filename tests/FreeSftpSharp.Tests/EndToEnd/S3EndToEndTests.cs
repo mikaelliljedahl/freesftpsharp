@@ -22,7 +22,11 @@ public sealed class S3SftpServerFixture : SftpServerFixture
     public string KeyPrefix { get; } = "e2e/" + Guid.NewGuid().ToString("N");
 
     protected override IFileSystemFactory CreateFileSystemFactory()
-        => new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)), new EffectivePermissionsService());
+    {
+        if (S3TestServer.Endpoint != null)
+            S3TestServer.EnsureBucket(); // this fixture has its own client; on a new S3 server the bucket is missing
+        return new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)), new EffectivePermissionsService());
+    }
 
     /// <summary>The object key of a virtual path such as "/dir/a.txt".</summary>
     public string Key(string virtualPath) => KeyPrefix + virtualPath;

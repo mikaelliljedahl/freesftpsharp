@@ -54,9 +54,9 @@ internal sealed class SftpEngineClient : IDisposable
 
     private uint _nextId = 100;
 
-    public SftpEngineClient(IFileSystem fileSystem, bool readOnly = false)
+    public SftpEngineClient(IFileSystem fileSystem, bool readOnly = false, Microsoft.Extensions.Logging.ILogger? logger = null)
     {
-        Service = new SftpService(new SftpFileSystemAdapter(fileSystem, NullLogger.Instance, "test_person"), readOnly);
+        Service = new SftpService(new SftpFileSystemAdapter(fileSystem, logger ?? NullLogger.Instance, "test_person"), readOnly);
         Service.DataReceived += (_, packet) => Responses.Add(packet);
     }
 

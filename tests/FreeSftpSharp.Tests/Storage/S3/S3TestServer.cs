@@ -42,6 +42,13 @@ internal static class S3TestServer
     /// <summary>A client of the test server; the bucket exists.</summary>
     public static IAmazonS3 Client => LazyClient.Value;
 
+    /// <summary>
+    /// Creates the bucket when it is missing (once per test run). A test that reaches the server through its own client
+    /// (for example the SFTP server of <c>S3SftpServerFixture</c>) calls this first: on a new server (CI) the bucket
+    /// does not exist until a test uses <see cref="Client"/>.
+    /// </summary>
+    public static void EnsureBucket() => _ = LazyClient.Value;
+
     /// <summary>Removes every object below a key prefix (cleanup; errors are ignored).</summary>
     public static void DeletePrefix(string keyPrefix)
     {
