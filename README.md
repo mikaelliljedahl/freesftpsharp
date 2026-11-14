@@ -314,6 +314,74 @@ docker run -d --rm --name minio -p 19000:9000 -e MINIO_ROOT_USER=minioadmin -e M
 FREESFTPSHARP_TEST_S3_ENDPOINT=http://127.0.0.1:19000 dotnet test FreeSftpSharp.sln --filter "Category=S3"
 docker stop minio
 ```
+## Google Cloud Storage backend
+
+`SshServer.Filesystem.Gcs` stores the files of a user in a Google Cloud Storage bucket, or below a key prefix in it. Both
+hosts register it with `services.AddGcsStorage()` under the provider name `gcs`. Nothing changes for a server that does
+not use it: no client is created and no setting is needed.
+
+> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
+> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+
+### Options (`GcsStorageOptions`)
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `Bucket` | (required) | The bucket. It must exist; the server never creates or removes a bucket. |
+| `KeyPrefix` | empty | The prefix that is `/` for the user, for example `users/alice`. Empty: the whole bucket. |
+| `CredentialsJson` | empty | The content of a service account key file. A secret, never shown by `ToString()`. |
+| `CredentialsFile` | empty | The path of a service account key file. Not together with `CredentialsJson`. |
+| `Endpoint` | empty | The URL of an emulator, for example `http://localhost:4443`. Without credentials the requests are not authenticated. Empty for Google Cloud Storage. |
+| `StorageClass` | bucket default | `STANDARD`, `NEARLINE`, `COLDLINE` or `ARCHIVE` for new objects. |
+| `UploadChunkSize` | 8 MiB | The chunk of a resumable upload, held in memory; a multiple of 256 KiB (256 KiB to 512 MiB). |
+| `ReadAheadSize` | 4 MiB | The bytes that one ranged download reads ahead (64 KiB to 512 MiB). |
+
+Without `CredentialsJson` and `CredentialsFile` the server uses the Application Default Credentials
+(`GOOGLE_APPLICATION_CREDENTIALS`, `gcloud auth application-default login`, or the service account of the VM, GKE pod
+or Cloud Run service).
+
+### Behaviour
+
+- **Directories are virtual**, as in the S3 backend: a directory exists when an object name starts with its prefix
+  (`dir/`), `mkdir` writes a zero-byte marker object `dir/`, and a listing uses the delimiter `/`.
+- **Reads** are ranged downloads of one object generation through a read-ahead buffer; a file that another writer
+  replaces while it is open gives a failure, never mixed content.
+- **Writes** are sequential. A file smaller than one chunk is one upload request; a larger file is a resumable upload
+  whose chunks are sent while the next one fills, and the object appears when the file is closed. A failed chunk, and a
+  lost connection (`AbortAsync`), cancel the session without finalizing it, so no object appears and an existing object
+  stays as it was. Cloud Storage discards a session that is not used for a week. An exclusive create (`O_EXCL`) is
+  checked again at the close (`ifGenerationMatch=0`).
+- **A write at the end of an existing file** (a resumed upload, `reput`, `Append`) reads a small object into the
+  buffer. For an object of at least one chunk the new data is uploaded as the temporary object `NAME.part-ID` and joined
+  by a compose on the server at the close (it is visible in a listing until then, and is removed at an abort).
+- **Rename** is copy + delete on the server (rewrite, any size); a directory rename copies every object below it, then
+  removes the sources. It is not atomic.
+- **No permissions, no times, no links, no size changes** (`SSH_FX_OP_UNSUPPORTED`); statvfs fails.
+- **Errors**: 404 is `NoSuchFile`, 401 and 403 are `PermissionDenied`, 412 is `AlreadyExists`, every other error is
+  `Failure`; the log has the status and the Google error reason, never the bucket or the endpoint.
+
+### IAM permissions
+
+Grant the service account the role `roles/storage.objectAdmin` on the bucket (or on a managed folder / with an IAM
+condition on the object name prefix for one `KeyPrefix`). The server needs `storage.objects.get`, `.list`, `.create` and
+`.delete` (a rename and an append use these too; a compose needs `storage.objects.create` and `.get`). It never needs
+bucket-level permissions.
+
+### Tests
+
+The conformance suite and the end-to-end tests run against an emulator when `FREESFTPSHARP_TEST_GCS_ENDPOINT` is set
+(CI: `fsouza/fake-gcs-server` on the Ubuntu job; the bucket is created by the tests). Locally:
+
+```sh
+docker run -d --rm --name fakegcs -p 14443:4443 -e FAKE_GCS_SCHEME=http -e FAKE_GCS_BACKEND=memory \
+  -e FAKE_GCS_EXTERNAL_URL=http://127.0.0.1:14443 fsouza/fake-gcs-server:1.56.1
+FREESFTPSHARP_TEST_GCS_ENDPOINT=http://127.0.0.1:14443 dotnet test FreeSftpSharp.sln --filter "Category=Gcs"
+docker stop fakegcs
+```
+
+Verification against a real bucket with a service account is a manual step: set `Bucket` and `CredentialsFile`, run the
+same suite by pointing a test at it, and check that the role above is enough.
+
 ## Encrypted storage
 
 The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
