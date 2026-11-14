@@ -1,0 +1,51 @@
+name: "Container image check"
+
+# Build only: nothing is pushed. The release workflow (release.yml, tags) publishes the image.
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'deploy/docker/**'
+      - '.github/workflows/docker-check.yml'
+      - '**/*.csproj'
+      - '**/packages.lock.json'
+      - 'Directory.Build.props'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - 'deploy/docker/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docker:
+    name: Build and smoke test the image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          build-args: VERSION=0.0.0-ci
+          tags: freesftpsharp:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: deploy/docker/smoke-test.sh freesftpsharp:ci 0.0.0-ci

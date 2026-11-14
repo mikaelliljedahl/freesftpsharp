@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/logs/
+**/*.db
+.git/
+.github/
+docs/
+tests/
+TestClient/
+deploy/*
+!deploy/docker
+*.md
+!README.md

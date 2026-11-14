@@ -21,6 +21,12 @@ using SshServer.Observability;
 
 using FxSshSftpServer.Security;
 
+if (FxSsh.SshServerModule.Cli.VersionCommand.IsRequested(args))
+{
+    Console.WriteLine(FxSsh.SshServerModule.Cli.VersionCommand.Describe(typeof(Program).Assembly));
+    return 0;
+}
+
 if (AdminPasswordCommand.IsRequested(args))
 {
     return AdminPasswordCommand.RunOnConsole();

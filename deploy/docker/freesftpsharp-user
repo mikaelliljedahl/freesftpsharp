@@ -1,0 +1,4 @@
+#!/bin/sh
+# Manage the SFTP users of the container: freesftpsharp-user add|list|remove ... (see "user" in the README).
+# Example: echo "a-password" | docker exec -i freesftpsharp freesftpsharp-user add alice --root /data/files/alice --password-stdin
+exec dotnet /app/cli/ServerConsoleApp.dll user "$@"

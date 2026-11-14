@@ -50,6 +50,16 @@ start the server. The rules are the same as in the admin UI (the same service): 
 
 Exit codes: 0 = done, 1 = the operation failed (the reason is on stderr), 2 = wrong arguments (the usage is on stderr).
 
+## Run in a container
+
+```sh
+docker run -p 2222:22 -p 8080:80 -v freesftpsharp-data:/data ghcr.io/mikaelliljedahl/freesftpsharp
+```
+
+The first start prints a generated admin password to the log. Log in at `http://localhost:8080`, add a user, then
+`sftp -P 2222 alice@localhost`. Releases also have self-contained archives (`--version` prints the version). See
+[docs/deployment.md](docs/deployment.md) for compose, systemd and Kubernetes examples, HTTPS, upgrade and backup.
+
 ## Admin web UI (FxSshSftpServer)
 
 `FxSshSftpServer` hosts the SSH/SFTP server and a Blazor admin UI for the server settings and the SFTP users.
