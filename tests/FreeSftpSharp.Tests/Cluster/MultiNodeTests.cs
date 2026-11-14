@@ -171,4 +171,42 @@ public sealed class MultiNodeTests : IAsyncLifetime
             await changed.Task.WaitAsync(Within, TestContext.Current.CancellationToken);
         }
     }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_session_limit_of_a_user_counts_the_sessions_on_every_node(string provider)
+    {
+        var (database, a, b) = await StartAsync(provider);
+        await using (database)
+        await using (a)
+        await using (b)
+        {
+            var user = NewUser("erin");
+            user.MaxSessions = 1;
+            Assert.True(a.Repository.AddUser(user));
+            using var first = Client(b, "erin");
+            await first.ConnectAsync(TestContext.Current.CancellationToken);
+            var id = Assert.Single(b.LocalConnections.GetAll()).Id;
+            await EventuallyAsync(() => Task.FromResult(a.Connections.Get(id) is { Username: "erin" }), "the session of node B on node A");
+            Assert.Equal(1, a.LocalConnections.CountSessions("ERIN", Guid.Empty));
+
+            using (var second = Client(a, "erin"))
+                await Assert.ThrowsAsync<SshAuthenticationException>(() => second.ConnectAsync(TestContext.Current.CancellationToken));
+
+            first.Disconnect();
+            await EventuallyAsync(async () =>
+            {
+                using var again = Client(a, "erin");
+                try
+                {
+                    await again.ConnectAsync(TestContext.Current.CancellationToken);
+                    return again.IsConnected;
+                }
+                catch (SshAuthenticationException)
+                {
+                    return false;
+                }
+            }, "a login on node A after the session on node B ended");
+        }
+    }
 }

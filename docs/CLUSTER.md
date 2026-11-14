@@ -49,8 +49,9 @@ With `Cluster:Enabled` every node, each poll interval (`ClusterNodeService`):
 The users, groups and server settings are read from the database for each login, so a user created on one node can log
 in on the others at once. The quota counters (#62) are increments in the database, the webhook outbox (#66) and the
 schedule of the event rules (#68) are claimed with conditional updates, and the token signing key of the REST API (#67)
-is in the database: they work on several nodes without more settings. The session limit of a user (`MaxSessions`) is
-counted per node. A user closed on one node (disabled or removed) is disconnected on every node.
+is in the database: they work on several nodes without more settings. The session limit of a user (`MaxSessions`) counts
+the sessions on every node: the ones of the other nodes as they stored them at their last heartbeat, so two logins on two
+nodes within one poll interval can both take the last session. A user closed on one node (disabled or removed) is disconnected on every node.
 
 The files of the users must be on storage that every node reaches: a shared file system for the local disk backend, or
 an object store (S3, Azure Blob, GCS).
