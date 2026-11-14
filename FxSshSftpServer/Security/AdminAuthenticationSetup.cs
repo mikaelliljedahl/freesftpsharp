@@ -137,8 +137,15 @@ namespace FxSshSftpServer.Security
                 AdminCreateCommand.Switch,
                 AdminPasswordCommand.Switch);
 
-            return app.Use(async (HttpContext context, Func<Task> _) =>
+            // The web client of the users (#69) does not need an administrator: it and the files of its pages stay open.
+            var clientEnabled = services.GetRequiredService<IOptions<WebClient.WebClientOptions>>().Value.Enabled;
+            return app.Use(async (HttpContext context, Func<Task> next) =>
             {
+                if (clientEnabled && (WebClient.WebClientSetup.IsClientPath(context.Request.Path) || IsStaticFile(context.Request.Path)))
+                {
+                    await next();
+                    return;
+                }
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 context.Response.ContentType = "text/plain; charset=utf-8";
                 await context.Response.WriteAsync(
@@ -149,6 +156,9 @@ namespace FxSshSftpServer.Security
                     "AdminAuth__UserName / AdminAuth__PasswordHash, or user secrets). Then restart the server.\n");
             });
         }
+
+        private static bool IsStaticFile(PathString path) =>
+            path.StartsWithSegments("/lib") || path.StartsWithSegments("/css") || path.StartsWithSegments("/js");
 
         private static async Task ValidatePrincipalAsync(CookieValidatePrincipalContext context)
         {

@@ -119,6 +119,9 @@ namespace FxSshSftpServer.Models
         /// <summary>The user may log in with WebDAV (issue #71), when WebDAV is on for the server.</summary>
         public bool AllowWebDav { get; set; } = true;
 
+        /// <summary>The user may log in to the web client (issue #69), when the web client is on for the server.</summary>
+        public bool AllowWeb { get; set; } = true;
+
         /// <summary>The user may log in with FTP or FTPS (issue #72), when FTP is on for the server.</summary>
         public bool AllowFtp { get; set; } = true;
 
@@ -157,6 +160,7 @@ namespace FxSshSftpServer.Models
             MultiStep = MultiStepOf(user.RequireAllOf),
             AllowSftp = user.AllowedProtocols.Allows(UserProtocols.Sftp),
             AllowWebDav = user.AllowedProtocols.Allows(UserProtocols.WebDav),
+            AllowWeb = user.AllowedProtocols.Allows(UserProtocols.Web),
             AllowFtp = user.AllowedProtocols.Allows(UserProtocols.Ftp),
             AppPasswords = user.AppPasswords?.ToList() ?? new List<AppPassword>(),
             LastLoginAt = user.LastLoginAt,
@@ -180,6 +184,7 @@ namespace FxSshSftpServer.Models
 
         private UserProtocols AllowedProtocols =>
             (AllowSftp ? UserProtocols.Sftp : UserProtocols.None) | (AllowWebDav ? UserProtocols.WebDav : UserProtocols.None)
+            | (AllowWeb ? UserProtocols.Web : UserProtocols.None)
             | (AllowFtp ? UserProtocols.Ftp : UserProtocols.None);
 
         private List<AuthMethods> RequiredSteps => MultiStep switch
@@ -267,7 +272,7 @@ namespace FxSshSftpServer.Models
                 foreach (var problem in AuthMethodRules.Validate(AllowedMethods, RequiredSteps))
                     yield return new ValidationResult(problem, new[] { nameof(AllowPassword) });
 
-            if (!AllowSftp && !AllowWebDav && !AllowFtp)
+            if (!AllowSftp && !AllowWebDav && !AllowWeb && !AllowFtp)
                 yield return new ValidationResult("Allow at least one protocol.", new[] { nameof(AllowSftp) });
 
             foreach (var problem in Quotas.Problems(Mounts))

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The administration application layer on ASP.NET Core: the claims and policies of an administrator, the signed-in
+    administrator of a request or circuit (CurrentAdmin), and the scoped views of the shared services that check its
+    permissions and scope. The admin UI (FxSshSftpServer) and the REST API (SshServer.Api) both use it.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SshServer.Interfaces\SshServer.Interfaces.csproj" />
+  </ItemGroup>
+
+</Project>

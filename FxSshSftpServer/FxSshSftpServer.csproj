@@ -19,6 +19,8 @@
     <ProjectReference Include="..\SshServer.Filesystem.S3\SshServer.Filesystem.S3.csproj" />
     <ProjectReference Include="..\SshServer.Filesystem.Gcs\SshServer.Filesystem.Gcs.csproj" />
     <ProjectReference Include="..\SshServer.Filesystem.Encrypted\SshServer.Filesystem.Encrypted.csproj" />
+    <ProjectReference Include="..\SshServer.Administration\SshServer.Administration.csproj" />
+    <ProjectReference Include="..\SshServer.Api\SshServer.Api.csproj" />
     <ProjectReference Include="..\SshServer.Observability\SshServer.Observability.csproj" />
     <ProjectReference Include="..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
@@ -27,6 +29,11 @@
     <ProjectReference Include="..\FreeSftpSharp.WebDav\FreeSftpSharp.WebDav.csproj" />
     <ProjectReference Include="..\SshServer.TwoFactor\SshServer.TwoFactor.csproj" />
     <ProjectReference Include="..\SshServer.EventRules\SshServer.EventRules.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The admin security core (claims, policies, CurrentAdmin, the scoped services) is in SshServer.Administration, shared with the REST API. -->
+    <Using Include="SshServer.Administration" />
   </ItemGroup>
 
 </Project>

@@ -62,6 +62,14 @@ the user, the password (`AllowedAuthMethods`; not alone for a multi-step login o
 (`User.AppPasswords`, per protocol) and the protocol flags (`User.AllowedProtocols`). The SFTP login of `HostedServer`
 checks the same flags. A protocol never repeats a storage rule.
 
+The web client of the users (#69, [WEB-CLIENT.md](WEB-CLIENT.md)) is a branch of the web host (`FxSshSftpServer/WebClient`,
+`AddWebClient()`, `UseWebClient()` and `MapWebClient()`, Razor Pages in `Pages/Client`), off unless `WebClient:Enabled`.
+It logs in with `PasswordLoginService` in its interactive mode (`PasswordLoginOptions.Interactive`: the caller asks for the
+TOTP code and lets an expired password be changed; no app passwords), with its own cookie scheme (`UserAuth`, path
+`/client`), and registers one connection per browser login (protocol `HTTP`, `ClientSessions`), which is also the store of
+the sessions. Every file action uses `IFileSystemFactory` with that connection; the page only maps the effective
+permissions to its buttons (`ClientPermissionMap`, the same `PathRuleResolver` as the permission decorator).
+
 ## Events
 
 Everything that happens in the server is an `IEvent` (`SshServer.Interfaces.Events`): `FileEvent`, `AuthEvent`,
@@ -247,6 +255,27 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
   removes only the groups of its role for its users.
 - **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
   request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
+- **One application layer for the UI and the API.** The claims, the policies, `CurrentAdmin` and the scoped views are in
+  `SshServer.Administration`; the admin UI (`FxSshSftpServer`) and the REST API (`SshServer.Api`) both reference it.
+
+## REST API
+
+`SshServer.Api` (#67, [REST-API.md](REST-API.md)) is the REST API v1 under `/api/v1`: minimal API endpoints, the OpenAPI
+document of `Microsoft.AspNetCore.OpenApi` at `/api/v1/openapi.json` (committed as [openapi.json](openapi.json) and
+compared by a test), and two authentication schemes behind one policy scheme: a bearer token (JWT) from
+`POST /api/v1/token`, and an API key (`X-API-Key`, `IApiKeyStore`, only the SHA-256 hash stored). The web host calls
+`AddRestApi()` and `MapRestApi()`; nothing is mapped until `Api:Enabled` is true.
+
+- **No second permission model.** Each route has the policy of its `AdminPermissions` flag, and the endpoints call the
+  same scoped services as the pages (`AdminScopedSettingsRepository`, `ScopedConnections`, `ScopedAuditLog`,
+  `UserAdministrationService`, `VirtualFolderService`, `GroupService`, `AdminAdministrationService`, `WebhookAdministrationService`,
+  `EventRuleAdministrationService`). An
+  endpoint filter gives the principal of the request to the authentication state, so `CurrentAdmin` and the services
+  check the API caller like the administrator of a circuit. A token or key has the claims of the login cookie, checked
+  against the stored administrator on each request; an API key is the permissions of its owner masked with its scopes.
+- **Secrets are write-only.** The views have whether a secret is set, never its value. The dump has them only
+  encrypted with a passphrase of the caller (`StorageConfigService.Export`/`Import`).
+- **One error form.** The exceptions of the services become RFC 9457 problem details in one endpoint filter.
 
 ## Two-factor authentication
 
