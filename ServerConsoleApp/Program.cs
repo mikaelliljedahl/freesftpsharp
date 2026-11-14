@@ -17,6 +17,7 @@ using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServerModule.Observability;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
@@ -54,6 +55,7 @@ await new HostBuilder()
     });
     services.AddSshServerSettings(hostContext.Configuration);
     services.AddSshServerEvents();
+    services.AddSshServerMetrics(); // meter and activities only; no exporter and no port
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
     services.AddS3Storage();
