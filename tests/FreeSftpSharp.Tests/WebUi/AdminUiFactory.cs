@@ -55,6 +55,9 @@ public class AdminUiFactory : WebApplicationFactory<Program>
             // The same for the webhooks: no store, so the webhook dispatcher does nothing.
             services.RemoveAll<SshServer.Interfaces.Webhooks.IWebhookStore>();
             services.AddSingleton<SshServer.Interfaces.Webhooks.IWebhookStore>(new SshServer.Settings.Sql.Webhooks.DisabledWebhookStore());
+            // And for the event rules: no store, so the scheduler and the rules do nothing.
+            services.RemoveAll<SshServer.Interfaces.EventRules.IEventRuleStore>();
+            services.AddSingleton<SshServer.Interfaces.EventRules.IEventRuleStore>(new SshServer.Settings.Sql.EventRules.DisabledEventRuleStore());
             services.RemoveAll<IAdminStore>();
             services.AddSingleton<IAdminStore>(AdminStore);
             services.RemoveAll<SshServer.Interfaces.TwoFactor.ITwoFactorStore>();

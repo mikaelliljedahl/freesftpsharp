@@ -15,19 +15,19 @@ namespace FreeSftpSharp.Tests.EndToEnd;
 
 /// <summary>
 /// The server with the GCS backend as the storage of every user, against a Cloud Storage emulator (fake-gcs-server in
-/// CI); skipped unless FREESFTPSHARP_TEST_GCS_ENDPOINT is set. Until the per-user storage configuration (#56), the
-/// fixture selects "gcs" with its own <see cref="IUserStorageResolver"/>.
+/// CI); skipped unless FREESFTPSHARP_TEST_GCS_ENDPOINT is set. The fixture gives every user "gcs" with a fixed
+/// <see cref="IUserStorageResolver"/>.
 /// </summary>
 public sealed class GcsSftpServerFixture : SftpServerFixture
 {
     public string KeyPrefix { get; } = "e2e/" + Guid.NewGuid().ToString("N");
 
-    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
     {
         if (GcsTestServer.Endpoint != null)
             GcsTestServer.EnsureBucket(); // on a new emulator (CI) the bucket is missing
-        return new StorageFileSystemFactory(new StorageProviderRegistry([new GcsStorageProvider(new GcsClientCache())]),
-            new GcsResolver(GcsTestServer.Options(KeyPrefix)), new EffectivePermissionsService(), connections, events);
+        return TestStorage.Factory([new GcsStorageProvider(new GcsClientCache())],
+            codec => TestStorage.Fixed(codec, GcsStorageProvider.ProviderName, GcsTestServer.Options(KeyPrefix)), connections, events);
     }
 
     /// <summary>The object names below the user root of this fixture.</summary>
@@ -38,11 +38,6 @@ public sealed class GcsSftpServerFixture : SftpServerFixture
         await base.DisposeAsync();
         if (GcsTestServer.Endpoint != null)
             GcsTestServer.DeletePrefix(KeyPrefix);
-    }
-
-    private sealed class GcsResolver(GcsStorageOptions options) : IUserStorageResolver
-    {
-        public StorageSelection Resolve(User user) => new(GcsStorageProvider.ProviderName, options);
     }
 }
 

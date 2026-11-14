@@ -24,6 +24,7 @@
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
     <ProjectReference Include="..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
     <ProjectReference Include="..\SshServer.TwoFactor\SshServer.TwoFactor.csproj" />
+    <ProjectReference Include="..\SshServer.EventRules\SshServer.EventRules.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -50,6 +51,42 @@ public sealed class InMemorySettingsRepository : ISettingsRepository
         _users[updatedUser.Username] = updatedUser;
         return true;
     }
+
+    private readonly ConcurrentDictionary<int, VirtualFolder> _folders = new();
+    private int _nextFolderId;
+
+    public List<VirtualFolder> GetVirtualFolders() => _folders.Values.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).Select(Copy).ToList();
+
+    public VirtualFolder? GetVirtualFolder(int id) => _folders.TryGetValue(id, out var folder) ? Copy(folder) : null;
+
+    public bool AddVirtualFolder(VirtualFolder folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder.Name) || _folders.Values.Any(f => string.Equals(f.Name, folder.Name, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        folder.Id = Interlocked.Increment(ref _nextFolderId);
+        _folders[folder.Id] = Copy(folder);
+        return true;
+    }
+
+    public bool UpdateVirtualFolder(VirtualFolder folder)
+    {
+        if (!_folders.ContainsKey(folder.Id)
+            || _folders.Values.Any(f => f.Id != folder.Id && string.Equals(f.Name, folder.Name, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        _folders[folder.Id] = Copy(folder);
+        return true;
+    }
+
+    public bool RemoveVirtualFolder(int id)
+    {
+        if (!_folders.TryRemove(id, out _))
+            return false;
+        foreach (var user in _users.Values)
+            user.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
+        return true;
+    }
+
+    private static VirtualFolder Copy(VirtualFolder folder) => new() { Id = folder.Id, Name = folder.Name, Description = folder.Description, Storage = folder.Storage };
 
     public void Dispose()
     {

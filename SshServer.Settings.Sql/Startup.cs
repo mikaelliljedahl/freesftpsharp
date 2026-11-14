@@ -12,6 +12,8 @@ using SshServer.Interfaces.Events;
 using SshServer.Settings.Sql.Admins;
 using SshServer.Settings.Sql.Audit;
 using SshServer.Settings.Sql.Webhooks;
+using SshServer.Settings.Sql.EventRules;
+using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Webhooks;
 using SshServer.Interfaces.TwoFactor;
 using SshServer.Settings.Sql.TwoFactor;
@@ -26,7 +28,9 @@ namespace SshServer.Settings.Sql
         /// (see <see cref="SettingsStorageOptions"/>): SQLite by default, LiteDB when <c>Settings:Provider</c> is <c>LiteDb</c>.
         /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>),
-        /// and the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it).
+        /// the store of the webhooks (<see cref="IWebhookStore"/>; the webhooks plug-in, AddWebhooks, uses it) and the store
+        /// of the event rules (<see cref="IEventRuleStore"/>; the event rules plug-in, AddEventRules, uses it).
+        /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
         /// provider keeps them in memory only. The TOTP enrolments (<see cref="ITwoFactorStore"/>, #63) are in the same
         /// database; the LiteDB provider has none.
@@ -35,6 +39,7 @@ namespace SshServer.Settings.Sql
         {
             var options = SettingsStorageOptions.FromConfiguration(configuration);
             services.AddSingleton(options);
+            services.AddSshServerSecretProtection();
 
             switch (options.Provider)
             {
@@ -50,6 +55,7 @@ namespace SshServer.Settings.Sql
                     // Like the audit log: the repository creates and migrates the database when the host starts. The store
                     // does not resolve the repository (that would be a cycle: repository, event bus, webhook sink, store).
                     services.TryAddSingleton<IWebhookStore>(_ => new SqlWebhookStore(dbOptions));
+                    services.TryAddSingleton<IEventRuleStore>(_ => new SqlEventRuleStore(dbOptions));
                     services.TryAddSingleton<IAdminStore>(sp =>
                     {
                         // The repository creates and migrates the database; the store only uses the tables.
@@ -72,6 +78,7 @@ namespace SshServer.Settings.Sql
                     services.AddSingleton<ISettingsRepository>(_ => new SettingsRepository(options.LiteDbPath));
                     services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
                     services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
+                    services.TryAddSingleton<IEventRuleStore, DisabledEventRuleStore>();
                     services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
                     services.TryAddSingleton<ITwoFactorStore, DisabledTwoFactorStore>();
                     break;

@@ -21,6 +21,7 @@ using SshServerModule.Events;
 using SshServerModule.Connections;
 using SshServer.Webhooks;
 using SshServer.TwoFactor;
+using SshServer.EventRules;
 using SshServer.Observability;
 
 using FxSshSftpServer.Security;
@@ -59,7 +60,7 @@ builder.Services.AddRazorPages();
 
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
-builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook and TOTP secrets
+builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook, storage and TOTP secrets
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -78,14 +79,15 @@ Log.Debug("AddSshServerEvents...");
 builder.Services.AddSshServerEvents(); // event bus; the audit log comes with AddSshServerSettings
 builder.Services.AddWebhooks(builder.Configuration); // webhooks (#66): nothing is sent until an admin adds one
 builder.Services.AddTwoFactor(builder.Configuration); // TOTP second factor (#63): off until a user or administrator sets up an app
+builder.Services.AddEventRules(builder.Configuration); // event rules (#68): nothing runs until an admin adds a rule; commands are off
 builder.Services.AddSshServerObservability(builder.Configuration); // metrics; /metrics, /healthz, /readyz and OTLP only when configured
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
-builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a storage configuration selects it)
-builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (used only when a storage configuration selects it)
-builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a storage configuration selects it)
-builder.Services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
+builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddAzureBlobStorage(); // the "azure-blob" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddGcsStorage(); // the "gcs" storage provider (used only when a user or virtual folder selects it)
+builder.Services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();

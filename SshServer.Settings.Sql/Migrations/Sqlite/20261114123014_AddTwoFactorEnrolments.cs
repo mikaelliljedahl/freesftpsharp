@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 /// <inheritdoc />
-public partial class _20261114121201_AddTwoFactorEnrolments : Migration
+public partial class _20261114123014_AddTwoFactorEnrolments : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

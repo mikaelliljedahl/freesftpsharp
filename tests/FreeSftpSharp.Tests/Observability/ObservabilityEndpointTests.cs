@@ -55,6 +55,11 @@ public sealed class FailingDatabaseFactory : ObservabilityFactory
         public List<User> GetAllUsers() => throw new IOException("config.db is unreadable");
         public bool AddUser(User newUser) => false;
         public bool UpdateUser(User updatedUser) => false;
+        public List<SshServer.Interfaces.Storage.VirtualFolder> GetVirtualFolders() => throw new IOException("config.db is unreadable");
+        public SshServer.Interfaces.Storage.VirtualFolder? GetVirtualFolder(int id) => null;
+        public bool AddVirtualFolder(SshServer.Interfaces.Storage.VirtualFolder folder) => false;
+        public bool UpdateVirtualFolder(SshServer.Interfaces.Storage.VirtualFolder folder) => false;
+        public bool RemoveVirtualFolder(int id) => false;
         public void Dispose() { }
     }
 }

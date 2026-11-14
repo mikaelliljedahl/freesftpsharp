@@ -51,15 +51,24 @@ public sealed record ProviderEvent(ProviderAction Action, ProviderObjectType Obj
 /// A <see cref="User"/> without its password hash and public keys: only whether it has them, and the fingerprints of the
 /// keys (not secret, they identify a key in the audit log).
 /// </summary>
+/// <param name="StorageProvider">The provider of <see cref="User.Storage"/>; null for the default storage. The options are left out (they can have secrets).</param>
+/// <param name="VirtualFolders">The mounts, as "mount path=virtual folder id".</param>
 public sealed record UserSnapshot(string Username, string UserRootDirectory, bool HasPassword, bool HasPublicKey,
     bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps, IReadOnlyList<string> PublicKeyFingerprints,
-    string AllowedAuthMethods, string RequireAllOf)
+    string AllowedAuthMethods, string RequireAllOf, string? StorageProvider, IReadOnlyList<string> VirtualFolders)
 {
     public static UserSnapshot From(User user) => new(user.Username, user.UserRootDirectory,
         !string.IsNullOrEmpty(user.HashedPassword), user.PublicKeys is { Count: > 0 },
         user.OnlyWhitelistedIps, user.WhitelistedIps?.ToList() ?? [],
         user.PublicKeys?.Select(k => k.Fingerprint).ToList() ?? [],
-        user.AllowedAuthMethods.ToString(), string.Join(",", user.RequireAllOf ?? []));
+        user.AllowedAuthMethods.ToString(), string.Join(",", user.RequireAllOf ?? []), user.Storage?.Provider,
+        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList());
+}
+
+/// <summary>A <see cref="Storage.VirtualFolder"/> without its storage options (they can have secrets).</summary>
+public sealed record VirtualFolderSnapshot(int Id, string Name, string? Description, string StorageProvider)
+{
+    public static VirtualFolderSnapshot From(Storage.VirtualFolder folder) => new(folder.Id, folder.Name, folder.Description, folder.Storage.Provider);
 }
 
 /// <summary>The <see cref="ServerSettings"/> without the host keys.</summary>

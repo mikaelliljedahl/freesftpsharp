@@ -31,6 +31,7 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Storage rule | `IFileSystem` decorator | permissions, path filters, quotas, bandwidth, events | #59, #62, #65 |
 | Authentication | `IAuthenticationProvider` | database, external HTTP, LDAP | #64 |
 | Event sink | `IEventSink` / `IEventHook` on `IEventBus` | audit log, webhooks, event rules, metrics | #65, #66, #68 |
+| Event rule action | `IEventRuleAction` | email, command, move, copy, delete, retention, webhook | #68 |
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
 | Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
@@ -69,6 +70,16 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
   `Pre*` event inline, with their timeout and fail-open setting. A `HookDecision.Deny` can carry a `ClientMessage`; the
   `EventingFileSystem` puts it in the `FileSystemException`, and the protocol adds it to its "permission denied". The
   enabled webhooks are cached in memory (`WebhookCatalog`), so with no webhook an event costs no database read.
+- **Event rules** (#68) are the plug-in `SshServer.EventRules` (`AddEventRules()`), with the store `IEventRuleStore` of
+  the settings database. The `EventRuleSink` (rules on events) and the `EventRuleHook` (rules on `Pre*` events; the
+  operation waits for them) put runs in the `EventRuleQueue`, and the `EventRuleWorker` runs them; so the event bus does
+  not depend on the storage and the users that the actions need. The `EventRuleScheduler` runs the cron rules on the
+  `TimeProvider`; a node claims each occurrence with a conditional update of the rule row, so it runs once on several
+  nodes. The `EventRuleRunner` runs the actions in order through `IEventRuleAction` plug-ins (one class per action type,
+  found by its type name; the Webhook action comes with `AddWebhooks`), never a switch on the type. The file actions use
+  `IFileSystemFactory` with `ClientContext.SkipPermissions` (a server operation: no per-path permissions) and the
+  protocol `EventRules`, whose events never start a rule. The enabled rules are cached in memory (`EventRuleCatalog`).
+  The Command action is off unless the operator allows it; it never uses a shell. See [EVENT-RULES.md](EVENT-RULES.md).
 
 ## Observability
 
@@ -130,11 +141,22 @@ Permissions, path filters, quotas, bandwidth limits and events wrap an `IFileSys
 - Protocols never repeat a rule. SFTP, WebDAV, FTP and the web client get it from the chain.
 - Test each decorator alone with `InMemoryFileSystem`, and run the conformance suite through it.
 
+The storage of a user comes from `IUserStorageResolver`: `User.Storage` (a provider name and its options as JSON, a
+`StorageConfig`), or `IDefaultUserStorage` (the local disk at `User.UserRootDirectory`) for a user without one, and the
+mounted virtual folders. The core decodes the options into the `IStorageProvider.OptionsType` of the provider
+(`StorageOptionsCodec`) and never looks into them; the provider validates them. Option properties marked `[Secret]`
+are encrypted at rest with `ISecretProtector` (ASP.NET Core data protection). The admin UI builds its fields from the
+options record (`[Display]`, `[Secret]`, `[AllowedValues]`), so a backend needs no UI code of its own.
+
 The chain today, from the backend outwards:
 
+0. `MountedFileSystem` (#56), added by the factory for a user with virtual folders: routes each path to the storage
+   with the longest mount path. A mount point is the root of its storage (it cannot be removed or renamed), and a rename
+   between two storages throws `OpNotSupported`. It is innermost, so every rule below sees the virtual paths.
 1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
    `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
-   factory leaves it out for a user who may do everything. It compares paths like the backend does
+   factory leaves it out for a user who may do everything, and for a server operation (`ClientContext.SkipPermissions`,
+   the actions of the event rules; a protocol never sets it). It compares paths like the backend does
    (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
 2. `EventingFileSystem` (#65): the file events of the client (see "Events"). It is outside the permissions, so an
    operation that the permissions refuse still gives an event (status `Error`) in the audit log, and the `Pre*`
@@ -142,7 +164,7 @@ The chain today, from the backend outwards:
 3. `ConnectionTrackingFileSystem` (#57): the activity and open files of the connection (see "Connections"), for a
    client with a connection id in its `ClientContext`. Outermost, so every request is activity, also a refused one.
 
-All three are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
+All of them are added by the factory; the protocol passes a `ClientContext` (protocol, client address, connection id)
 to `IFileSystemFactory.CreateAsync`.
 
 The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from

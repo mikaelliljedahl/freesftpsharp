@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114121201_AddTwoFactorEnrolments")]
-partial class _20261114121201_AddTwoFactorEnrolments
+[Migration("20261114123014_AddTwoFactorEnrolments")]
+partial class _20261114123014_AddTwoFactorEnrolments
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -167,6 +167,102 @@ partial class _20261114121201_AddTwoFactorEnrolments
                 b.ToTable("AuditEntries");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRule", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Actions")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Conditions")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("CronExpression")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("EventTypes")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastScheduledRunUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("TimeZone")
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("EventRules");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("DurationMs")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Message")
+                    .IsRequired()
+                    .HasMaxLength(4000)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("RuleId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("StartedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("RuleId", "StartedUtc");
+
+                b.ToTable("EventRuleRuns");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.ServerSettings", b =>
             {
                 b.Property<int>("Id")
@@ -223,6 +319,33 @@ partial class _20261114121201_AddTwoFactorEnrolments
                 b.ToTable("ServerSettings");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.Storage.VirtualFolder", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Description")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("Storage")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("VirtualFolders");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
             {
                 b.Property<int>("Id")
@@ -259,6 +382,9 @@ partial class _20261114121201_AddTwoFactorEnrolments
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("RsaPublicKey")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Storage")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("UserRootDirectory")
@@ -313,6 +439,9 @@ partial class _20261114121201_AddTwoFactorEnrolments
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
                     .UseCollation("NOCASE");
+
+                b.Property<bool>("OnlyForEventRules")
+                    .HasColumnType("INTEGER");
 
                 b.Property<string>("PathGlob")
                     .HasMaxLength(1024)
@@ -475,12 +604,59 @@ partial class _20261114121201_AddTwoFactorEnrolments
                     .OnDelete(DeleteBehavior.Restrict);
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
+            {
+                b.HasOne("SshServer.Interfaces.EventRules.EventRule", null)
+                    .WithMany()
+                    .HasForeignKey("RuleId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
             {
                 b.HasOne("SshServer.Interfaces.Admins.Role", null)
                     .WithMany()
                     .HasForeignKey("RoleId")
                     .OnDelete(DeleteBehavior.Restrict);
+
+                b.OwnsMany("SshServer.Interfaces.Storage.VirtualFolderMount", "VirtualFolders", b1 =>
+                    {
+                        b1.Property<int>("Id")
+                            .ValueGeneratedOnAdd()
+                            .HasColumnType("INTEGER");
+
+                        b1.Property<string>("MountPath")
+                            .IsRequired()
+                            .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<int>("UserId")
+                            .HasColumnType("INTEGER");
+
+                        b1.Property<int>("VirtualFolderId")
+                            .HasColumnType("INTEGER");
+
+                        b1.HasKey("Id");
+
+                        b1.HasIndex("VirtualFolderId");
+
+                        b1.HasIndex("UserId", "MountPath")
+                            .IsUnique();
+
+                        b1.ToTable("UserVirtualFolders");
+
+                        b1.WithOwner()
+                            .HasForeignKey("UserId");
+
+                        b1.HasOne("SshServer.Interfaces.Storage.VirtualFolder", null)
+                            .WithMany()
+                            .HasForeignKey("VirtualFolderId")
+                            .OnDelete(DeleteBehavior.Cascade)
+                            .IsRequired();
+                    });
+
+                b.Navigation("VirtualFolders");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Webhooks.WebhookDelivery", b =>

@@ -11,8 +11,9 @@ public static class EncryptedStorageServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the encrypted local disk storage provider ("local-encrypted"), the master keys from the configuration
-    /// section <c>Storage:Encryption</c> (<see cref="ConfigurationMasterKeyProvider"/>), and, until #56, the switch
-    /// <c>Storage:Encryption:Enabled</c> that gives every user the encrypted local disk. Also registers the plain local
+    /// section <c>Storage:Encryption</c> (<see cref="ConfigurationMasterKeyProvider"/>), and the switch
+    /// <c>Storage:Encryption:Enabled</c> that gives every user without a storage configuration the encrypted local disk.
+    /// An admin can select "local-encrypted" for a single user or virtual folder too; that needs the keys, not the switch. Also registers the plain local
     /// disk (<see cref="LocalDiskStorageServiceCollectionExtensions.AddLocalDiskStorage"/>). Needs
     /// <see cref="IConfiguration"/> in the services (every host has it).
     /// <para>
@@ -29,7 +30,7 @@ public static class EncryptedStorageServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EncryptedStorageOptions>, EncryptedStorageOptionsValidator>());
         services.TryAddSingleton<IMasterKeyProvider, ConfigurationMasterKeyProvider>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IStorageProvider, EncryptedLocalStorageProvider>());
-        services.Replace(ServiceDescriptor.Singleton<IUserStorageResolver, EncryptedUserRootStorageResolver>());
+        services.Replace(ServiceDescriptor.Singleton<IDefaultUserStorage, EncryptedUserRootDefaultStorage>());
         return services;
     }
 

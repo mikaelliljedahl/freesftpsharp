@@ -79,6 +79,7 @@ scripts are local files in `wwwroot/lib`, so the UI needs no internet access. It
 | IP access and bans (`/access`) | The global blacklist, the global whitelist mode and list (CIDR, validated), the auto-ban settings, and the active bans with an "Unban" action |
 | Audit (`/audit`) | The audit log: uploads, downloads, deletes, renames, directories, logins and failed logins, bans, changes of users and settings, with user, client address, path, size, duration and status; filters (user, type, status, date range) and a CSV export |
 | Webhooks (`/webhooks`) | The webhooks: add, edit and delete (URL, method, secret, static headers, events, user and path filters, synchronous or not, fail open, timeout); "Send test event"; the deliveries of each webhook with status, attempts and the start of the answer, and "Redeliver" |
+| Event rules (`/eventrules`) | The event rules: add, edit and delete (trigger on events, a cron schedule or on demand; user, path, protocol, size and result conditions; an ordered list of actions with stop on failure and failure actions); "Run now"; the execution history of each rule |
 | Admins (`/admins`) | The administrators: add, edit and delete; permissions, scope role, allowed networks, enabled, "must change the password at the next login" |
 | Roles (`/roles`) | The scope roles: add and delete roles, and add users to a role or remove them |
 | Change password (`/ChangePassword`) | The signed-in administrator sets a new password (with the current one) |
@@ -138,7 +139,7 @@ refused on the server also for a direct call.
 | --- | --- |
 | `SuperAdmin` | Everything, also every other permission |
 | `ManageUsers` | The Users page: add, change and delete SFTP users |
-| `ManageEvents` | The Webhooks page (later also event rules) |
+| `ManageEvents` | The Webhooks and Event rules pages |
 | `ManageGroups`, `ManageFolders` | Reserved for groups and virtual folders (later roadmap items) |
 | `ViewConnections` | The Connections page |
 | `DisconnectConnections` | The "Disconnect" action on the Connections page |
@@ -173,7 +174,7 @@ administrator that made the change. Admin passwords are salted PBKDF2-SHA256 has
 With the obsolete LiteDB settings provider the administrators are kept in memory only (the configured account is
 imported at every start).
 
-The login cookie and the antiforgery tokens are protected with ASP.NET Core data protection keys. The keys are
+The login cookie, the antiforgery tokens and the secrets of the storage configurations are protected with ASP.NET Core data protection keys. The keys are
 stored in `DataProtection:KeysPath` (default: `keys/` in the app directory), so a login survives a restart. On
 Windows the keys are encrypted with DPAPI. On Linux and macOS they are stored unencrypted, and the log has a
 warning about it at the first start: give the directory restrictive file permissions (for example `chmod 700`).
@@ -249,6 +250,22 @@ OpenSSH connects with its default settings.
 The [technical roadmap](docs/ROADMAP.md) lists the planned work, with one GitHub issue for each feature. For
 example: encrypted local storage and S3, Azure Blob and Google Cloud Storage backends, groups, quotas,
 an audit log, webhooks, a REST API, WebDAV and FTP, and more settings databases.
+
+## Log files
+
+Both hosts log with Serilog. The sinks are in `appsettings.json` under `Serilog:WriteTo` and are **named**
+(`File`, `HtmlFile`, and `Console` in ServerConsoleApp), not listed in an array, so that one environment variable
+can change one setting of one sink. Relative paths are resolved against the program directory.
+
+| Environment variable | Default | Meaning |
+|---|---|---|
+| `Serilog__WriteTo__File__Args__path` | `logs/FxSshServer.txt` | Text log file (rolls at 10 MB) |
+| `Serilog__WriteTo__HtmlFile__Args__path` | `logs/html/FxSshServer.html` | HTML log file |
+| `Serilog__MinimumLevel__Default` | `Information` | Minimum level |
+
+The container image and the systemd unit set the two paths to `/data/logs` and `/var/log/freesftpsharp`. If you add
+your own sink in `appsettings.Production.json`, give it a name as a key (`"WriteTo": { "Mine": { "Name": ... } }`);
+an array there cannot be combined with the environment variables.
 
 ## Network access settings
 
@@ -370,8 +387,8 @@ and with S3-compatible stores (MinIO, Cloudflare R2, Backblaze B2, Wasabi, Digit
 register it with `services.AddS3Storage()` under the provider name `s3`. Nothing changes for a server that does not
 use it: no S3 client is created and no setting is needed.
 
-> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
-> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+Select it for a user, or for a virtual folder, in the admin UI (see [Storage per user and virtual folders](#storage-per-user-and-virtual-folders)).
+The secret access key is stored encrypted and is never shown again.
 
 ### Options (`S3StorageOptions`)
 
@@ -582,8 +599,30 @@ docker stop azurite
 ## Encrypted storage
 
 The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
-Set `Storage:Encryption:Enabled` to `true` and configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md)
-for the configuration, the limits and the file format.
+Configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md) for the configuration, the limits and the
+file format. Then select "Local disk (encrypted)" for a user or a virtual folder, or set `Storage:Encryption:Enabled`
+to `true` to encrypt the root directory of every user without a storage configuration.
+
+## Storage per user and virtual folders
+
+By default a user has the local disk at its root directory, as before. On the Users page an admin can select another
+storage for a user instead: every registered provider (`local`, `local-encrypted`, `s3`) with its own fields, and a
+"Test connection" button that lists the root with the unsaved settings. The fields come from the options record of the
+provider, so a new backend needs no UI code.
+
+A **virtual folder** (page "Virtual folders") is a named storage location that is mounted into the file system of one
+or more users at a path, for example a shared S3 prefix at `/incoming` or an encrypted `/archive`. The user sees it as
+a directory; the permissions and path filters of the user apply to its virtual path (`/incoming = Upload`).
+
+- A mount point and the directories that hold one cannot be removed or renamed.
+- A rename from one storage into another (for example `rename /a /incoming/a`) answers `SSH_FX_OP_UNSUPPORTED`;
+  copy the file instead.
+- Removing a virtual folder unmounts it from every user; the files in its storage stay.
+
+Secrets of a storage configuration (for example the S3 secret key) are encrypted in the settings database with the
+ASP.NET Core data protection keys of `DataProtection:KeysPath` (see below). They are never shown in the UI after they
+are saved and never written to the log or the audit events. Keep the keys directory: without it the stored secrets
+cannot be read and must be entered again. Two hosts that share one settings database must share the keys directory too.
 
 ## Settings storage
 
@@ -630,6 +669,16 @@ An asynchronous webhook gets each event through an outbox in the settings databa
 with the `message` of the answer), and an error or a timeout refuses it unless the webhook is set to fail open.
 The payload, the signature check for a receiver and the options (`Webhooks:AllowInsecureWebhooks`,
 `Webhooks:DeliveryRetentionDays`, `Webhooks:MaxConcurrentDeliveries`) are in [docs/WEBHOOKS.md](docs/WEBHOOKS.md).
+
+### Event rules
+
+An event rule automates the server without code: "on an upload to `/incoming/*`, move the file to
+`/processed/{{Name}}` and send an email", or "every night at 03:00 remove the files older than 30 days in `/tmp`".
+Add rules on the Event rules page; nothing runs until you do. The actions are move, copy, delete, create directories,
+check that files exist, compress to zip, data retention, email (SMTP in `EventRules:Smtp`), a webhook of the Webhooks
+page, and a command, which is off unless the operator sets `EventRules:AllowCommands=true` and lists the executables
+in `EventRules:AllowedCommands`. A rule on a `Pre*` event runs before the operation and refuses it when an action fails.
+Triggers, conditions, placeholders and options are in [docs/EVENT-RULES.md](docs/EVENT-RULES.md).
 
 ### Upgrade from LiteDB (config.db)
 

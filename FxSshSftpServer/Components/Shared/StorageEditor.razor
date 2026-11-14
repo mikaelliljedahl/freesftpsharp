@@ -1,0 +1,198 @@
+@* The storage of a user or a virtual folder (issue #56): the provider and its option fields, read from the options
+   record of the provider (StorageConfigService), and a connection test. A secret is never shown: an empty field keeps
+   the stored value. *@
+@using SshServerModule.Storage
+@inject StorageConfigService StorageService
+
+<div class="storage-editor" id="@IdPrefix">
+    <div class="mb-3">
+        <label class="form-label" for="@($"{IdPrefix}-provider")">Storage</label>
+        <select class="form-select" id="@($"{IdPrefix}-provider")" value="@Settings.Provider" @onchange="SelectProviderAsync">
+            @if (DefaultLabel is not null)
+            {
+                <option value="">@DefaultLabel</option>
+            }
+            else if (string.IsNullOrEmpty(Settings.Provider))
+            {
+                <option value="">Select a storage provider</option>
+            }
+            @foreach (var provider in StorageService.Providers)
+            {
+                <option value="@provider.Name">@provider.DisplayName</option>
+            }
+            @if (!string.IsNullOrEmpty(Settings.Provider) && StorageService.Find(Settings.Provider) is null)
+            {
+                <option value="@Settings.Provider">@Settings.Provider (not registered)</option>
+            }
+        </select>
+        @if (Info?.Description is { } description)
+        {
+            <div class="form-text">@description</div>
+        }
+    </div>
+
+    @if (Settings.LoadProblem is { } problem)
+    {
+        <div class="alert alert-warning py-2 small" id="@($"{IdPrefix}-load-problem")"><i class="bi bi-exclamation-triangle"></i> @problem</div>
+    }
+
+    @if (Info is { } info)
+    {
+        <div class="row g-2">
+            @foreach (var field in info.Fields)
+            {
+                var id = $"{IdPrefix}-{field.Name}";
+                var name = field.Name;
+                switch (field.Kind)
+                {
+                    case StorageOptionKind.Boolean:
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="@id" checked="@IsChecked(name)"
+                                       @onchange="e => SetBoolean(name, e)" />
+                                <label class="form-check-label" for="@id">@field.Label</label>
+                                @if (field.Description is { } boolHelp)
+                                {
+                                    <div class="form-text mt-0">@boolHelp</div>
+                                }
+                            </div>
+                        </div>
+                        break;
+                    case StorageOptionKind.Choice:
+                        <div class="col-sm-6">
+                            <label class="form-label small mb-1" for="@id">@field.Label</label>
+                            <select class="form-select form-select-sm" id="@id" value="@Settings.Value(name)" @onchange="e => Set(name, e.Value?.ToString())">
+                                @foreach (var choice in field.Choices)
+                                {
+                                    <option value="@choice">@(choice.Length == 0 ? "(default)" : choice)</option>
+                                }
+                            </select>
+                            @if (field.Description is { } choiceHelp)
+                            {
+                                <div class="form-text mt-0">@choiceHelp</div>
+                            }
+                        </div>
+                        break;
+                    default:
+                        <div class="@(field.Kind == StorageOptionKind.Number ? "col-sm-6" : "col-12")">
+                            <label class="form-label small mb-1" for="@id">@field.Label</label>
+                            @if (field.IsSecret)
+                            {
+                                var stored = Settings.StoredSecrets.Contains(name);
+                                var cleared = Settings.ClearSecrets.Contains(name);
+                                <input type="password" class="form-control form-control-sm" id="@id" autocomplete="new-password"
+                                       placeholder="@(stored && !cleared ? "A value is stored. Leave empty to keep it." : "")"
+                                       value="@Settings.Value(name)" @onchange="e => Set(name, e.Value?.ToString())" />
+                                @if (stored)
+                                {
+                                    <div class="form-check mt-1">
+                                        <input type="checkbox" class="form-check-input" id="@($"{id}-clear")" checked="@cleared"
+                                               @onchange="e => SetCleared(name, e.Value is true)" />
+                                        <label class="form-check-label small" for="@($"{id}-clear")">Remove the stored value</label>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <input type="@(field.Kind == StorageOptionKind.Number ? "number" : "text")" class="form-control form-control-sm font-monospace" id="@id"
+                                       placeholder="@field.Placeholder" value="@Settings.Value(name)" @onchange="e => Set(name, e.Value?.ToString())" />
+                            }
+                            @if (field.Description is { } textHelp)
+                            {
+                                <div class="form-text mt-0">@textHelp</div>
+                            }
+                        </div>
+                        break;
+                }
+            }
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="@($"{IdPrefix}-test")" disabled="@testing" @onclick="TestAsync">
+                @if (testing)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                }
+                <i class="bi bi-plug"></i> Test connection
+            </button>
+            @if (testResult is { } result)
+            {
+                <span class="small @(result.Success ? "text-success" : "text-danger")" id="@($"{IdPrefix}-test-result")">
+                    <i class="bi @(result.Success ? "bi-check-circle" : "bi-x-circle")"></i> @result.Message
+                </span>
+            }
+        </div>
+    }
+
+    @if (Problems is { Count: > 0 })
+    {
+        <ul class="text-danger small mt-2 mb-0 ps-3" id="@($"{IdPrefix}-problems")">
+            @foreach (var item in Problems)
+            {
+                <li>@item</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    /// <summary>The form; changed in place.</summary>
+    [Parameter, EditorRequired] public StorageSettings Settings { get; set; }
+
+    /// <summary>The prefix of the element ids, for example "user-storage".</summary>
+    [Parameter] public string IdPrefix { get; set; } = "storage";
+
+    /// <summary>The text of the empty choice (no storage configuration, the default storage). Null: a provider is required.</summary>
+    [Parameter] public string DefaultLabel { get; set; }
+
+    /// <summary>The problems of the last save, shown below the fields.</summary>
+    [Parameter] public IReadOnlyList<string> Problems { get; set; }
+
+    /// <summary>Called after another provider was selected.</summary>
+    [Parameter] public EventCallback OnProviderChanged { get; set; }
+
+    private bool testing;
+    private StorageTestResult testResult;
+
+    private StorageProviderInfo Info => StorageService.Find(Settings.Provider);
+
+    private async Task SelectProviderAsync(ChangeEventArgs e)
+    {
+        StorageService.SelectProvider(Settings, e.Value?.ToString() ?? string.Empty);
+        testResult = null;
+        await OnProviderChanged.InvokeAsync();
+    }
+
+    private void Set(string field, string value)
+    {
+        Settings.Values[field] = value ?? string.Empty;
+        testResult = null;
+    }
+
+    private bool IsChecked(string field) => Settings.Value(field) == "true";
+
+    private void SetBoolean(string field, ChangeEventArgs e) => Set(field, e.Value is true ? "true" : "false");
+
+    private void SetCleared(string field, bool cleared)
+    {
+        if (cleared)
+            Settings.ClearSecrets.Add(field);
+        else
+            Settings.ClearSecrets.Remove(field);
+        testResult = null;
+    }
+
+    private async Task TestAsync()
+    {
+        testing = true;
+        testResult = null;
+        try
+        {
+            testResult = await StorageService.TestAsync(Settings, System.Threading.CancellationToken.None);
+        }
+        finally
+        {
+            testing = false;
+        }
+    }
+}

@@ -1,3 +1,4 @@
+using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
 using System.Security.Cryptography;
@@ -17,13 +18,12 @@ namespace FreeSftpSharp.Tests.EndToEnd;
 /// <summary>The server with the encrypted local disk ("local-encrypted") as the user root, as with <c>Storage:Encryption:Enabled</c>.</summary>
 public sealed class EncryptedSftpServerFixture : SftpServerFixture
 {
-    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
     {
         var keys = TestKeys.Provider("a", ("a", TestKeys.KeyA));
-        return new StorageFileSystemFactory(
-            new StorageProviderRegistry([new LocalDiskStorageProvider(), new EncryptedLocalStorageProvider(keys)]),
-            new EncryptedUserRootStorageResolver(Options.Create(new EncryptedStorageOptions { Enabled = true })),
-            new EffectivePermissionsService(), connections, events);
+        return TestStorage.Factory([new LocalDiskStorageProvider(), new EncryptedLocalStorageProvider(keys)],
+            _ => new UserStorageResolver(new EncryptedUserRootDefaultStorage(Options.Create(new EncryptedStorageOptions { Enabled = true })), repository),
+            connections, events);
     }
 }
 

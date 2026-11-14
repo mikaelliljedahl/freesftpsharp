@@ -45,6 +45,25 @@ public sealed class FileHandleAbortTests
     }
 
     [Fact]
+    public async Task The_virtual_folder_router_gives_the_handle_of_the_storage_so_an_abort_reaches_it()
+    {
+        var root = new AbortSpyFileSystem(new InMemoryFileSystem());
+        var mounted = new AbortSpyFileSystem(new InMemoryFileSystem());
+        var router = new MountedFileSystem(root, [new MountedFileSystem.Mount("/shared", mounted)]);
+
+        await AbortAfterWriteAsync(router);
+        var inFolder = await router.OpenAsync("/shared/b.txt", CreateForWriting, null, Ct);
+        await inFolder.WriteAsync(0, "data"u8.ToArray(), Ct);
+        await inFolder.AbortAsync();
+        await using (await router.OpenAsync("/shared/c.txt", CreateForWriting, null, Ct))
+        {
+        }
+
+        Assert.Equal(["Abort"], root.Closes);
+        Assert.Equal(["Abort", "Dispose"], mounted.Closes);
+    }
+
+    [Fact]
     public async Task The_connection_tracking_decorator_forwards_an_abort_and_ends_the_transfer()
     {
         var registry = new ConnectionRegistry(new FakeTimeProvider());

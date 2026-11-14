@@ -80,6 +80,8 @@ namespace FxSshSftpServer.Security
             // In the admin UI every user operation goes through the scope of the signed-in administrator. The command
             // line (ServerConsoleApp) keeps the singleton on the shared repository.
             services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
+            // The virtual folders (#56) too: changing them needs ManageFolders; their users are those in the scope.
+            services.AddScoped(sp => new SshServerModule.Storage.VirtualFolderService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
 
             return services;
         }

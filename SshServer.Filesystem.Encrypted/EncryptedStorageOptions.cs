@@ -8,9 +8,9 @@ public sealed class EncryptedStorageOptions
     public const string SectionName = "Storage:Encryption";
 
     /// <summary>
-    /// Store the user roots encrypted ("local-encrypted") instead of plain ("local"). Until the per-user storage
-    /// configuration (#56) this is one switch for every user. Use it only with new, empty user root directories:
-    /// files that are not encrypted cannot be read.
+    /// Store the user roots of the users without a storage configuration encrypted ("local-encrypted") instead of plain
+    /// ("local"). Use it only with new, empty user root directories: files that are not encrypted cannot be read.
+    /// The keys are needed also when it is false, for a user or virtual folder that selects "local-encrypted".
     /// </summary>
     public bool Enabled { get; set; }
 

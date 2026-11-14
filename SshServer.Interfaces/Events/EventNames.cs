@@ -1,9 +1,9 @@
-using SshServer.Interfaces.Events;
 
-namespace SshServer.Webhooks;
 
-/// <summary>The names of the events in the filter of a webhook and in the payload: "Category.Type", for example "File.Upload".</summary>
-public static class WebhookEventNames
+namespace SshServer.Interfaces.Events;
+
+/// <summary>The names of the events in the filters of webhooks and event rules and in the payloads: "Category.Type", for example "File.Upload".</summary>
+public static class EventNames
 {
     /// <summary>Every event name, grouped by category, for the admin UI and the validation.</summary>
     public static IReadOnlyList<(EventCategory Category, IReadOnlyList<string> Names)> Groups { get; } =
@@ -14,7 +14,7 @@ public static class WebhookEventNames
         (EventCategory.System, Qualify(EventCategory.System, Enum.GetNames<SystemEventType>())),
     ];
 
-    /// <summary>The events that a synchronous webhook can decide (<see cref="FileEvent.IsPreEvent"/>).</summary>
+    /// <summary>The events that a synchronous webhook or event rule can decide (<see cref="FileEvent.IsPreEvent"/>).</summary>
     public static IReadOnlySet<string> PreEvents { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         Of(EventCategory.File, nameof(FileEventType.PreUpload)),

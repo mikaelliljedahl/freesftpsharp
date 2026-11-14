@@ -1,5 +1,6 @@
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Storage;
 
 namespace SshServer.Interfaces;
 
@@ -11,6 +12,11 @@ public class User
 {
     public int Id { get; set; }
     public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The directory on the local disk that is "/" for a user without a <see cref="Storage"/> configuration (the
+    /// default storage, <see cref="IDefaultUserStorage"/>). Not used when <see cref="Storage"/> is set.
+    /// </summary>
     public string UserRootDirectory { get; set; } = string.Empty;
     public string? HashedPassword { get; set; }
 
@@ -42,6 +48,15 @@ public class User
 
     /// <summary>The file name filters per virtual directory (issue #59). Null or empty: no filter.</summary>
     public Dictionary<string, PathFilter>? PathFilters { get; set; }
+
+    /// <summary>
+    /// The storage of "/" (issue #56): a provider and its options. Null: the default storage, the local disk at
+    /// <see cref="UserRootDirectory"/>, as before this property existed.
+    /// </summary>
+    public StorageConfig? Storage { get; set; }
+
+    /// <summary>The virtual folders mounted into the file system of the user (issue #56).</summary>
+    public List<VirtualFolderMount> VirtualFolders { get; set; } = new();
 
     /// <summary>
     /// The scope role (issue #60, <see cref="Admins.Role"/>): an administrator with this role as its scope manages the

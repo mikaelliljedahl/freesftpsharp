@@ -142,6 +142,11 @@
           "System.IO.Hashing": "10.0.9"
         }
       },
+      "Cronos": {
+        "type": "Transitive",
+        "resolved": "0.11.0",
+        "contentHash": "ovNrFIuKTbeNYx+1Tne8DkY/nJ+bRoS0/bTrCBzeAuMvLbX2nJprwcdRqZIwwLRsaghqBU932QvJ6mryTycc/A=="
+      },
       "Google.Api.Gax": {
         "type": "Transitive",
         "resolved": "4.13.1",
@@ -213,6 +218,14 @@
         "type": "Transitive",
         "resolved": "5.0.21",
         "contentHash": "ykJ7ffFl7P9YQKR/PLci6zupiLrsSCNkOTiw6OtzntH7d2kCYp5L1+3a/pksKgTEHcJBoPXFtg7VZSGVBseN9w=="
+      },
+      "MailKit": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "PG6hnsklTzd/iK9A6j03OxDOas9mh8zOBkbPzcsLmFOODE8Hw3HTy7HAKiJvVHXNpKc3/KMVG/4QvOAKCBbGhA==",
+        "dependencies": {
+          "MimeKit.Core": "5.0.0"
+        }
       },
       "Microsoft.AspNetCore.Cryptography.Internal": {
         "type": "Transitive",
@@ -495,6 +508,11 @@
         "resolved": "6.0.0",
         "contentHash": "hqTM5628jSsQiv+HGpiq3WKBl2c8v1KZfby2J6Pr7pEPlK9waPdgEO6b8A/+/xn/yZ9ulv8HuqK71ONy2tg67A=="
       },
+      "MimeKit.Core": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "0RLaVyex/BjUGqiw9xtGwzyCMaBcsu33Rth61bDCeVeQaaQK7tjcy4TA+nHKTqwUdp4OGd+gnhuq2fuR+c20qA=="
+      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.4",
@@ -647,6 +665,15 @@
       "fxssh": {
         "type": "Project"
       },
+      "sshserver.eventrules": {
+        "type": "Project",
+        "dependencies": {
+          "Cronos": "[0.11.0, )",
+          "MailKit": "[5.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
       "sshserver.filesystem.azureblob": {
         "type": "Project",
         "dependencies": {
@@ -696,7 +723,6 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.EntityFrameworkCore.Sqlite": "[11.0.0, )",
-          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
           "SshServer.Interfaces": "[1.0.0, )",
           "SshServer.Settings.LiteDb": "[1.0.0, )"
         }

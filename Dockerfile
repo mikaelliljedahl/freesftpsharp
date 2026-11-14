@@ -38,13 +38,12 @@ WORKDIR /app/web
 COPY deploy/docker/entrypoint.sh deploy/docker/healthcheck.sh deploy/docker/freesftpsharp-user /usr/local/bin/
 
 # /data: the settings database (users, settings, SSH host keys), the admin data protection keys, the logs and the
-# default user root directories (/app/web/logs, where the relative log paths of appsettings.json end, links to /data/logs). /config: an optional appsettings.Production.json.
+# default user root directories. /config: an optional appsettings.Production.json.
 # The base image user "app" (UID 1654) owns both; a named volume copies this ownership on first use.
 USER root
 RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh /usr/local/bin/freesftpsharp-user \
  && mkdir -p /data /config \
  && ln -s /config/appsettings.Production.json /app/web/appsettings.Production.json \
- && ln -s /data/logs /app/web/logs \
  && chown -R app:app /data /config
 USER app
 
@@ -57,6 +56,8 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     ConnectionStrings__Settings="Data Source=/data/freesftpsharp.db" \
     DataProtection__KeysPath=/data/keys \
     Observability__Health__Enabled=true \
+    Serilog__WriteTo__File__Args__path=/data/logs/FxSshServer.txt \
+    Serilog__WriteTo__HtmlFile__Args__path=/data/logs/html/FxSshServer.html \
     Logging__Console__LogLevel__Default=None \
     Serilog__Using__2=Serilog.Sinks.Console \
     Serilog__WriteTo__2__Name=Console \
