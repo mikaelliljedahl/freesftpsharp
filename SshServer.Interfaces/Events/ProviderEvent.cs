@@ -53,16 +53,33 @@ public sealed record ProviderEvent(ProviderAction Action, ProviderObjectType Obj
 /// </summary>
 /// <param name="StorageProvider">The provider of <see cref="User.Storage"/>; null for the default storage. The options are left out (they can have secrets).</param>
 /// <param name="VirtualFolders">The mounts, as "mount path=virtual folder id".</param>
+/// <param name="DiskQuota">The disk quotas (issue #62) as text: the own storage, then each mount with a quota.</param>
+/// <param name="TransferQuota">The transfer quota as text.</param>
+/// <param name="Bandwidth">The bandwidth as text.</param>
 public sealed record UserSnapshot(string Username, string UserRootDirectory, bool HasPassword, bool HasPublicKey,
     bool OnlyWhitelistedIps, IReadOnlyList<string> WhitelistedIps, IReadOnlyList<string> PublicKeyFingerprints,
-    string AllowedAuthMethods, string RequireAllOf, string? StorageProvider, IReadOnlyList<string> VirtualFolders)
+    string AllowedAuthMethods, string RequireAllOf, string? StorageProvider, IReadOnlyList<string> VirtualFolders,
+    string DiskQuota, string TransferQuota, string Bandwidth)
 {
     public static UserSnapshot From(User user) => new(user.Username, user.UserRootDirectory,
         !string.IsNullOrEmpty(user.HashedPassword), user.PublicKeys is { Count: > 0 },
         user.OnlyWhitelistedIps, user.WhitelistedIps?.ToList() ?? [],
         user.PublicKeys?.Select(k => k.Fingerprint).ToList() ?? [],
         user.AllowedAuthMethods.ToString(), string.Join(",", user.RequireAllOf ?? []), user.Storage?.Provider,
-        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList());
+        (user.VirtualFolders ?? []).Select(m => $"{m.MountPath}={m.VirtualFolderId}").ToList(),
+        DiskQuotaText(user), Quotas.TransferQuota.OrNull(user.TransferQuota)?.ToString() ?? "unlimited",
+        Quotas.BandwidthLimit.OrNull(user.Bandwidth)?.ToString() ?? "unlimited");
+
+    private static string DiskQuotaText(User user)
+    {
+        var parts = new List<string> { "/: " + (Quotas.DiskQuota.OrNull(user.DiskQuota)?.ToString() ?? "unlimited") };
+        foreach (var mount in user.VirtualFolders ?? [])
+        {
+            if (Quotas.DiskQuota.OrNull(mount.Quota) is { } quota)
+                parts.Add($"{mount.MountPath}: {quota}");
+        }
+        return string.Join("; ", parts);
+    }
 }
 
 /// <summary>A <see cref="Storage.VirtualFolder"/> without its storage options (they can have secrets).</summary>

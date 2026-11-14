@@ -36,7 +36,7 @@ namespace SshServerModule.Storage
             {
                 var folder = _repository?.GetVirtualFolder(mount.VirtualFolderId)
                              ?? throw new ArgumentException($"The virtual folder {mount.VirtualFolderId} mounted at {mount.MountPath} does not exist.");
-                mounts.Add(new StorageMount(VirtualPath.Normalize(mount.MountPath), folder.Name, folder.Storage));
+                mounts.Add(new StorageMount(VirtualPath.Normalize(mount.MountPath), folder.Name, folder.Storage, folder.Id));
             }
             return new UserStorage(root, mounts);
         }

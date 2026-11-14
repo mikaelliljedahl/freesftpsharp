@@ -7,8 +7,10 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Audit;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Settings.Sql.Quotas;
 
 namespace SshServer.Settings.Sql;
 
@@ -28,6 +30,11 @@ namespace SshServer.Settings.Sql;
 /// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
 /// (<see cref="User.VirtualFolders"/>) are the table UserVirtualFolders, owned by the user, with a foreign key to the
 /// folder: removing a user or a folder removes its mounts.
+/// </para>
+/// <para>
+/// The quotas of a user (<see cref="User.DiskQuota"/>, <see cref="User.TransferQuota"/>, <see cref="User.Bandwidth"/>) and
+/// of a mount (<see cref="VirtualFolderMount.Quota"/>) are JSON text columns, null for none (issue #62). The counters are
+/// the table QuotaUsages, one row per scope (<see cref="QuotaUsageRow"/>), changed by increments.
 /// </para>
 /// </summary>
 public class SettingsDbContext : DbContext
@@ -51,6 +58,7 @@ public class SettingsDbContext : DbContext
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
     public DbSet<Admin> Admins => Set<Admin>();
     public DbSet<Role> Roles => Set<Role>();
+    public DbSet<QuotaUsageRow> QuotaUsages => Set<QuotaUsageRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -91,6 +99,12 @@ public class SettingsDbContext : DbContext
                 v => ToJson(v), v => FromJson<Dictionary<string, PathFilter>>(v), JsonComparer<Dictionary<string, PathFilter>>());
             b.Property(u => u.Storage).IsRequired(false).HasConversion(
                 v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
+            b.Property(u => u.DiskQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
+            b.Property(u => u.TransferQuota).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<TransferQuota>(v), JsonComparer<TransferQuota>());
+            b.Property(u => u.Bandwidth).IsRequired(false).HasConversion(
+                v => ToJson(v), v => FromJson<BandwidthLimit>(v), JsonComparer<BandwidthLimit>());
             // A role in use cannot be removed (AdminAdministrationService checks it first, with a clear message).
             b.HasOne<Role>().WithMany().HasForeignKey(u => u.RoleId).OnDelete(DeleteBehavior.Restrict);
             b.OwnsMany(u => u.VirtualFolders, m =>
@@ -100,6 +114,8 @@ public class SettingsDbContext : DbContext
                 m.Property<int>("Id");
                 m.HasKey("Id");
                 m.Property(x => x.MountPath).IsRequired().HasMaxLength(1024);
+                m.Property(x => x.Quota).IsRequired(false).HasConversion(
+                    v => ToJson(v), v => FromJson<DiskQuota>(v), JsonComparer<DiskQuota>());
                 m.HasOne<VirtualFolder>().WithMany().HasForeignKey(x => x.VirtualFolderId).OnDelete(DeleteBehavior.Cascade);
                 m.HasIndex("UserId", nameof(VirtualFolderMount.MountPath)).IsUnique();
             });
@@ -116,6 +132,13 @@ public class SettingsDbContext : DbContext
             b.Property(f => f.Description).IsRequired(false);
             b.Property(f => f.Storage).IsRequired().HasConversion(
                 v => ToJson(v), v => FromJson<StorageConfig>(v), JsonComparer<StorageConfig>());
+        });
+
+        modelBuilder.Entity<QuotaUsageRow>(b =>
+        {
+            b.ToTable("QuotaUsages");
+            b.HasKey(q => q.Scope);
+            b.Property(q => q.Scope).HasMaxLength(300);
         });
 
         modelBuilder.Entity<Role>(b =>

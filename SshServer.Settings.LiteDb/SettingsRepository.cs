@@ -51,6 +51,9 @@ namespace FxSsh.SshServerModule
             this.Permissions = user.Permissions;
             this.PathFilters = user.PathFilters;
             this.Storage = user.Storage;
+            this.DiskQuota = user.DiskQuota;
+            this.TransferQuota = user.TransferQuota;
+            this.Bandwidth = user.Bandwidth;
             this.VirtualFolders = (user.VirtualFolders ?? new List<VirtualFolderMount>()).ToList();
             this.Id = new ObjectId();
         }
@@ -161,6 +164,9 @@ namespace FxSsh.SshServerModule
             user.Permissions = UpdatedUser.Permissions;
             user.PathFilters = UpdatedUser.PathFilters;
             user.Storage = UpdatedUser.Storage;
+            user.DiskQuota = UpdatedUser.DiskQuota;
+            user.TransferQuota = UpdatedUser.TransferQuota;
+            user.Bandwidth = UpdatedUser.Bandwidth;
             user.VirtualFolders = (UpdatedUser.VirtualFolders ?? new List<VirtualFolderMount>()).ToList();
             return usercol.Update(user);
             

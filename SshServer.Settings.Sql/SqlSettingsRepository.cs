@@ -244,6 +244,9 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             Permissions = newUser.Permissions,
             PathFilters = newUser.PathFilters,
             Storage = newUser.Storage,
+            DiskQuota = newUser.DiskQuota,
+            TransferQuota = newUser.TransferQuota,
+            Bandwidth = newUser.Bandwidth,
             VirtualFolders = CopyMounts(newUser.VirtualFolders),
             RoleId = newUser.RoleId,
         };
@@ -277,6 +280,9 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.Permissions = updatedUser.Permissions;
         stored.PathFilters = updatedUser.PathFilters;
         stored.Storage = updatedUser.Storage;
+        stored.DiskQuota = updatedUser.DiskQuota;
+        stored.TransferQuota = updatedUser.TransferQuota;
+        stored.Bandwidth = updatedUser.Bandwidth;
         ReplaceMounts(stored, updatedUser.VirtualFolders);
         stored.RoleId = updatedUser.RoleId;
         db.SaveChanges();
@@ -299,7 +305,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
     }
 
     private static List<VirtualFolderMount> CopyMounts(IEnumerable<VirtualFolderMount>? mounts)
-        => (mounts ?? []).Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath }).ToList();
+        => (mounts ?? []).Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath, Quota = m.Quota }).ToList();
 
     /// <summary>Changes the mounts of a tracked user in place: unchanged mounts keep their row, so the unique index never sees a duplicate.</summary>
     private static void ReplaceMounts(User stored, IEnumerable<VirtualFolderMount>? mounts)
@@ -308,8 +314,11 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.VirtualFolders.RemoveAll(m => !wanted.Any(w => w.MountPath == m.MountPath && w.VirtualFolderId == m.VirtualFolderId));
         foreach (var mount in wanted)
         {
-            if (!stored.VirtualFolders.Any(m => m.MountPath == mount.MountPath && m.VirtualFolderId == mount.VirtualFolderId))
+            var existing = stored.VirtualFolders.FirstOrDefault(m => m.MountPath == mount.MountPath && m.VirtualFolderId == mount.VirtualFolderId);
+            if (existing is null)
                 stored.VirtualFolders.Add(mount);
+            else
+                existing.Quota = mount.Quota;
         }
     }
 

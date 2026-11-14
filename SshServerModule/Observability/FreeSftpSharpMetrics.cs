@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.Quotas;
+using SshServerModule.Quotas;
 
 namespace SshServerModule.Observability
 {
@@ -26,6 +28,9 @@ namespace SshServerModule.Observability
     /// <item><c>freesftpsharp.transfer.duration</c> {protocol,direction} (seconds): time of the transfers.</item>
     /// <item><c>freesftpsharp.storage.operation.duration</c> {provider,operation} (seconds).</item>
     /// <item><c>freesftpsharp.storage.errors</c> {provider,error}: file operations that failed.</item>
+    /// <item><c>freesftpsharp.quota.usage</c> {scope} (bytes) and <c>freesftpsharp.quota.files</c> {scope}: the counted disk
+    /// usage of each quota scope with a disk quota (#62), "user:name" or "folder:id"; at most <see cref="MaxQuotaSeries"/>
+    /// scopes, so many users cannot blow up the series.</item>
     /// </list>
     /// A Prometheus exporter shows them as, for example, <c>freesftpsharp_transfers_total</c>.
     /// </summary>
@@ -43,10 +48,21 @@ namespace SshServerModule.Observability
         private readonly Histogram<double> _storageDuration;
         private readonly Counter<long> _storageErrors;
         private readonly ConcurrentDictionary<string, Activity> _sessions = new();
+        private readonly QuotaUsageTracker? _quotas;
 
-        public FreeSftpSharpMetrics(IConnectionRegistry registry)
+        /// <summary>The most quota scopes in <c>freesftpsharp.quota.usage</c> (cardinality guard).</summary>
+        public const int MaxQuotaSeries = 1000;
+
+        /// <param name="quotas">The quota counters (AddSshServerStorage). Null: no quota instruments.</param>
+        public FreeSftpSharpMetrics(IConnectionRegistry registry, QuotaUsageTracker? quotas = null)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+            _quotas = quotas;
+            if (quotas != null)
+            {
+                _meter.CreateObservableGauge("freesftpsharp.quota.usage", () => ObserveQuota(u => u.UsedBytes), "By", "Counted disk usage of each quota scope.");
+                _meter.CreateObservableGauge("freesftpsharp.quota.files", () => ObserveQuota(u => u.UsedFiles), "{file}", "Counted files of each quota scope.");
+            }
             _meter.CreateObservableGauge("freesftpsharp.connections.active", ObserveActive, "{connection}", "Open client connections.");
             _connections = _meter.CreateCounter<long>("freesftpsharp.connections", "{connection}", "Accepted client connections.");
             _auth = _meter.CreateCounter<long>("freesftpsharp.auth.attempts", "{attempt}", "Login attempts by method and result.");
@@ -60,6 +76,12 @@ namespace SshServerModule.Observability
 
         /// <summary>The meter. The tests use it to listen to this instance only.</summary>
         public Meter Meter => _meter;
+
+        private IEnumerable<Measurement<long>> ObserveQuota(Func<QuotaUsage, long> value)
+        {
+            foreach (var (scope, usage) in _quotas!.DiskScopes().Take(MaxQuotaSeries))
+                yield return new Measurement<long>(Math.Max(0, value(usage)), new KeyValuePair<string, object?>("scope", scope.ToString()));
+        }
 
         private IEnumerable<Measurement<long>> ObserveActive()
         {
