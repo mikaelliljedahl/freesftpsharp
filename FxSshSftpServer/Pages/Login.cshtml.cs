@@ -1,6 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
 using FxSshSftpServer.Security;
+using FxSshSftpServer.Security.Oidc;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -33,8 +36,9 @@ namespace FxSshSftpServer.Pages
         private readonly ILogger<LoginModel> _logger;
 
         public LoginModel(AdminCredentialValidator validator, LoginThrottle throttle, AdminLoginFlow flow, ITwoFactorVerifier twoFactor,
-            PendingTwoFactorLogin pending, ILogger<LoginModel> logger)
+            PendingTwoFactorLogin pending, IOptions<AdminOidcOptions> oidc, ILogger<LoginModel> logger)
         {
+            Oidc = oidc.Value;
             _validator = validator;
             _throttle = throttle;
             _flow = flow;
@@ -55,12 +59,31 @@ namespace FxSshSftpServer.Pages
 
         public string ErrorMessage { get; private set; }
 
+        /// <summary>The OpenID Connect sign-in (#73); <see cref="OidcSignInOptions.IsEnabled"/> shows its button.</summary>
+        public AdminOidcOptions Oidc { get; }
+
+        /// <summary>The password form; gone with <see cref="OidcSignInOptions.DisableLocalLogin"/>.</summary>
+        public bool ShowLocalLogin => !(Oidc.IsEnabled && Oidc.DisableLocalLogin);
+
         public void OnGet()
         {
+            ErrorMessage = OidcRefusalText.Message(OidcRefusalText.Parse(Request.Query[OidcRefusalText.QueryName]), Oidc.DisplayName);
+        }
+
+        /// <summary>"Sign in with ..." (a link: a form would break the form-action CSP with the redirect to the provider): the code flow at the provider, back to <see cref="OidcSignInSetup.AdminCallbackPath"/>.</summary>
+        public async Task<IActionResult> OnGetOidcAsync()
+        {
+            if (!Oidc.IsEnabled || !await OidcSignInSetup.IsEnabledAsync(HttpContext, OidcSignInSetup.AdminScheme))
+                return NotFound();
+            var target = Url.IsLocalUrl(ReturnUrl) ? ReturnUrl : "/";
+            return Challenge(new AuthenticationProperties { RedirectUri = OidcSignInSetup.AdminDonePath + "?ReturnUrl=" + System.Uri.EscapeDataString(target) },
+                OidcSignInSetup.AdminScheme);
         }
 
         public async Task<IActionResult> OnPostAsync()
         {
+            if (!ShowLocalLogin)
+                return NotFound();
             var client = HttpContext.Connection.RemoteIpAddress?.ToString();
             _pending.Clear(HttpContext);
 
@@ -74,7 +97,7 @@ namespace FxSshSftpServer.Pages
             if (admin == null)
             {
                 _throttle.RecordFailure(client);
-                _logger.LogWarning("Failed admin login for user {UserName} from {Client}.", UserName, client);
+                _logger.LogWarning("Failed admin login for user {UserName} from {Client}.", FxSsh.SshServerModule.Security.LogText.Clean(UserName), client);
                 await _flow.PublishFailedAsync(HttpContext, UserName, "password",
                     "wrong user name or password, disabled account or address not allowed");
                 return Failed(InvalidCredentialsMessage, StatusCodes.Status200OK);
@@ -84,7 +107,7 @@ namespace FxSshSftpServer.Pages
             {
                 // The throttle is not reset here: the failures of the code step count with the password failures.
                 _pending.Issue(HttpContext, admin);
-                _logger.LogInformation("Admin {UserName} gave the right password from {Client}; the verification code is next.", admin.Username, client);
+                _logger.LogInformation("Admin {UserName} gave the right password from {Client}; the verification code is next.", FxSsh.SshServerModule.Security.LogText.Clean(admin.Username), client);
                 var code = "/LoginCode";
                 return LocalRedirect(string.IsNullOrEmpty(ReturnUrl) ? code : code + "?ReturnUrl=" + System.Uri.EscapeDataString(ReturnUrl));
             }

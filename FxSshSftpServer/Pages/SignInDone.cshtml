@@ -1,0 +1,17 @@
+@page "/signin-done"
+@model FxSshSftpServer.Pages.SignInDoneModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0;url=@Model.Target" />
+    <title>Signed in - FxSshSftpServer</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
+</head>
+<body class="p-4">
+    <p>Signed in. <a id="continue" href="@Model.Target">Continue</a></p>
+</body>
+</html>

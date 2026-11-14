@@ -12,18 +12,29 @@
             {
                 <div class="alert alert-danger" role="alert" id="login-error">@Model.ErrorMessage</div>
             }
-            <form method="post">
-                <input type="hidden" asp-for="ReturnUrl" />
-                <div class="mb-3">
-                    <label asp-for="UserName" class="form-label">User name</label>
-                    <input asp-for="UserName" class="form-control" autocomplete="username" autofocus required />
-                </div>
-                <div class="mb-4">
-                    <label asp-for="Password" class="form-label">Password</label>
-                    <input asp-for="Password" class="form-control" autocomplete="current-password" required />
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Log in</button>
-            </form>
+            @if (Model.ShowLocalLogin)
+            {
+                <form method="post" id="local-login">
+                    <input type="hidden" asp-for="ReturnUrl" />
+                    <div class="mb-3">
+                        <label asp-for="UserName" class="form-label">User name</label>
+                        <input asp-for="UserName" class="form-control" autocomplete="username" autofocus required />
+                    </div>
+                    <div class="mb-4">
+                        <label asp-for="Password" class="form-label">Password</label>
+                        <input asp-for="Password" class="form-control" autocomplete="current-password" required />
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Log in</button>
+                </form>
+            }
+            @if (Model.OidcEnabled)
+            {
+                @if (Model.ShowLocalLogin)
+                {
+                    <div class="text-center text-body-secondary small my-3">or</div>
+                }
+                <a asp-page-handler="Oidc" asp-route-ReturnUrl="@Model.ReturnUrl" id="oidc-login" class="btn @(Model.ShowLocalLogin ? "btn-outline-primary" : "btn-primary") w-100"><i class="bi bi-box-arrow-in-right"></i> Sign in with @Model.Oidc.DisplayName</a>
+            }
         </div>
     </div>
 </div>

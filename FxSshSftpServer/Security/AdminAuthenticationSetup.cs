@@ -137,11 +137,12 @@ namespace FxSshSftpServer.Security
                 AdminCreateCommand.Switch,
                 AdminPasswordCommand.Switch);
 
-            // The web client of the users (#69) does not need an administrator: it and the files of its pages stay open.
+            // The web client of the users (#69) does not need an administrator: it, its OpenID Connect sign-in (#73) and the files of its pages stay open.
             var clientEnabled = services.GetRequiredService<IOptions<WebClient.WebClientOptions>>().Value.Enabled;
             return app.Use(async (HttpContext context, Func<Task> next) =>
             {
-                if (clientEnabled && (WebClient.WebClientSetup.IsClientPath(context.Request.Path) || IsStaticFile(context.Request.Path)))
+                if (clientEnabled && (WebClient.WebClientSetup.IsClientPath(context.Request.Path) || Oidc.OidcSignInSetup.IsClientPath(context.Request.Path)
+                                      || IsStaticFile(context.Request.Path)))
                 {
                     await next();
                     return;

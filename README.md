@@ -258,6 +258,9 @@ OpenSSH connects with its default settings.
   Finder and Linux clients, with Basic over HTTPS, per-user protocol flags and app passwords. See [docs/WEBDAV.md](docs/WEBDAV.md).
 - Web client (issue #69, opt-in): the users browse, upload, download and manage their account in the browser at `/client`,
   with the same permissions, quotas and audit events as SFTP. See [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md).
+- OpenID Connect sign-in (issue #73, opt-in): administrators and web client users sign in with Keycloak, Entra ID or
+  another identity provider; required role, accounts created at the first sign-in with group mapping, and the
+  password form can be turned off. See [docs/OIDC.md](docs/OIDC.md).
 
 
 ### Features planned for the future

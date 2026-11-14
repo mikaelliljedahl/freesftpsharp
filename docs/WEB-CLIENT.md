@@ -62,6 +62,10 @@ is checked on each request against the connection registry and a stamp of the us
 new password, a disabled user or a "Disconnect" of an administrator ends the session at once. The sessions are in
 memory and per node: with several nodes, use sticky sessions for `/client`.
 
+The users can also sign in with the identity provider of the organisation (OpenID Connect, #73, `Auth:Oidc:Client`):
+the login page shows "Sign in with ..." next to the form (or instead of it, with `DisableLocalLogin`), and a new user
+can be created at its first sign-in in a template group. See [OIDC.md](OIDC.md).
+
 ## Upload and download
 
 - **Upload**: `POST /client/api/upload?path=&id=` with `Content-Range: bytes first-last/total`, one chunk per request

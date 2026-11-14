@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using FxSshSftpServer.Security.Oidc;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
@@ -14,9 +15,14 @@ namespace FxSshSftpServer.Pages
         {
         }
 
+        /// <summary>Ends the local session; after an OpenID Connect sign-in (#73) also the session at the provider, when it offers a logout.</summary>
         public async Task<IActionResult> OnPostAsync()
         {
+            var user = User;
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (OidcSignInSetup.SignedInWith(user, OidcSignInSetup.AdminScheme)
+                && await OidcSignInSetup.SignOutAtProviderAsync(HttpContext, OidcSignInSetup.AdminScheme, "/Login"))
+                return new EmptyResult();
             return LocalRedirect("/Login");
         }
     }

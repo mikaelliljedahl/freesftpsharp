@@ -101,10 +101,27 @@ jobs:
           docker logs azurite
           exit 1
 
+      # Keycloak for the OpenID Connect sign-in tests (#73) on Linux, with the realm of tests/keycloak imported. A step and
+      # not a service container: it needs the command line "start-dev --import-realm" and the realm file as a volume.
+      - name: Start Keycloak
+        if: runner.os == 'Linux'
+        run: |
+          docker run -d --name keycloak -p 127.0.0.1:8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=keycloak-ci-only \
+            -v "$GITHUB_WORKSPACE/tests/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.7.5 start-dev --import-realm
+          for i in $(seq 1 90); do
+            curl -sf -o /dev/null http://127.0.0.1:8080/realms/freesftpsharp/.well-known/openid-configuration && exit 0
+            sleep 2
+          done
+          docker logs keycloak
+          exit 1
+
       - name: Test
         env:
           FREESFTPSHARP_TEST_AZURITE: ${{ runner.os == 'Linux' && 'http://127.0.0.1:10000' || '' }}
           FREESFTPSHARP_TEST_GCS_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:4443' || '' }}
+          FREESFTPSHARP_TEST_KEYCLOAK: ${{ runner.os == 'Linux' && 'http://127.0.0.1:8080' || '' }}
           FREESFTPSHARP_TEST_LDAP: ${{ runner.os == 'Linux' && '127.0.0.1:1389' || '' }}
           FREESFTPSHARP_TEST_S3_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:9000' || '' }}
           FREESFTPSHARP_TEST_S3_ACCESS_KEY: freesftpsharp

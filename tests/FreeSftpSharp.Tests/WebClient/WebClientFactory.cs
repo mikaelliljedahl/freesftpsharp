@@ -19,7 +19,7 @@ namespace FreeSftpSharp.Tests.WebClient;
 /// The admin host with the web client on (<c>WebClient:Enabled</c>), in memory like <see cref="AdminUiFactory"/>. The users
 /// have the default storage (the local disk) in a temporary directory; every event is recorded in <see cref="Events"/>.
 /// </summary>
-public sealed partial class WebClientFactory : AdminUiFactory
+public partial class WebClientFactory : AdminUiFactory
 {
     public const string UserPassword = "User-Password-42";
 
