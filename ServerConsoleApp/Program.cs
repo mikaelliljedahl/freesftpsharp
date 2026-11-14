@@ -12,11 +12,15 @@ using FxSsh.SshServerModule;
 
 using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Filesystem.AzureBlob;
+using SshServer.Filesystem.Gcs;
 using SshServer.Filesystem.S3;
 using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServer.Webhooks;
+using FxSshSftpServer.Security;
 using SshServerModule.Observability;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
@@ -61,10 +65,14 @@ await new HostBuilder()
     });
     services.AddSshServerSettings(hostContext.Configuration);
     services.AddSshServerEvents();
+    services.AddServerDataProtection(hostContext.Configuration); // encrypts the webhook secrets
+    services.AddWebhooks(hostContext.Configuration); // webhooks (#66): nothing is sent until one is configured
     services.AddSshServerMetrics(); // meter and activities only; no exporter and no port
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
     services.AddS3Storage();
+    services.AddAzureBlobStorage();
+    services.AddGcsStorage();
     services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();

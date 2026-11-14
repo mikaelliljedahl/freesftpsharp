@@ -59,6 +59,11 @@ public sealed class FailingDatabaseFactory : ObservabilityFactory
     }
 }
 
+// In the admin UI collection like every test that starts the web host: Program builds its Serilog logger from the
+// process-wide configuration, and NormalStartLoggingTests adds an in-memory sink through environment variables while
+// it runs. A host built in parallel (here the one with the failing database check) also got that sink, and its
+// expected "Unhealthy" error showed up in that test's log (seen on Windows CI).
+[Collection(AdminUiCollection.Name)]
 public sealed class ObservabilityEndpointTests : IClassFixture<ObservabilityFactory>, IClassFixture<FailingDatabaseFactory>, IClassFixture<AdminUiFactory>
 {
     private readonly ObservabilityFactory _on;

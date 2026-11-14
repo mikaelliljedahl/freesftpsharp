@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <Compile Include="..\FxSshSftpServer\Logging\LogFilePaths.cs" Link="Logging\LogFilePaths.cs" />
+    <Compile Include="..\FxSshSftpServer\Security\DataProtectionSetup.cs" Link="Security\DataProtectionSetup.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,10 +27,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SshServer.Filesystem.LocalDisk\SshServer.Filesystem.LocalDisk.csproj" />
+    <ProjectReference Include="..\SshServer.Filesystem.AzureBlob\SshServer.Filesystem.AzureBlob.csproj" />
     <ProjectReference Include="..\SshServer.Filesystem.S3\SshServer.Filesystem.S3.csproj" />
+    <ProjectReference Include="..\SshServer.Filesystem.Gcs\SshServer.Filesystem.Gcs.csproj" />
     <ProjectReference Include="..\SshServer.Filesystem.Encrypted\SshServer.Filesystem.Encrypted.csproj" />
     <ProjectReference Include="..\SshServer.Settings.Sql\SshServer.Settings.Sql.csproj" />
     <ProjectReference Include="..\SshServerModule\SshServerModule.csproj" />
+    <ProjectReference Include="..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
   </ItemGroup>
 
 </Project>

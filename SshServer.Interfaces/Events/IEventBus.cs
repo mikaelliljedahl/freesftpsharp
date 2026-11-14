@@ -24,20 +24,26 @@ public interface IEventBus
 /// <summary>The answer of an <see cref="IEventHook"/>.</summary>
 public sealed record HookDecision
 {
-    private HookDecision(bool isDenied, string? message)
+    private HookDecision(bool isDenied, string? message, string? clientMessage)
     {
         IsDenied = isDenied;
         Message = message;
+        ClientMessage = clientMessage;
     }
 
     /// <summary>The operation may run.</summary>
-    public static HookDecision Allow { get; } = new(false, null);
+    public static HookDecision Allow { get; } = new(false, null, null);
 
     /// <summary>The operation is refused. The protocol answers "permission denied" (SFTP: SSH_FX_PERMISSION_DENIED).</summary>
-    public static HookDecision Deny(string message) => new(true, message);
+    /// <param name="message">Why, for the audit log and the server log.</param>
+    /// <param name="clientMessage">A short text that the protocol adds to its "permission denied" answer; null: none.</param>
+    public static HookDecision Deny(string message, string? clientMessage = null) => new(true, message, clientMessage);
 
     public bool IsDenied { get; }
 
     /// <summary>Why the operation is refused; for the audit log and the server log.</summary>
     public string? Message { get; }
+
+    /// <summary>The text for the client, for example the message of a pre-upload webhook; null: the client gets only "permission denied".</summary>
+    public string? ClientMessage { get; }
 }
