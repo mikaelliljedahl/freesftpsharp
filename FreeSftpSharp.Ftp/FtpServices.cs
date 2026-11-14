@@ -5,6 +5,7 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
+using SshServerModule.Proxy;
 
 namespace FreeSftpSharp.Ftp;
 
@@ -12,7 +13,8 @@ namespace FreeSftpSharp.Ftp;
 internal sealed class FtpServices
 {
     public FtpServices(IOptions<FtpOptions> options, PasswordLoginService login, ISettingsRepository repository, IFileSystemFactory fileSystems,
-        IConnectionRegistry connections, FtpPassivePorts passivePorts, FtpCertificate certificate, ILoggerFactory loggers, IEventBus? events = null)
+        IConnectionRegistry connections, FtpPassivePorts passivePorts, FtpCertificate certificate, ILoggerFactory loggers, IEventBus? events = null,
+        ProxyProtocolOptions? proxy = null)
     {
         Options = options.Value;
         Login = login;
@@ -23,6 +25,7 @@ internal sealed class FtpServices
         Certificate = certificate;
         Loggers = loggers;
         Events = events;
+        Proxy = proxy ?? new ProxyProtocolOptions();
     }
 
     public FtpOptions Options { get; }
@@ -34,6 +37,9 @@ internal sealed class FtpServices
     public FtpCertificate Certificate { get; }
     public ILoggerFactory Loggers { get; }
     public IEventBus? Events { get; }
+
+    /// <summary>The PROXY protocol of a load balancer (the <c>Proxy</c> section, #75); off without allowed sources.</summary>
+    public ProxyProtocolOptions Proxy { get; }
 
     /// <summary>The clock of the auto-ban, the events and the listings.</summary>
     public TimeProvider Time => Login.Time;

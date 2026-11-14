@@ -1,0 +1,32 @@
+name: "Cluster example end to end"
+
+# Builds the image of the branch and starts the cluster example (deploy/cluster: PostgreSQL, two nodes, HAProxy) with it:
+# a user created through node A logs in over SFTP through HAProxy (issue #149). Nothing is pushed. Only first-party
+# actions; the compose file pins the images of PostgreSQL and HAProxy by version.
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cluster:
+    name: Compose cluster (PostgreSQL, two nodes, HAProxy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t freesftpsharp:e2e --build-arg VERSION=0.0.0-e2e .
+
+      - name: Start the cluster, create a user on node A, log in through HAProxy
+        run: deploy/cluster/e2e-test.sh freesftpsharp:e2e

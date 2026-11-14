@@ -48,6 +48,24 @@ public sealed class ConnectionRegistryTests
     }
 
     [Fact]
+    public void The_session_limit_counts_the_sessions_of_the_other_nodes()
+    {
+        var remote = new FixedRemoteSessions(new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["alice"] = 1 });
+        var registry = new ConnectionRegistry(_time, remote: remote);
+        ConnectionInfo Add() => registry.Register(new ConnectionRegistration(ConnectionProtocols.Sftp, "127.0.0.1:50000", _ => Task.CompletedTask));
+
+        Assert.True(registry.TrySetAuthenticated(Add().Id, "alice", "password", maxSessions: 2));
+        Assert.False(registry.TrySetAuthenticated(Add().Id, "Alice", "password", maxSessions: 2));
+        Assert.Equal(2, registry.CountSessions("alice", Guid.Empty));
+        Assert.True(registry.TrySetAuthenticated(Add().Id, "bob", "password", maxSessions: 1));
+    }
+
+    private sealed class FixedRemoteSessions(IReadOnlyDictionary<string, int> counts) : IRemoteSessionCounter
+    {
+        public int CountSessions(string username) => counts.GetValueOrDefault(username);
+    }
+
+    [Fact]
     public async Task Logins_at_the_same_time_never_take_more_than_the_session_limit()
     {
         var connections = Enumerable.Range(0, 50).Select(_ => Register()).ToList();

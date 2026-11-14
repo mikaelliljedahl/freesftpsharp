@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114151847_AddAdminAuthenticationProvider";
+    public override string LastMigrationId => "20261114154845_SingleServerSettingsRow";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -431,10 +431,18 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("Shares")
                     .HasColumnType("TEXT");
 
+                b.Property<int>("Singleton")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER")
+                    .HasDefaultValue(1);
+
                 b.PrimitiveCollection<string>("WhitelistedIps")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
+
+                b.HasIndex("Singleton")
+                    .IsUnique();
 
                 b.ToTable("ServerSettings");
             });

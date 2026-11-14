@@ -72,7 +72,7 @@ internal sealed partial class FtpSession
             await ReplyAsync(425, "No free passive port; try again later.");
             return null;
         }
-        var source = new FtpPassiveSource(listener, _remote, _logger);
+        var source = new FtpPassiveSource(listener, _remote, _services.Proxy, _logger);
         _data = source;
         return source.Port;
     }

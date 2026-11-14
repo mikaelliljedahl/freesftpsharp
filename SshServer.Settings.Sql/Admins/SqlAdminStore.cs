@@ -48,9 +48,26 @@ public sealed class SqlAdminStore : IAdminStore
         var stored = admin.Clone();
         stored.Id = 0;
         db.Admins.Add(stored);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // Another node added the same name a moment before (for example the AdminAuth import of two nodes that
+            // start at the same time, #149): the unique index refused this one. The same answer as a name that is used.
+            if (await ExistsAsync(admin.Username, ct))
+                return false;
+            throw;
+        }
         admin.Id = stored.Id;
         return true;
+    }
+
+    private async Task<bool> ExistsAsync(string username, CancellationToken ct)
+    {
+        await using var db = CreateContext();
+        return await db.Admins.AnyAsync(a => a.Username == username, ct);
     }
 
     public async Task<bool> UpdateAdminAsync(Admin admin, CancellationToken ct)

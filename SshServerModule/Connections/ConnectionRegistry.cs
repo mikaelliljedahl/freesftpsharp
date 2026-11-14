@@ -18,15 +18,18 @@ namespace SshServerModule.Connections
         private readonly ConcurrentDictionary<Guid, Entry> _connections = new();
         private readonly TimeProvider _time;
         private readonly ILogger _logger;
+        private readonly IRemoteSessionCounter? _remote;
         private long _sequence;
 
         /// <summary>Makes the session count and the login of <see cref="TrySetAuthenticated"/> one step.</summary>
         private readonly object _authenticationLock = new();
 
-        public ConnectionRegistry(TimeProvider time, ILogger<ConnectionRegistry>? logger = null)
+        /// <param name="remote">The sessions of the users on the other nodes (Cluster:Enabled, #149); null on one node.</param>
+        public ConnectionRegistry(TimeProvider time, ILogger<ConnectionRegistry>? logger = null, IRemoteSessionCounter? remote = null)
         {
             _time = time ?? throw new ArgumentNullException(nameof(time));
             _logger = (ILogger?)logger ?? NullLogger.Instance;
+            _remote = remote;
         }
 
         public event Action<ConnectionEvent>? Changed;
@@ -74,7 +77,7 @@ namespace SshServerModule.Connections
         }
 
         public int CountSessions(string username, Guid except)
-            => _connections.Values.Count(e => e.Snapshot() is { } info && info.Id != except && info.Protocol != ConnectionProtocols.HttpShare
+            => (_remote?.CountSessions(username) ?? 0) + _connections.Values.Count(e => e.Snapshot() is { } info && info.Id != except && info.Protocol != ConnectionProtocols.HttpShare
                                               && string.Equals(info.Username, username, StringComparison.OrdinalIgnoreCase));
 
         public void RecordActivity(Guid id)

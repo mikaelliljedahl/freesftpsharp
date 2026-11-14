@@ -1,3 +1,4 @@
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SshServer.Settings.Sql;
@@ -29,5 +30,22 @@ public sealed class PostgreSqlSettingsDatabaseProvider : ISettingsDatabaseProvid
     {
         builder.UseNpgsql(connectionString, o => o.MigrationsAssembly(typeof(PostgreSqlSettingsDatabaseProvider).Assembly.GetName().Name));
         builder.ReplaceService<IModelCustomizer, PostgreSqlModelCustomizer>();
+        // Npgsql loads the types of the database at the first connection. When another node created the citext extension
+        // after that (two nodes that start at the same time on an empty database, #149), this node must load them again.
+        AfterMigrationExtension.Add(builder, ReloadTypes);
+    }
+
+    private static void ReloadTypes(DbContext db)
+    {
+        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
+        db.Database.OpenConnection();
+        try
+        {
+            connection.ReloadTypes();
+        }
+        finally
+        {
+            db.Database.CloseConnection();
+        }
     }
 }

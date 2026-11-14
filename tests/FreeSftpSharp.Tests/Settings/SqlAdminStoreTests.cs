@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -9,19 +10,18 @@ using SshServer.Settings.Sql.Admins;
 
 namespace FreeSftpSharp.Tests.Settings;
 
-/// <summary>The administrators and scope roles in the SQLite settings database (#60), and the upgrade of an older database.</summary>
+/// <summary>The administrators and scope roles in the settings database of the run (#60, <see cref="TestDatabase.CreateDefault"/>), and the upgrade of an older SQLite database.</summary>
 public sealed class SqlAdminStoreTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly DbContextOptions<SettingsDbContext> _options;
     private readonly SqlSettingsRepository _repository;
     private readonly SqlAdminStore _store;
 
     public SqlAdminStoreTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        _options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_connection).Options;
+        _database = TestDatabase.CreateDefault();
+        _options = _database.Options;
         _repository = new SqlSettingsRepository(_options, createHostKey: () => TestCredentials.HostKey);
         _store = new SqlAdminStore(_options);
     }
@@ -29,7 +29,7 @@ public sealed class SqlAdminStoreTests : IDisposable
     public void Dispose()
     {
         _repository.Dispose();
-        _connection.Dispose();
+        _database.Dispose();
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -74,7 +74,7 @@ public sealed class SqlAdminStoreTests : IDisposable
         await _store.AddAdminAsync(new Admin { Username = "bob", PasswordHash = "x", Permissions = AdminPermissions.ManageUsers | AdminPermissions.ManageSettings }, Ct);
 
         using var db = new SettingsDbContext(_options);
-        var text = db.Database.SqlQueryRaw<string>("SELECT Permissions AS Value FROM Admins").Single();
+        var text = db.Database.SqlQueryRaw<string>("SELECT \"Permissions\" AS \"Value\" FROM \"Admins\"").Single();
         Assert.Equal("ManageUsers, ManageSettings", text);
     }
 

@@ -121,6 +121,12 @@ namespace FxSshSftpServer.Security
                     options.UserName.Trim());
                 hasAdmins = true;
             }
+            else if (!hasAdmins && options.IsConfigured && store.AnyAdminAsync(default).GetAwaiter().GetResult())
+            {
+                // Another node on the same database imported the administrator at the same time (#149).
+                logger.LogInformation("Another node imported the configured admin account (AdminAuth) at the same time; this node uses it.");
+                hasAdmins = true;
+            }
             else if (hasAdmins && !string.IsNullOrWhiteSpace(options.PasswordHash))
             {
                 logger.LogInformation(

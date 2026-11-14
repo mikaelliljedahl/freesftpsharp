@@ -34,8 +34,11 @@ namespace SshServerModule.Cluster
 
             services.TryAddSingleton<ClusterSettingsChangeNotifier>();
             services.Replace(ServiceDescriptor.Singleton<ISettingsChangeNotifier>(sp => sp.GetRequiredService<ClusterSettingsChangeNotifier>()));
-            services.TryAddSingleton(sp => new ClusterConnections(sp.GetRequiredService<IConnectionRegistry>(), RequiredStore<IClusterStore>(sp),
-                options, sp.GetRequiredService<TimeProvider>()));
+            // The connections of the other nodes; the registry counts their sessions for the session limit of a user (#149).
+            services.TryAddSingleton(new RemoteConnections(options));
+            services.Replace(ServiceDescriptor.Singleton<IRemoteSessionCounter>(sp => sp.GetRequiredService<RemoteConnections>()));
+            services.TryAddSingleton(sp => new ClusterConnections(sp.GetRequiredService<IConnectionRegistry>(), sp.GetRequiredService<RemoteConnections>(),
+                RequiredStore<IClusterStore>(sp), options, sp.GetRequiredService<TimeProvider>()));
             services.Replace(ServiceDescriptor.Singleton<IClusterConnections>(sp => sp.GetRequiredService<ClusterConnections>()));
             // Replaces the tracker of AddSshServerSecurity (TryAdd) in either order: the same tracker with the shared store.
             services.Replace(ServiceDescriptor.Singleton(sp => new LoginBanTracker(sp.GetRequiredService<TimeProvider>(),

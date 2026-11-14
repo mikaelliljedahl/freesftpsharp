@@ -92,11 +92,13 @@ heartbeat and its connections (`IClusterStore`), takes the disconnect requests f
 (`IIpBanStore`, through the `LoginBanTracker`) and polls the settings version (`ISettingsVersionStore`, raised by the
 `SettingsVersionSink` for every provider event). `IClusterConnections` is what the admin UI, the REST API and the
 `UserSessionCloser` use to list and close connections: on one node the registry, in a cluster the registry and
-the cached connections of the other nodes. The caches (webhooks, event rules) reload on `ISettingsChangeNotifier`.
-Off, everything is as on one node: no table is written and nothing polls.
+the cached connections of the other nodes (`RemoteConnections`). The registry counts the sessions of a user on the other
+nodes through `IRemoteSessionCounter` (the same cache), so `MaxSessions` holds over all nodes; on one node it has none.
+The caches (webhooks, event rules) reload on `ISettingsChangeNotifier`. Off, everything is as on one node: no table is written and nothing polls.
 
 The PROXY protocol (`Proxy:AllowedSources`, `ProxyProtocolOptions`) runs in the `ConnectionPreface` step of FxSsh, before
-the SSH session exists, so every rule after it sees the client address of the header.
+the SSH session exists, so every rule after it sees the client address of the header. The FTP listener reads the
+header with the same options before its session starts (also on the passive data connections from a balancer).
 
 ## Events
 

@@ -32,7 +32,8 @@ public interface IConnectionRegistry
 
     /// <summary>
     /// The number of authenticated connections of <paramref name="username"/> (without case), except <paramref name="except"/>
-    /// and the visitors of the share links of the user (<see cref="ConnectionProtocols.HttpShare"/>).
+    /// and the visitors of the share links of the user (<see cref="ConnectionProtocols.HttpShare"/>). With several nodes
+    /// it includes the sessions of the user on the other nodes (<see cref="IRemoteSessionCounter"/>).
     /// </summary>
     int CountSessions(string username, Guid except);
 
@@ -59,6 +60,17 @@ public interface IConnectionRegistry
     /// False when the connection is not registered.
     /// </summary>
     Task<bool> DisconnectAsync(Guid id, string reason);
+}
+
+/// <summary>
+/// The authenticated sessions of a user on the other nodes (#149), for the session limit (<c>User.MaxSessions</c>) over
+/// all nodes. On one node there is none; with <c>Cluster:Enabled</c> the counts come from the connections that the other
+/// nodes stored in the settings database at their last heartbeat.
+/// </summary>
+public interface IRemoteSessionCounter
+{
+    /// <summary>The authenticated connections of <paramref name="username"/> (without case) on the other nodes, without share visitors.</summary>
+    int CountSessions(string username);
 }
 
 /// <summary>The byte count of one transfer in the <see cref="IConnectionRegistry"/>. Dispose it to end the transfer.</summary>
