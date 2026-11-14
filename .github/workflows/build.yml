@@ -43,6 +43,18 @@ jobs:
           --health-timeout 5s
           --health-retries 24
 
+      # The GCS tests (conformance suite and end-to-end) run against this fake-gcs-server on Linux and are skipped
+      # elsewhere (an empty image skips the service on Windows). A service container cannot pass flags, so the
+      # server is configured with its FAKE_GCS_* environment variables; the external URL is the URL of the tests.
+      fake-gcs:
+        image: ${{ matrix.os == 'ubuntu-latest' && 'fsouza/fake-gcs-server:1.56.1' || '' }}
+        ports:
+          - 4443:4443
+        env:
+          FAKE_GCS_SCHEME: http
+          FAKE_GCS_BACKEND: memory
+          FAKE_GCS_EXTERNAL_URL: http://127.0.0.1:4443
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -61,6 +73,7 @@ jobs:
 
       - name: Test
         env:
+          FREESFTPSHARP_TEST_GCS_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:4443' || '' }}
           FREESFTPSHARP_TEST_S3_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:9000' || '' }}
           FREESFTPSHARP_TEST_S3_ACCESS_KEY: freesftpsharp
           FREESFTPSHARP_TEST_S3_SECRET_KEY: freesftpsharp-ci-only
