@@ -25,14 +25,34 @@ public sealed class WebhookStoreTests : IAsyncLifetime
 
     public async ValueTask DisposeAsync() => await _host.DisposeAsync();
 
+    /// <summary>
+    /// Records the events on the consumer task of its queue of the event bus; the test reads them on another thread, so the
+    /// list is only read as a snapshot under the lock, and the test waits for an event with a signal, not with a poll.
+    /// </summary>
     private sealed class RecordingSink : IEventSink
     {
-        public List<IEvent> Events { get; } = [];
+        private readonly List<IEvent> _events = [];
+        private readonly TaskCompletionSource _systemEvent = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>The events so far (a copy).</summary>
+        public IReadOnlyList<IEvent> Events
+        {
+            get
+            {
+                lock (_events)
+                    return [.. _events];
+            }
+        }
+
+        /// <summary>Completes when a <see cref="SystemEvent"/> is here; the queue is in order, so every event before it is here too.</summary>
+        public Task SystemEventSeen => _systemEvent.Task;
 
         public ValueTask HandleAsync(IEvent @event, CancellationToken ct)
         {
-            lock (Events)
-                Events.Add(@event);
+            lock (_events)
+                _events.Add(@event);
+            if (@event is SystemEvent)
+                _systemEvent.TrySetResult();
             return ValueTask.CompletedTask;
         }
     }
@@ -90,9 +110,7 @@ public sealed class WebhookStoreTests : IAsyncLifetime
         Assert.Equal(Secret, protector.TryUnprotect(stored.ProtectedSecret));
 
         await _host.Bus.PublishAsync(new SystemEvent(SystemEventType.Started), Ct); // the bus is in order: after this, the provider event is there
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!_events.Events.OfType<SystemEvent>().Any() && DateTime.UtcNow < deadline)
-            await Task.Delay(10, Ct);
+        await _events.SystemEventSeen.WaitAsync(TimeSpan.FromSeconds(60), Ct);
         var added = Assert.Single(_events.Events.OfType<ProviderEvent>());
         Assert.Equal((ProviderAction.Add, ProviderObjectType.Webhook, "hook"), (added.Action, added.ObjectType, added.ObjectName));
         Assert.True(((WebhookSnapshot)added.Object!).HasSecret);
