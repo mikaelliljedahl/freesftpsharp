@@ -23,6 +23,10 @@ public static class AuthenticationServiceCollectionExtensions
         services.AddOptions<AuthenticationOptions>().Configure(o => AuthenticationOptions.Bind(o, configuration)).ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AuthenticationOptions>, AuthenticationOptionsValidator>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuthenticationProvider, DatabaseAuthenticationProvider>());
+        // One provisioner for the providers and the OpenID Connect sign-in of the web client (#73): the same rules for every external user.
+        services.TryAddSingleton(sp => new ExternalUserProvisioner(sp.GetRequiredService<SshServer.Interfaces.ISettingsRepository>(),
+            sp.GetRequiredService<IOptions<AuthenticationOptions>>().Value.ExternalUsersRootDirectory,
+            sp.GetService<Microsoft.Extensions.Logging.ILogger<ExternalUserProvisioner>>()));
         services.TryAddSingleton<IUserAuthenticator, UserAuthenticator>();
         return services;
     }

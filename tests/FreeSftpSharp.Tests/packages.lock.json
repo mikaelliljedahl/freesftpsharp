@@ -275,6 +275,14 @@
           "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.19.2"
         }
       },
+      "Microsoft.AspNetCore.Authentication.OpenIdConnect": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "fXRbqkMfaylLtMpEh4ZQQDE9IZtHcf9hXRbScll7MRECpfE1l85kcd/YrVV/WcHJyDqCw/MiU7Mzh7uKrcSX4w==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.19.2"
+        }
+      },
       "Microsoft.AspNetCore.Authorization": {
         "type": "Transitive",
         "resolved": "11.0.0",
@@ -1227,6 +1235,7 @@
         "dependencies": {
           "FreeSftpSharp.Ftp": "[1.0.0, )",
           "FreeSftpSharp.WebDav": "[1.0.0, )",
+          "Microsoft.AspNetCore.Authentication.OpenIdConnect": "[11.0.0, )",
           "Microsoft.AspNetCore.Components.QuickGrid": "[11.0.0, )",
           "Serilog.AspNetCore": "[10.0.0, )",
           "Serilog.Settings.Configuration": "[10.0.1, )",

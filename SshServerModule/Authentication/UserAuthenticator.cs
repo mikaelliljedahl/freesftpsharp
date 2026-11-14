@@ -30,15 +30,16 @@ public sealed class UserAuthenticator : IUserAuthenticator
     /// <summary>The mean time of a refused password per external provider, for <see cref="SpendFailureTimeAsync"/>.</summary>
     private readonly ConcurrentDictionary<string, FailureTime> _failureTimes = new(StringComparer.Ordinal);
 
+    /// <param name="provisioner">The just-in-time users (shared with the OpenID Connect sign-in of the web client, #73). Null: one over <paramref name="repository"/>.</param>
     /// <exception cref="InvalidOperationException"><c>Auth:Providers</c> names a provider that is not registered.</exception>
     public UserAuthenticator(IEnumerable<IAuthenticationProvider> providers, ISettingsRepository repository,
-        IOptions<AuthenticationOptions>? options = null, ILogger<UserAuthenticator>? logger = null)
+        IOptions<AuthenticationOptions>? options = null, ILogger<UserAuthenticator>? logger = null, ExternalUserProvisioner? provisioner = null)
     {
         ArgumentNullException.ThrowIfNull(providers);
         _logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var settings = options?.Value ?? new AuthenticationOptions();
         _providers = Order(providers.ToList(), settings.Providers, _logger);
-        _provisioner = new ExternalUserProvisioner(repository, settings.ExternalUsersRootDirectory, _logger);
+        _provisioner = provisioner ?? new ExternalUserProvisioner(repository, settings.ExternalUsersRootDirectory, _logger);
         if (HasExternalProviders)
             _logger.LogInformation("Authentication providers in order: {Providers}.", string.Join(", ", ProviderNames));
     }

@@ -43,7 +43,8 @@ namespace FxSshSftpServer.WebClient
         public const string MustChangePasswordClaim = "freesftpsharp:client_must_change_password";
         public const string Role = "SftpUser";
 
-        public static ClaimsPrincipal CreatePrincipal(User user, Guid session, bool mustChangePassword)
+        /// <param name="identityProvider">The scheme of an OpenID Connect sign-in (#73), for the logout at the provider; null for a password login.</param>
+        public static ClaimsPrincipal CreatePrincipal(User user, Guid session, bool mustChangePassword, string identityProvider = null)
         {
             var identity = new ClaimsIdentity(ClientAuth.Scheme);
             identity.AddClaim(new Claim(ClaimTypes.Name, user.Username));
@@ -52,6 +53,8 @@ namespace FxSshSftpServer.WebClient
             identity.AddClaim(new Claim(StampClaim, Stamp(user)));
             if (mustChangePassword)
                 identity.AddClaim(new Claim(MustChangePasswordClaim, "true"));
+            if (!string.IsNullOrEmpty(identityProvider))
+                identity.AddClaim(new Claim(Security.Oidc.OidcClaims.IdentityProviderClaim, identityProvider));
             return new ClaimsPrincipal(identity);
         }
 

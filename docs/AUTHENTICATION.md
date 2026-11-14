@@ -38,6 +38,10 @@ time"). Nothing changes until a provider is configured.
 | `Auth:Providers` | empty | The order, for example `["database", "ldap"]`. A configured provider that is not in a non-empty list is not used; an unknown name stops the start. |
 | `Auth:ExternalUsers:RootDirectory` | empty | The absolute directory below which a new user of a provider gets its root directory (created at its first login). |
 
+The sign-in with an OpenID Connect provider (#73) is for the browser (the admin UI and the web client), not a provider
+of this chain: see [OIDC.md](OIDC.md). Its new users belong to the provider `oidc` and are created by the same
+just-in-time provisioning, with the same ownership rules.
+
 Put secrets (`Auth:Ldap:BindPassword`, `Auth:HttpHook:Secret`) in environment variables
 (`Auth__Ldap__BindPassword=...`) or the user secrets, not in `appsettings.json`.
 

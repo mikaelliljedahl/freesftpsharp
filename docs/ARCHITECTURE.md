@@ -315,6 +315,12 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
   removes only the groups of its role for its users.
 - **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
   request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
+- **Single sign-on.** The OpenID Connect sign-in (#73, `FxSshSftpServer/Security/Oidc`, `AddOidcSignIn()`, see
+  [OIDC.md](OIDC.md)) registers one handler per configured area (`OidcAdmin` for the admin UI, `OidcClient` for the web
+  client), with its own callback path. Each handler signs in to the local cookie scheme of its area with a local
+  principal (no tokens), so it never opens the other area. The account check is `AdminOidcAccounts` and
+  `ClientOidcAccounts`; the new users of the web client come from the `ExternalUserProvisioner` of the authentication
+  providers (#64) with the provider name `oidc`. Nothing is registered without configuration.
 - **One application layer for the UI and the API.** The claims, the policies, `CurrentAdmin` and the scoped views are in
   `SshServer.Administration`; the admin UI (`FxSshSftpServer`) and the REST API (`SshServer.Api`) both reference it.
 

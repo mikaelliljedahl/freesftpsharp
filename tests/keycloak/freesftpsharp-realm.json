@@ -1,0 +1,172 @@
+{
+  "realm": "freesftpsharp",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "editUsernameAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "sftp-admin",
+        "description": "May sign in to the admin UI of FreeSftpSharp"
+      },
+      {
+        "name": "sftp-user",
+        "description": "May sign in to the web client of FreeSftpSharp"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "partners"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "freesftpsharp-admin",
+      "name": "FreeSftpSharp admin UI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "admin-ci-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://localhost/signin-oidc-admin",
+        "https://localhost/signout-callback-oidc-admin"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost/signout-callback-oidc-admin"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles as roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "freesftpsharp-client",
+      "name": "FreeSftpSharp web client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://localhost/signin-oidc-client",
+        "https://localhost/signout-callback-oidc-client"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost/signout-callback-oidc-client"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles as roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "kc-admin",
+      "enabled": true,
+      "email": "kc-admin@example.org",
+      "emailVerified": true,
+      "firstName": "Keycloak",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "kc-admin-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "sftp-admin"
+      ]
+    },
+    {
+      "username": "kc-user",
+      "enabled": true,
+      "email": "kc-user@example.org",
+      "emailVerified": true,
+      "firstName": "Keycloak",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "kc-user-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "sftp-user"
+      ],
+      "groups": [
+        "/partners"
+      ]
+    },
+    {
+      "username": "kc-guest",
+      "enabled": true,
+      "email": "kc-guest@example.org",
+      "emailVerified": true,
+      "firstName": "Keycloak",
+      "lastName": "Guest",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "kc-guest-password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

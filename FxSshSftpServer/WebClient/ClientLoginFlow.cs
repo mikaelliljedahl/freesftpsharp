@@ -53,6 +53,25 @@ namespace FxSshSftpServer.WebClient
         public async Task<IActionResult> CompleteAsync(PageModel page, User user, string method, bool passwordExpired, string returnUrl)
         {
             var context = page.HttpContext;
+            var principal = await StartAsync(context, user, method, passwordExpired, null);
+            if (principal == null)
+                return null;
+
+            await context.SignInAsync(ClientAuth.Scheme, principal);
+            if (passwordExpired)
+                return page.LocalRedirect("/client/changepassword");
+            return page.LocalRedirect(IsClientUrl(page, returnUrl) ? returnUrl : ClientAuth.BasePath);
+        }
+
+        /// <summary>
+        /// Starts the session (with the session limit), records the login (throttle, log, time, events) and returns the
+        /// principal of the login cookie; null when the session limit refused the login. <paramref name="identityProvider"/>
+        /// is the scheme of an OpenID Connect sign-in (#73): it adds the claim for the logout at the provider and the
+        /// <see cref="AuthEventType.IdpLogin"/> event.
+        /// </summary>
+        public async Task<System.Security.Claims.ClaimsPrincipal> StartAsync(HttpContext context, User user, string method, bool passwordExpired,
+            string identityProvider)
+        {
             var client = context.Connection.RemoteIpAddress;
             var session = _sessions.Start(user, method, client, context.Connection.RemotePort);
             if (session is not { } id)
@@ -62,14 +81,12 @@ namespace FxSshSftpServer.WebClient
             }
 
             _throttle.Throttle.RecordSuccess(client?.ToString());
-            _logger.LogInformation("User {Username} logged in to the web client from {Client} ({Method}).", user.Username, client, method);
+            _logger.LogInformation("User {Username} logged in to the web client from {Client} ({Method}).", FxSsh.SshServerModule.Security.LogText.Clean(user.Username), client, method);
             RecordLoginTime(user.Username);
             await PublishAsync(context, AuthEventType.LoginOk, user.Username, method, null, id);
-
-            await context.SignInAsync(ClientAuth.Scheme, ClientClaims.CreatePrincipal(user, id, passwordExpired));
-            if (passwordExpired)
-                return page.LocalRedirect("/client/changepassword");
-            return page.LocalRedirect(IsClientUrl(page, returnUrl) ? returnUrl : ClientAuth.BasePath);
+            if (!string.IsNullOrEmpty(identityProvider))
+                await PublishAsync(context, AuthEventType.IdpLogin, user.Username, method, null, id);
+            return ClientClaims.CreatePrincipal(user, id, passwordExpired, identityProvider);
         }
 
         public Task PublishFailedAsync(HttpContext context, string userName, string method, string reason) =>
