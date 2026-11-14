@@ -34,6 +34,18 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
 | Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
+## Connections
+
+Every protocol registers its open connections in the `IConnectionRegistry` singleton (`SshServer.Interfaces.Connections`,
+`AddSshServerConnections()`): it registers at accept, sets the user after the login, unregisters on close, and gives a
+callback that closes the connection, so `DisconnectAsync` works for every protocol. The registry gives each connection
+a stable `ConnectionInfo.Id` (a GUID) for the whole connection; later features (session limits, events, metrics) use it.
+The registry is in memory and per node.
+
+The `ConnectionTrackingFileSystem` decorator keeps the registry entry up to date (last activity, open files with their
+byte counts). The protocol adds it on top of the chain from `IFileSystemFactory`, because the factory does not know the
+connection yet.
+
 ## Storage backends
 
 A storage backend is a plug-in. Use this structure:
@@ -66,7 +78,18 @@ Permissions, path filters, quotas, bandwidth limits and events wrap an `IFileSys
 - One decorator handles one rule.
 - The storage factory (`StorageFileSystemFactory`) builds the decorator chain in one place, in a documented order.
 - Protocols never repeat a rule. SFTP, WebDAV, FTP and the web client get it from the chain.
-- Test each decorator alone with `InMemoryFileSystem`.
+- Test each decorator alone with `InMemoryFileSystem`, and run the conformance suite through it.
+
+The chain today, from the backend outwards:
+
+1. `PermissionFileSystem` (#59), added by the factory: per-path permissions and path filters. It throws only
+   `PermissionDenied` (and `NoSuchFile` for a hidden name); a refused operation never reaches the backend. The
+   factory leaves it out for a user who may do everything. It compares paths like the backend does
+   (`StorageCapabilities.CaseInsensitivePaths`), so another spelling of a directory gets the same rules.
+2. `ConnectionTrackingFileSystem` (#57), added by the protocol on top of the factory chain (see "Connections").
+
+The rules of a user come from `IEffectivePermissionsService`, the one place that resolves them (later also from
+groups, #61). No protocol and no backend reads `User.Permissions` itself.
 
 ## General rules
 

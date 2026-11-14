@@ -5,6 +5,7 @@ using FreeSftpSharp.Tests.Storage.S3;
 using Renci.SshNet;
 using SshServer.Filesystem.S3;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Storage;
 using static FreeSftpSharp.Tests.Infrastructure.OpenSshSftp;
@@ -21,7 +22,7 @@ public sealed class S3SftpServerFixture : SftpServerFixture
     public string KeyPrefix { get; } = "e2e/" + Guid.NewGuid().ToString("N");
 
     protected override IFileSystemFactory CreateFileSystemFactory()
-        => new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)));
+        => new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)), new EffectivePermissionsService());
 
     /// <summary>The object key of a virtual path such as "/dir/a.txt".</summary>
     public string Key(string virtualPath) => KeyPrefix + virtualPath;

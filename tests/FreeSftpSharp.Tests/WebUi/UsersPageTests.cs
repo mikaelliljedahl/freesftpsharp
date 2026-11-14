@@ -3,6 +3,7 @@ using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
 using FxSshSftpServer.Components.Pages;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Security;
 
 namespace FreeSftpSharp.Tests.WebUi;
@@ -226,4 +227,109 @@ public sealed class UsersPageTests : AdminUiComponentContext
             _root.Dispose();
         base.Dispose(disposing);
     }
+
+    [Fact]
+    public void A_new_user_has_all_permissions_at_the_root_and_no_filters()
+    {
+        var page = Render<Users>();
+
+        page.Find("#add-user").Click();
+
+        Assert.Single(page.FindAll(".permission-row"));
+        Assert.Equal("/", page.Find("#permission-path-0").GetAttribute("value"));
+        Assert.True(page.Find("#permission-path-0").HasAttribute("readonly"));
+        Assert.All(PermissionRowColumns(), flag => Assert.True(page.Find($"#permission-0-{flag}").HasAttribute("checked")));
+        Assert.Empty(page.FindAll(".remove-permission"));
+        Assert.Empty(page.FindAll(".filter-row"));
+    }
+
+    [Fact]
+    public void Permissions_and_path_filters_are_edited_in_the_tables_and_saved()
+    {
+        AddUser("grace");
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+        page.Find("#permission-0-Delete").Change(false);
+        page.Find("#add-permission").Click();
+        page.Find("#permission-path-1").Change("/incoming/");
+        foreach (var flag in PermissionRowColumns().Where(f => f != FilePermissions.Upload))
+            page.Find($"#permission-1-{flag}").Change(false);
+        page.Find("#add-filter").Click();
+        Assert.Equal("/", page.Find("#filter-path-0").GetAttribute("value"));
+        page.Find("#filter-denied-0").Change("*.exe, *.bat");
+        page.Find("#filter-hidden-0").Change(".git");
+        page.Find("#user-form").Submit();
+
+        page.WaitForAssertion(() => Assert.Equal(2, Repository.GetUser("grace").Permissions!.Count), SaveTimeout);
+        var user = Repository.GetUser("grace");
+        Assert.Equal(FilePermissions.All & ~FilePermissions.Delete, user.Permissions!["/"]);
+        Assert.Equal(FilePermissions.Upload, user.Permissions["/incoming"]);
+        Assert.Equal(["*.exe", "*.bat"], user.PathFilters!["/"].DeniedPatterns);
+        Assert.Equal([".git"], user.PathFilters["/"].HiddenPatterns);
+        Assert.Empty(user.PathFilters["/"].AllowedPatterns);
+    }
+
+    [Fact]
+    public void Stored_permissions_are_shown_with_the_root_first_and_rows_can_be_removed()
+    {
+        AddUser("heidi");
+        var stored = Repository.GetUser("heidi");
+        stored.Permissions = new() { ["/b"] = FilePermissions.List, ["/"] = FilePermissions.Download, ["/a"] = FilePermissions.Upload };
+        stored.PathFilters = new() { ["/a"] = new PathFilter { AllowedPatterns = ["*.csv"] } };
+        var page = Render<Users>();
+
+        page.Find(".edit-user").Click();
+
+        Assert.Equal(["/", "/a", "/b"], page.FindAll(".permission-row input[type=text]").Select(i => i.GetAttribute("value")));
+        Assert.True(page.Find("#permission-0-Download").HasAttribute("checked"));
+        Assert.False(page.Find("#permission-0-List").HasAttribute("checked"));
+        Assert.Equal("*.csv", page.Find("#filter-allowed-0").GetAttribute("value"));
+
+        page.FindAll(".remove-permission")[1].Click(); // "/b"
+        page.Find(".remove-filter").Click();
+        page.Find("#user-form").Submit();
+
+        page.WaitForAssertion(() => Assert.Equal(2, Repository.GetUser("heidi").Permissions!.Count), SaveTimeout);
+        Assert.False(Repository.GetUser("heidi").Permissions!.ContainsKey("/b"));
+        Assert.Null(Repository.GetUser("heidi").PathFilters);
+    }
+
+    [Theory]
+    [InlineData("incoming", "must start with")]
+    [InlineData("", "Enter a path")]
+    [InlineData("/", "twice")]
+    public void A_bad_permission_path_is_rejected(string path, string message)
+    {
+        var page = Render<Users>();
+
+        page.Find("#add-user").Click();
+        page.Find("#username").Change("ivan");
+        page.Find("#root-directory").Change(_root.Path);
+        page.Find("#add-permission").Click();
+        page.Find("#permission-path-1").Change(path);
+        page.Find("#user-form").Submit();
+
+        Assert.Contains(message, page.Markup);
+        Assert.Null(Repository.GetUser("ivan"));
+    }
+
+    [Fact]
+    public void A_pattern_with_a_slash_is_rejected()
+    {
+        var page = Render<Users>();
+
+        page.Find("#add-user").Click();
+        page.Find("#username").Change("judy");
+        page.Find("#root-directory").Change(_root.Path);
+        page.Find("#add-filter").Click();
+        page.Find("#filter-denied-0").Change("bin/*.exe");
+        page.Find("#user-form").Submit();
+
+        Assert.Contains("a pattern matches a name, not a path", page.Markup);
+        Assert.Null(Repository.GetUser("judy"));
+    }
+
+    private static IEnumerable<FilePermissions> PermissionRowColumns() =>
+        FxSshSftpServer.Models.PermissionRow.Columns.Select(c => c.Flag);
 }

@@ -3,7 +3,10 @@ using SshServer.Interfaces.Storage;
 
 namespace FreeSftpSharp.Tests.Storage.S3;
 
-/// <summary>The capabilities that <see cref="S3FileSystem"/> must declare.</summary>
+/// <summary>
+/// The capabilities that <see cref="S3FileSystem"/> must declare. A fixed value on purpose: S3 keys are case-sensitive on
+/// every operating system, so <see cref="StorageCapabilities.CaseInsensitivePaths"/> is never set.
+/// </summary>
 internal static class S3Expected
 {
     public const StorageCapabilities Capabilities = StorageCapabilities.Append | StorageCapabilities.Rename | StorageCapabilities.ServerSideCopy;

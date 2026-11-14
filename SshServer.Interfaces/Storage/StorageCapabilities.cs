@@ -34,4 +34,10 @@ public enum StorageCapabilities
 
     /// <summary>The storage can copy a file without sending the data through the server.</summary>
     ServerSideCopy = 1 << 6,
+
+    /// <summary>
+    /// The storage treats paths that differ only in case as the same path, and ignores trailing dots and spaces of a
+    /// name (the Windows rules; also macOS by default). The permission decorator compares its paths the same way.
+    /// </summary>
+    CaseInsensitivePaths = 1 << 7,
 }

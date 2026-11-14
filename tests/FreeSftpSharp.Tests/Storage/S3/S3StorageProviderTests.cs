@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.S3;
+using SshServer.Interfaces;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Storage;
 
@@ -112,5 +114,37 @@ public sealed class S3StorageProviderTests
         Assert.Same(first, second);
         Assert.NotSame(first, third);
         Assert.Equal(2, created);
+    }
+
+    [Fact]
+    public async Task The_factory_wraps_an_s3_user_in_the_permission_decorator()
+    {
+        var s3 = new FakeS3Client();
+        s3.Seed("users/r/a.txt", "a"u8.ToArray());
+        var factory = new StorageFileSystemFactory(
+            new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache(_ => s3))]),
+            new FixedResolver(new StorageSelection(S3StorageProvider.ProviderName, Valid with { KeyPrefix = "users/r" })),
+            new EffectivePermissionsService());
+
+        var unrestricted = await factory.CreateAsync(new User { Username = "u" }, Ct);
+        var readOnly = await factory.CreateAsync(new User
+        {
+            Username = "r",
+            Permissions = new() { ["/"] = FilePermissions.List | FilePermissions.Download },
+        }, Ct);
+
+        Assert.IsType<S3FileSystem>(unrestricted);
+        Assert.IsType<PermissionFileSystem>(readOnly);
+        Assert.Equal(1, (await readOnly.StatAsync("/a.txt", true, Ct))!.Size);
+        var ex = await Assert.ThrowsAsync<FileSystemException>(() =>
+            readOnly.OpenAsync("/new.txt", FileOpenFlags.Write | FileOpenFlags.Create, null, Ct).AsTask());
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
+        Assert.Equal(["users/r/a.txt"], s3.Keys);
+        Assert.Equal(0, s3.CallCount("PutObject"));
+    }
+
+    private sealed class FixedResolver(StorageSelection selection) : IUserStorageResolver
+    {
+        public StorageSelection Resolve(User user) => selection;
     }
 }

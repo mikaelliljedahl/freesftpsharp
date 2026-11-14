@@ -7,10 +7,12 @@ using Microsoft.Extensions.Logging;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
 using SshServerModule.Storage;
+using SshServerModule.Connections;
+using SshServer.Interfaces.Connections;
 
 namespace FreeSftpSharp.Tests.Unit;
 
-/// <summary><c>AddSshServerSecurity</c>: the server and the admin UI share one ban state.</summary>
+/// <summary><c>AddSshServerSecurity</c> and <c>AddSshServerConnections</c>: the server and the admin UI share one ban state and one connection registry.</summary>
 public sealed class SecurityRegistrationTests
 {
     [Fact]
@@ -33,5 +35,26 @@ public sealed class SecurityRegistrationTests
         Assert.Same(TimeProvider.System, tracker.Time);
         var used = typeof(HostedServer).GetField("_bans", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server);
         Assert.Same(tracker, used);
+    }
+
+    [Fact]
+    public void HostedServer_and_the_admin_UI_use_the_same_connection_registry()
+    {
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<ISettingsRepository>(new InMemorySettingsRepository(new ServerSettings()))
+            .AddSshServerStorage()
+            .AddLocalDiskStorage()
+            .AddSingleton<HostedServer>()
+            .AddSshServerSecurity()
+            .AddSshServerConnections();
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<IConnectionRegistry>();
+        var server = provider.GetRequiredService<HostedServer>();
+
+        Assert.IsType<ConnectionRegistry>(registry);
+        var used = typeof(HostedServer).GetField("_connections", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server);
+        Assert.Same(registry, used);
     }
 }

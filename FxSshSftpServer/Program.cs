@@ -13,7 +13,9 @@ using FxSsh.SshServerModule;
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.S3;
+using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
+using SshServerModule.Connections;
 
 using FxSshSftpServer.Security;
 
@@ -50,6 +52,7 @@ builder.Services.AddScoped<FxSshSftpServer.Components.Shared.ToastService>();
 Log.Debug("AddHostedService<HostedServer>...");
 builder.Services.AddHostedService<HostedServer>();
 builder.Services.AddSshServerSecurity(); // auto-ban state, IIpBanService for the admin UI
+builder.Services.AddSshServerConnections(); // the open connections, shared with the admin UI
 builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:BindToAddress override the stored settings
 
 Log.Debug("AddSshServerSettings...");
@@ -58,6 +61,7 @@ Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
 builder.Services.AddS3Storage(); // the "s3" storage provider (used only when a storage configuration selects it)
+builder.Services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();

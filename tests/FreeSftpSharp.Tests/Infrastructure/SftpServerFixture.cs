@@ -8,7 +8,10 @@ using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Connections;
+using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
+using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -38,12 +41,18 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual void ConfigureSettings(ServerSettings settings)
     {
     }
+    /// <summary>Changes the default test user before the server starts (for example its permissions). Override it in a derived fixture.</summary>
+    protected virtual void ConfigureUser(User user)
+    {
+    }
     /// <summary>Configuration of the listen port and bind addresses (overrides the stored settings). Override it in a derived fixture.</summary>
     protected virtual SshServerOptions? CreateListenOptions(int port) => null;
     /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
     /// <summary>The auto-ban state of the running server.</summary>
     public LoginBanTracker BanTracker { get; private set; } = null!;
+    /// <summary>The open connections of the running server.</summary>
+    public IConnectionRegistry Connections { get; private set; } = null!;
     public string TempDirectory { get; }
     public string UserRoot { get; }
     public string SecretFilePath { get; }
@@ -177,26 +186,31 @@ public class SftpServerFixture : IAsyncLifetime
         ConfigureSettings(settings);
 
         var repository = new InMemorySettingsRepository(settings);
-        repository.AddUser(new User
+        var user = new User
         {
             Username = TestCredentials.Username,
             HashedPassword = TestCredentials.HashPassword(TestCredentials.Password),
             UserRootDirectory = UserRoot,
             OnlyWhitelistedIps = false,
             WhitelistedIps = new List<string>(),
-        });
+        };
+        ConfigureUser(user);
+        repository.AddUser(user);
 
-        BanTracker = new LoginBanTracker(CreateTimeProvider());
+        var time = CreateTimeProvider();
+        BanTracker = new LoginBanTracker(time);
+        Connections = new ConnectionRegistry(time);
         return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(), repository, BanTracker,
-            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
+            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
+            Connections);
     }
 
     /// <summary>
-    /// The storage of the users. The default is the one of the hosts: the "local" provider at the user root
-    /// (AddSshServerStorage + AddLocalDiskStorage). Override it in a derived fixture for another backend.
+    /// The storage of the users. The default is the storage of the hosts: the "local" provider at the user root
+    /// (AddSshServerStorage + AddLocalDiskStorage). Override it in a derived fixture.
     /// </summary>
     protected virtual IFileSystemFactory CreateFileSystemFactory()
-        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
+        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), new EffectivePermissionsService());
 
     private static int GetFreeTcpPort()
     {
