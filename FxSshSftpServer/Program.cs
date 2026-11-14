@@ -12,6 +12,7 @@ using FxSsh.SshServerModule;
 
 using SshServer.Settings.Sql;
 using SshServer.Filesystem.LocalDisk;
+using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 
 using FxSshSftpServer.Security;
@@ -56,6 +57,7 @@ builder.Services.AddSshServerSettings(builder.Configuration);
 Log.Debug("AddSshServerStorage...");
 builder.Services.AddSshServerStorage();
 builder.Services.AddLocalDiskStorage(); // the "local" storage provider
+builder.Services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
 
 Log.Debug("builder.Build()...");
 var app = builder.Build();
