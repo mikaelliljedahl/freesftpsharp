@@ -5,6 +5,9 @@ throughput. Everything here is opt-in: with no configuration the server is one n
 
 A ready example with PostgreSQL, two nodes and HAProxy is [`deploy/cluster/docker-compose.yml`](../deploy/cluster/docker-compose.yml)
 with [`haproxy.cfg`](../deploy/cluster/haproxy.cfg).
+`FREESFTPSHARP_IMAGE` starts it with another image, for example one built from a checkout. CI starts it end to end with
+the image of the branch ([`e2e-test.sh`](../deploy/cluster/e2e-test.sh)): a user created through node A logs in over SFTP
+through HAProxy, both nodes serve logins, and the REST API lists an open session with the client address.
 
 ## Settings database
 
