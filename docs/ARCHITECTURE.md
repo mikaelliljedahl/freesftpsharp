@@ -34,6 +34,18 @@ The server has a small core and a set of plug-in points. Each plug-in point is a
 | Settings store | `ISettingsRepository` | SQLite, later PostgreSQL and SQL Server | #13, #75 |
 | Protocol | hosted service over the shared services | SFTP, WebDAV, FTP/S, HTTPS | #71, #72 |
 
+## Connections
+
+Every protocol registers its open connections in the `IConnectionRegistry` singleton (`SshServer.Interfaces.Connections`,
+`AddSshServerConnections()`): it registers at accept, sets the user after the login, unregisters on close, and gives a
+callback that closes the connection, so `DisconnectAsync` works for every protocol. The registry gives each connection
+a stable `ConnectionInfo.Id` (a GUID) for the whole connection; later features (session limits, events, metrics) use it.
+The registry is in memory and per node.
+
+The `ConnectionTrackingFileSystem` decorator keeps the registry entry up to date (last activity, open files with their
+byte counts). The protocol adds it on top of the chain from `IFileSystemFactory`, because the factory does not know the
+connection yet.
+
 ## Storage backends
 
 A storage backend is a plug-in. Use this structure:

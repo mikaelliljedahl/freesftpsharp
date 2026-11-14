@@ -1,0 +1,164 @@
+@page "/connections"
+@using System.Globalization
+@implements IDisposable
+@inject IConnectionRegistry Registry
+@inject TimeProvider Clock
+@inject ToastService Toasts
+
+<PageTitle>Connections - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Connections</h1>
+        <p class="text-body-secondary mb-0">
+            The clients that are connected to this server now, with the files they read or write. The list refreshes every
+            @RefreshInterval.TotalSeconds.ToString(CultureInfo.InvariantCulture) seconds.
+        </p>
+    </div>
+    <button type="button" class="btn btn-outline-secondary" @onclick="Refresh" id="refresh-connections">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-header fw-semibold">
+        <i class="bi bi-plug"></i> Open connections <span class="badge text-bg-secondary" id="connection-count">@connections.Count</span>
+    </div>
+    @if (connections.Count == 0)
+    {
+        <div class="card-body text-body-secondary" id="no-connections">No client is connected now.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="connection-table">
+                <thead>
+                    <tr>
+                        <th scope="col">User</th>
+                        <th scope="col">Client address</th>
+                        <th scope="col" class="d-none d-lg-table-cell">Protocol and client</th>
+                        <th scope="col" class="d-none d-md-table-cell">Connected</th>
+                        <th scope="col" class="d-none d-md-table-cell">Last activity</th>
+                        <th scope="col">Transfers</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var connection in connections)
+                    {
+                        <tr class="connection-row" data-connection-id="@connection.Id">
+                            <td class="connection-user">
+                                @if (connection.Username is null)
+                                {
+                                    <span class="text-body-secondary fst-italic">not logged in</span>
+                                }
+                                else
+                                {
+                                    <span class="fw-semibold">@connection.Username</span>
+                                    <div class="small text-body-secondary">@connection.AuthMethod</div>
+                                }
+                            </td>
+                            <td class="font-monospace connection-endpoint">@connection.RemoteEndPoint</td>
+                            <td class="d-none d-lg-table-cell">
+                                <span class="badge text-bg-info">@connection.Protocol</span>
+                                <div class="small text-body-secondary text-break">@connection.ClientVersion</div>
+                            </td>
+                            <td class="d-none d-md-table-cell" title="@connection.ConnectedAt.ToString("u", CultureInfo.InvariantCulture)">@Ago(connection.ConnectedAt)</td>
+                            <td class="d-none d-md-table-cell" title="@connection.LastActivity.ToString("u", CultureInfo.InvariantCulture)">@Ago(connection.LastActivity)</td>
+                            <td class="connection-transfers">
+                                @if (connection.Transfers.Count == 0)
+                                {
+                                    <span class="text-body-secondary">none</span>
+                                }
+                                @foreach (var transfer in connection.Transfers)
+                                {
+                                    <div class="small transfer">
+                                        <i class="bi @(transfer.Direction == TransferDirection.Upload ? "bi-upload" : "bi-download")" title="@transfer.Direction"></i>
+                                        <span class="font-monospace text-break">@transfer.VirtualPath</span>
+                                        <span class="transfer-bytes">@FormatBytes(transfer.Bytes)</span>
+                                    </div>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-danger disconnect-button" @onclick="() => AskDisconnect(connection)">
+                                    <i class="bi bi-x-circle"></i> Disconnect
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="disconnectDialog" Title="Disconnect the client" ConfirmText="Disconnect" OnConfirm="DisconnectAsync">
+    Disconnect @(selected?.Username ?? "the client") from @selected?.RemoteEndPoint? Open transfers are stopped. The client can connect again.
+</ConfirmDialog>
+
+@code {
+    public static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(2);
+
+    private List<ConnectionInfo> connections = new();
+    private ConnectionInfo selected;
+    private ConfirmDialog disconnectDialog;
+    private System.Threading.ITimer timer;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        timer = Clock.CreateTimer(_ => InvokeAsync(() =>
+        {
+            Refresh();
+            StateHasChanged();
+        }), null, RefreshInterval, RefreshInterval);
+    }
+
+    private void Refresh() => connections = Registry.GetAll().ToList();
+
+    private void AskDisconnect(ConnectionInfo connection)
+    {
+        selected = connection;
+        disconnectDialog.Open();
+    }
+
+    private async Task DisconnectAsync()
+    {
+        var connection = selected;
+        selected = null;
+        if (connection is null)
+            return;
+
+        var who = connection.Username ?? connection.RemoteEndPoint;
+        if (await Registry.DisconnectAsync(connection.Id, "Disconnected by the administrator."))
+            Toasts.ShowSuccess($"{who} was disconnected.");
+        else
+            Toasts.ShowWarning($"{who} was not connected any more.");
+        Refresh();
+    }
+
+    private string Ago(DateTimeOffset time)
+    {
+        var elapsed = Clock.GetUtcNow() - time;
+        if (elapsed < TimeSpan.FromSeconds(1))
+            return "now";
+        return elapsed.TotalHours >= 1 ? $"{(int)elapsed.TotalHours} h {elapsed.Minutes} min ago"
+            : elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes} min {elapsed.Seconds} s ago"
+            : $"{(int)elapsed.TotalSeconds} s ago";
+    }
+
+    internal static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{bytes} B" : value.ToString("0.0", CultureInfo.InvariantCulture) + " " + units[unit];
+    }
+
+    public void Dispose() => timer?.Dispose();
+}
