@@ -1,0 +1,230 @@
+@page "/virtual-folders"
+@using SshServer.Interfaces.Storage
+@using SshServerModule.Storage
+@inject VirtualFolderService FolderService
+@inject StorageConfigService StorageService
+@inject ToastService Toasts
+
+<PageTitle>Virtual folders - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Virtual folders</h1>
+        <p class="text-body-secondary mb-0">
+            Storage locations that you mount into the file system of users, for example a shared S3 prefix at <code>/incoming</code>.
+            Mount a folder on the <a href="users">Users</a> page; the permissions of the user apply to its path.
+        </p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-folder"><i class="bi bi-folder-plus"></i> Add folder</button>
+</div>
+
+<div class="row g-4">
+    <div class="@(form is null ? "col-12" : "col-xl-5")">
+        <div class="card">
+            @if (folders.Count == 0)
+            {
+                <div class="card-body text-body-secondary" id="no-folders">No virtual folders yet. Use "Add folder" to create the first one.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="folder-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Storage</th>
+                                <th scope="col" class="d-none d-md-table-cell">Mounted by</th>
+                                <th scope="col"><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var folder in folders)
+                            {
+                                var users = FolderService.UsersOf(folder.Id);
+                                <tr class="folder-row">
+                                    <td>
+                                        <div class="fw-semibold">@folder.Name</div>
+                                        @if (!string.IsNullOrWhiteSpace(folder.Description))
+                                        {
+                                            <div class="small text-body-secondary">@folder.Description</div>
+                                        }
+                                    </td>
+                                    <td><span class="badge text-bg-light border">@StorageService.DisplayName(folder.Storage)</span></td>
+                                    <td class="d-none d-md-table-cell small">
+                                        @(users.Count == 0 ? "nobody" : string.Join(", ", users))
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-primary edit-folder" title="Edit" aria-label="Edit @folder.Name" @onclick="() => Edit(folder)"><i class="bi bi-pencil"></i></button>
+                                            <button type="button" class="btn btn-outline-danger delete-folder" title="Delete" aria-label="Delete @folder.Name" @onclick="() => AskDelete(folder)"><i class="bi bi-trash"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (form is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>@(form.Id == 0 ? "New virtual folder" : $"Edit {form.OriginalName}")</span>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseForm"></button>
+                </div>
+                <div class="card-body">
+                    <form @onsubmit="Save" id="folder-form">
+                        <div class="mb-3">
+                            <label class="form-label" for="folder-name">Name</label>
+                            <input type="text" class="form-control" id="folder-name" value="@form.Name" @onchange="e => form.Name = e.Value?.ToString() ?? string.Empty" autocomplete="off" />
+                            @if (nameProblem is not null)
+                            {
+                                <div class="text-danger small" id="folder-name-problem">@nameProblem</div>
+                            }
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="folder-description">Description</label>
+                            <input type="text" class="form-control" id="folder-description" value="@form.Description" @onchange="e => form.Description = e.Value?.ToString()" />
+                        </div>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Storage</legend>
+                            <StorageEditor Settings="form.Storage" IdPrefix="folder-storage" Problems="storageProblems" OnProviderChanged="() => storageProblems = null" />
+                        </fieldset>
+
+                        @if (form.Id != 0)
+                        {
+                            <p class="small text-body-secondary mb-3">Mounted by: <span id="folder-users">@(form.Users.Count == 0 ? "nobody" : string.Join(", ", form.Users))</span></p>
+                        }
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                            <button type="submit" class="btn btn-primary" id="save-folder"><i class="bi bi-floppy"></i> @(form.Id == 0 ? "Create folder" : "Save folder")</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete virtual folder" ConfirmText="Delete" OnConfirm="Delete">
+    Delete the virtual folder <strong>@pendingDelete?.Name</strong>?
+    @if (pendingDeleteUsers.Count > 0)
+    {
+        <span>It is unmounted from @pendingDeleteUsers.Count @(pendingDeleteUsers.Count == 1 ? "user" : "users"): @string.Join(", ", pendingDeleteUsers).</span>
+    }
+    The files in its storage are not deleted.
+</ConfirmDialog>
+
+@code {
+    private IReadOnlyList<VirtualFolder> folders = [];
+    private FolderForm form;
+    private string nameProblem;
+    private IReadOnlyList<string> storageProblems;
+    private VirtualFolder pendingDelete;
+    private IReadOnlyList<string> pendingDeleteUsers = [];
+    private ConfirmDialog deleteDialog;
+
+    private sealed class FolderForm
+    {
+        public int Id { get; init; }
+        public string OriginalName { get; init; } = "";
+        public string Name { get; set; } = "";
+        public string Description { get; set; }
+        public StorageSettings Storage { get; init; } = new();
+        public IReadOnlyList<string> Users { get; init; } = [];
+    }
+
+    protected override void OnInitialized() => Load();
+
+    private void Load() => folders = FolderService.List();
+
+    private void StartNew()
+    {
+        var storage = StorageService.Edit(null);
+        if (StorageService.Providers.FirstOrDefault() is { } first)
+            StorageService.SelectProvider(storage, first.Name);
+        form = new FolderForm { Storage = storage };
+        nameProblem = null;
+        storageProblems = null;
+    }
+
+    private void Edit(VirtualFolder folder)
+    {
+        var stored = FolderService.Get(folder.Id);
+        if (stored is null)
+        {
+            Toasts.ShowError($"The virtual folder {folder.Name} does not exist any more.");
+            Load();
+            return;
+        }
+        form = new FolderForm
+        {
+            Id = stored.Id,
+            OriginalName = stored.Name,
+            Name = stored.Name,
+            Description = stored.Description,
+            Storage = StorageService.Edit(stored.Storage),
+            Users = FolderService.UsersOf(stored.Id),
+        };
+        nameProblem = null;
+        storageProblems = null;
+    }
+
+    private void CloseForm() => form = null;
+
+    private void Save()
+    {
+        nameProblem = VirtualFolderService.ValidateName(form.Name);
+        var result = StorageService.Build(form.Storage);
+        storageProblems = result.IsValid ? null : result.Problems;
+        if (nameProblem is not null || !result.IsValid)
+            return;
+
+        var folder = new VirtualFolder
+        {
+            Id = form.Id,
+            Name = form.Name.Trim(),
+            Description = string.IsNullOrWhiteSpace(form.Description) ? null : form.Description.Trim(),
+            Storage = result.Config,
+        };
+        var saved = form.Id == 0 ? FolderService.TryAdd(folder) : FolderService.TryUpdate(folder);
+        if (!saved)
+        {
+            nameProblem = $"The name {folder.Name} is already used by another virtual folder.";
+            return;
+        }
+
+        Toasts.ShowSuccess($"The virtual folder {folder.Name} was saved.");
+        Load();
+        Edit(folder);
+    }
+
+    private void AskDelete(VirtualFolder folder)
+    {
+        pendingDelete = folder;
+        pendingDeleteUsers = FolderService.UsersOf(folder.Id);
+        deleteDialog.Open();
+    }
+
+    private Task Delete()
+    {
+        if (pendingDelete is not null && FolderService.Remove(pendingDelete.Id))
+        {
+            Toasts.ShowSuccess($"The virtual folder {pendingDelete.Name} was deleted.");
+            if (form?.Id == pendingDelete.Id)
+                form = null;
+        }
+        else
+        {
+            Toasts.ShowError($"The virtual folder {pendingDelete?.Name} could not be deleted.");
+        }
+        Load();
+        return Task.CompletedTask;
+    }
+}

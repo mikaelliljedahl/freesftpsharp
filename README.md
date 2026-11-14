@@ -96,7 +96,7 @@ short help text, and the log has an error that tells what is missing. The SSH se
 
 All pages and the Blazor hub (`/_blazor`) need a login (cookie authentication, fallback authorization policy).
 
-The login cookie and the antiforgery tokens are protected with ASP.NET Core data protection keys. The keys are
+The login cookie, the antiforgery tokens and the secrets of the storage configurations are protected with ASP.NET Core data protection keys. The keys are
 stored in `DataProtection:KeysPath` (default: `keys/` in the app directory), so a login survives a restart. On
 Windows the keys are encrypted with DPAPI. On Linux and macOS they are stored unencrypted, and the log has a
 warning about it at the first start: give the directory restrictive file permissions (for example `chmod 700`).
@@ -244,8 +244,8 @@ and with S3-compatible stores (MinIO, Cloudflare R2, Backblaze B2, Wasabi, Digit
 register it with `services.AddS3Storage()` under the provider name `s3`. Nothing changes for a server that does not
 use it: no S3 client is created and no setting is needed.
 
-> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
-> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+Select it for a user, or for a virtual folder, in the admin UI (see [Storage per user and virtual folders](#storage-per-user-and-virtual-folders)).
+The secret access key is stored encrypted and is never shown again.
 
 ### Options (`S3StorageOptions`)
 
@@ -318,8 +318,30 @@ docker stop minio
 ## Encrypted storage
 
 The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
-Set `Storage:Encryption:Enabled` to `true` and configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md)
-for the configuration, the limits and the file format.
+Configure a key; see [docs/ENCRYPTED-STORAGE.md](docs/ENCRYPTED-STORAGE.md) for the configuration, the limits and the
+file format. Then select "Local disk (encrypted)" for a user or a virtual folder, or set `Storage:Encryption:Enabled`
+to `true` to encrypt the root directory of every user without a storage configuration.
+
+## Storage per user and virtual folders
+
+By default a user has the local disk at its root directory, as before. On the Users page an admin can select another
+storage for a user instead: every registered provider (`local`, `local-encrypted`, `s3`) with its own fields, and a
+"Test connection" button that lists the root with the unsaved settings. The fields come from the options record of the
+provider, so a new backend needs no UI code.
+
+A **virtual folder** (page "Virtual folders") is a named storage location that is mounted into the file system of one
+or more users at a path, for example a shared S3 prefix at `/incoming` or an encrypted `/archive`. The user sees it as
+a directory; the permissions and path filters of the user apply to its virtual path (`/incoming = Upload`).
+
+- A mount point and the directories that hold one cannot be removed or renamed.
+- A rename from one storage into another (for example `rename /a /incoming/a`) answers `SSH_FX_OP_UNSUPPORTED`;
+  copy the file instead.
+- Removing a virtual folder unmounts it from every user; the files in its storage stay.
+
+Secrets of a storage configuration (for example the S3 secret key) are encrypted in the settings database with the
+ASP.NET Core data protection keys of `DataProtection:KeysPath` (see below). They are never shown in the UI after they
+are saved and never written to the log or the audit events. Keep the keys directory: without it the stored secrets
+cannot be read and must be entered again. Two hosts that share one settings database must share the keys directory too.
 
 ## Settings storage
 

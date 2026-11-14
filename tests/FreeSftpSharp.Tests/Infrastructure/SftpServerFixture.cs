@@ -74,7 +74,7 @@ public class SftpServerFixture : IAsyncLifetime
         SecretFilePath = Path.Combine(TempDirectory, "config.db");
     }
 
-    public async ValueTask InitializeAsync()
+    public virtual async ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(UserRoot);
         File.WriteAllText(SecretFilePath, SecretContent);
