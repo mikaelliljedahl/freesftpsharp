@@ -74,6 +74,7 @@ public class AdminUiComponentContext : BunitContext
         Services.AddSingleton<ISettingsRepository>(Repository);
         Services.AddSingleton<IIpBanService>(Bans);
         Services.AddSingleton<IConnectionRegistry>(Registry);
+        Services.AddSingleton<IClusterConnections>(new LocalClusterConnections(Registry));
         Services.AddSingleton<TimeProvider>(Clock);
         Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(ListenOptions));
         Services.AddScoped<ToastService>();

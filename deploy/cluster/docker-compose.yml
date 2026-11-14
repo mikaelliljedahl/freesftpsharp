@@ -1,0 +1,85 @@
+# Two nodes on one PostgreSQL database behind HAProxy (issue #75). See docs/CLUSTER.md.
+#
+#   export FREESFTPSHARP_ADMIN_PASSWORD='choose-a-long-password' POSTGRES_PASSWORD='choose-another-one'
+#   docker compose -f deploy/cluster/docker-compose.yml up -d
+#
+# SFTP on port 2222 and the admin UI on http://localhost:8080 go through HAProxy to either node. A user, a ban or a
+# setting made on one node holds on the other; the Connections page and GET /api/v1/connections show the sessions of
+# both nodes. The user files are on a volume that both nodes mount (/data/files); for a real deployment use shared
+# storage (NFS) or an object store (S3, Azure Blob, GCS) for the users.
+x-node: &node
+  image: ghcr.io/mikaelliljedahl/freesftpsharp:latest
+  # Needs a release with #75. To build from a checkout instead:  build: { context: ../.. , dockerfile: Dockerfile }
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment: &node-environment
+    FREESFTPSHARP_ADMIN_PASSWORD: ${FREESFTPSHARP_ADMIN_PASSWORD:?set FREESFTPSHARP_ADMIN_PASSWORD}
+    Settings__Provider: PostgreSQL
+    ConnectionStrings__Settings: Host=postgres;Database=freesftpsharp;Username=freesftpsharp;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    DataProtection__Store: Database      # the login cookies and encrypted secrets work on both nodes
+    Cluster__Enabled: "true"
+    Proxy__AllowedSources: 172.28.0.10   # only HAProxy, and only with a PROXY header
+  volumes:
+    - files:/data/files
+  networks:
+    cluster: {}
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: freesftpsharp
+      POSTGRES_USER: freesftpsharp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks:
+      cluster: {}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "freesftpsharp"]
+      interval: 5s
+      retries: 20
+
+  node-a:
+    <<: *node
+    environment:
+      <<: *node-environment
+      Cluster__NodeId: node-a
+
+  node-b:
+    <<: *node
+    environment:
+      <<: *node-environment
+      Cluster__NodeId: node-b
+
+  haproxy:
+    image: haproxy:3.2.26-alpine
+    restart: unless-stopped
+    depends_on: [node-a, node-b]
+    ports:
+      - "2222:2222"             # SFTP
+      - "127.0.0.1:8080:8080"   # admin UI: plain HTTP, keep it on localhost or put HTTPS in front
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      cluster:
+        ipv4_address: 172.28.0.10
+
+networks:
+  cluster:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  postgres:
+  files:

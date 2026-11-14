@@ -89,6 +89,15 @@ namespace FxSsh
         public event EventHandler<Session> ConnectionAccepted;
 
         /// <summary>
+        /// Gets or sets a step that runs for each accepted socket before the
+        /// session is created (for example to read a PROXY protocol header).
+        /// It may read from the socket and returns the client address of the
+        /// session, or null to keep the address of the socket. An exception
+        /// closes the socket; no session is created. Null (the default): no step.
+        /// </summary>
+        public Func<Socket, CancellationToken, Task<EndPoint>> ConnectionPreface { get; set; }
+
+        /// <summary>
         /// Occurs when a session's protocol loop terminates with an
         /// exception. This includes normal connection loss
         /// (<see cref="DisconnectReason.ConnectionLost"/>, e.g. the client
@@ -281,7 +290,23 @@ namespace FxSsh
             }
 
             var remote = socket.RemoteEndPoint?.ToString() ?? "?";
-            var session = new Session(socket, _hostKey, StartingInfo.ServerBanner, Algorithms);
+            EndPoint remoteEndPoint = null;
+            if (ConnectionPreface is { } preface)
+            {
+                try
+                {
+                    remoteEndPoint = await preface(socket, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"Connection from {remote} refused before the session: {ex.Message}");
+                    socket.Dispose();
+                    return;
+                }
+                if (remoteEndPoint != null)
+                    remote = $"{remoteEndPoint} (through {remote})";
+            }
+            var session = new Session(socket, _hostKey, StartingInfo.ServerBanner, Algorithms, remoteEndPoint);
 
             session.Disconnected += (ss, ee) => _sessions.TryRemove(session.Id, out _);
 

@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Interfaces.Admins;
 using SshServer.Settings.Sql;
+using SshServer.Settings.PostgreSql;
+using SshServer.Settings.SqlServer;
 using SshServerModule.Events;
 
 namespace FxSshSftpServer.Security
@@ -30,7 +32,7 @@ namespace FxSshSftpServer.Security
             {
                 var configuration = WebApplication.CreateBuilder(args).Configuration;
                 // With the event bus, so that the audit log has the new administrator. Disposing the provider delivers it.
-                using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddSshServerEvents()
+                using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddPostgreSqlSettings().AddSqlServerSettings().AddSshServerEvents()
                     .BuildServiceProvider();
                 return RunAsync(args, provider.GetRequiredService<AdminAdministrationService>(),
                     Console.In, Console.Out, Console.Error, interactive: !Console.IsInputRedirected, CancellationToken.None)

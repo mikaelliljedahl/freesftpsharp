@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Cluster;
 
 namespace SshServer.EventRules;
 
@@ -123,8 +124,8 @@ public sealed class EventRuleCatalogSnapshot
 
 /// <summary>
 /// The enabled rules in memory, so that an event costs no database read: with no rule, the sink and the hook return at
-/// once. It is loaded at the first use, reloaded after each change in the admin UI and every 30 s by the scheduler (for
-/// the changes of another node).
+/// once. It is loaded at the first use, reloaded after each change in the admin UI and every 30 s by the scheduler, and
+/// with several nodes (#75) when the settings version changed (<see cref="ISettingsChangeNotifier"/>).
 /// </summary>
 public sealed class EventRuleCatalog
 {
@@ -137,11 +138,28 @@ public sealed class EventRuleCatalog
     private volatile EventRuleCatalogSnapshot? _current;
     private long _loadedAt;
 
-    public EventRuleCatalog(IEventRuleStore store, TimeProvider time, ILogger<EventRuleCatalog> logger)
+    public EventRuleCatalog(IEventRuleStore store, TimeProvider time, ILogger<EventRuleCatalog> logger, ISettingsChangeNotifier? changes = null)
     {
         _store = store;
         _time = time;
         _logger = logger;
+        if (changes != null)
+            changes.Changed += () => _ = ReloadAfterChangeAsync();
+    }
+
+    /// <summary>Another node changed the settings: reload, when the rules were loaded already.</summary>
+    private async Task ReloadAfterChangeAsync()
+    {
+        if (_current == null)
+            return;
+        try
+        {
+            await ReloadAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not reload the event rules after a change of the settings.");
+        }
     }
 
     /// <summary>The time since the last load; null before the first load.</summary>
