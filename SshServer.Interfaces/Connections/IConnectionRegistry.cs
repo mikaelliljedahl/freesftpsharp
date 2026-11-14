@@ -22,6 +22,17 @@ public interface IConnectionRegistry
     /// <summary>Records the successful login of <paramref name="username"/> with <paramref name="authMethod"/>.</summary>
     void SetAuthenticated(Guid id, string username, string authMethod);
 
+    /// <summary>
+    /// Records the login like <see cref="SetAuthenticated"/> only when <paramref name="username"/> (without case) has
+    /// fewer than <paramref name="maxSessions"/> other authenticated connections; the count and the change are one step,
+    /// so two logins at the same time cannot both take the last session (issue #61). 0: no limit. False: the connection
+    /// stays unauthenticated (also for an unknown id).
+    /// </summary>
+    bool TrySetAuthenticated(Guid id, string username, string authMethod, int maxSessions);
+
+    /// <summary>The number of authenticated connections of <paramref name="username"/> (without case), except <paramref name="except"/>.</summary>
+    int CountSessions(string username, Guid except);
+
     /// <summary>Sets <see cref="ConnectionInfo.LastActivity"/> to now.</summary>
     void RecordActivity(Guid id);
 

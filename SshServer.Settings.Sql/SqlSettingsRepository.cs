@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.Groups;
 using SshServer.Interfaces.Storage;
 using SshServer.Settings.LiteDb;
 
@@ -17,7 +18,7 @@ namespace SshServer.Settings.Sql;
 /// The returned objects are detached copies: change them and call the Update methods to save.
 /// <para>
 /// Every saved change of a user or of the server settings is published as a <see cref="ProviderEvent"/>, without
-/// secrets. An update that changes only <see cref="User.LastSuccessfulLogin"/> (each login) gives no event.
+/// secrets. An update that changes only <see cref="User.LastLoginAt"/> (each login) gives no event.
 /// </para>
 /// </summary>
 public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
@@ -178,6 +179,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.LoginFailureWindowSeconds = updatedSettings.LoginFailureWindowSeconds;
         stored.BanDurationSeconds = updatedSettings.BanDurationSeconds;
         stored.ExemptLoopbackFromBan = updatedSettings.ExemptLoopbackFromBan;
+        stored.PasswordMaxAgeDays = updatedSettings.PasswordMaxAgeDays;
         stored.IdleTimeout = updatedSettings.IdleTimeout;
         stored.EnableCommand = updatedSettings.EnableCommand;
         stored.EnableDirectTcpIp = updatedSettings.EnableDirectTcpIp;
@@ -242,13 +244,14 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             AppPasswords = newUser.AppPasswords,
             OnlyWhitelistedIps = newUser.OnlyWhitelistedIps,
             WhitelistedIps = newUser.WhitelistedIps,
-            LastSuccessfulLogin = newUser.LastSuccessfulLogin,
+            LastLoginAt = newUser.LastLoginAt,
             Permissions = newUser.Permissions,
             PathFilters = newUser.PathFilters,
             Storage = newUser.Storage,
             VirtualFolders = CopyMounts(newUser.VirtualFolders),
             RoleId = newUser.RoleId,
         };
+        CopyLifecycle(newUser, stored);
         db.Users.Add(stored);
         db.SaveChanges();
         newUser.Id = stored.Id;
@@ -269,7 +272,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         var keyChanged = PublicKeyBlobs(stored) != PublicKeyBlobs(updatedUser);
         var roleChanged = stored.RoleId != updatedUser.RoleId;
         stored.HashedPassword = updatedUser.HashedPassword;
-        stored.LastSuccessfulLogin = updatedUser.LastSuccessfulLogin;
+        stored.LastLoginAt = updatedUser.LastLoginAt;
         stored.OnlyWhitelistedIps = updatedUser.OnlyWhitelistedIps;
         stored.PublicKeys = updatedUser.PublicKeys;
         stored.AllowedAuthMethods = updatedUser.AllowedAuthMethods;
@@ -281,8 +284,9 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.Permissions = updatedUser.Permissions;
         stored.PathFilters = updatedUser.PathFilters;
         stored.Storage = updatedUser.Storage;
-        ReplaceMounts(stored, updatedUser.VirtualFolders);
+        ReplaceMounts(stored.VirtualFolders, updatedUser.VirtualFolders);
         stored.RoleId = updatedUser.RoleId;
+        CopyLifecycle(updatedUser, stored);
         db.SaveChanges();
 
         var changed = ChangedFields(before, UserSnapshot.From(stored));
@@ -302,18 +306,30 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         return true;
     }
 
+    /// <summary>The fields of issue #61: status, expiry, session limit, password age, description and groups.</summary>
+    private static void CopyLifecycle(User from, User to)
+    {
+        to.Description = from.Description;
+        to.Status = from.Status;
+        to.ExpiresAt = from.ExpiresAt;
+        to.MaxSessions = from.MaxSessions;
+        to.PasswordChangedAt = from.PasswordChangedAt;
+        to.PrimaryGroupId = from.PrimaryGroupId;
+        to.SecondaryGroupIds = (from.SecondaryGroupIds ?? []).ToList();
+    }
+
     private static List<VirtualFolderMount> CopyMounts(IEnumerable<VirtualFolderMount>? mounts)
         => (mounts ?? []).Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath }).ToList();
 
-    /// <summary>Changes the mounts of a tracked user in place: unchanged mounts keep their row, so the unique index never sees a duplicate.</summary>
-    private static void ReplaceMounts(User stored, IEnumerable<VirtualFolderMount>? mounts)
+    /// <summary>Changes the tracked mounts of a user or group in place: unchanged mounts keep their row, so the unique index never sees a duplicate.</summary>
+    private static void ReplaceMounts(List<VirtualFolderMount> stored, IEnumerable<VirtualFolderMount>? mounts)
     {
         var wanted = CopyMounts(mounts);
-        stored.VirtualFolders.RemoveAll(m => !wanted.Any(w => w.MountPath == m.MountPath && w.VirtualFolderId == m.VirtualFolderId));
+        stored.RemoveAll(m => !wanted.Any(w => w.MountPath == m.MountPath && w.VirtualFolderId == m.VirtualFolderId));
         foreach (var mount in wanted)
         {
-            if (!stored.VirtualFolders.Any(m => m.MountPath == mount.MountPath && m.VirtualFolderId == mount.VirtualFolderId))
-                stored.VirtualFolders.Add(mount);
+            if (!stored.Any(m => m.MountPath == mount.MountPath && m.VirtualFolderId == mount.VirtualFolderId))
+                stored.Add(mount);
         }
     }
 
@@ -377,12 +393,91 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         var stored = db.VirtualFolders.FirstOrDefault(f => f.Id == id);
         if (stored == null)
             return false;
-        // Unmount it from the users (the foreign key would do it too, but only with PRAGMA foreign_keys).
+        // Unmount it from the users and groups (the foreign key would do it too, but only with PRAGMA foreign_keys).
         foreach (var user in db.Users.Where(u => u.VirtualFolders.Any(m => m.VirtualFolderId == id)).ToList())
             user.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
+        foreach (var group in db.Groups.Where(g => g.VirtualFolders.Any(m => m.VirtualFolderId == id)).ToList())
+            group.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
         db.VirtualFolders.Remove(stored);
         db.SaveChanges();
         Publish(new ProviderEvent(ProviderAction.Delete, ProviderObjectType.VirtualFolder, stored.Name) { Object = VirtualFolderSnapshot.From(stored) });
+        return true;
+    }
+
+    public List<Group> GetGroups()
+    {
+        using var db = CreateContext();
+        return db.Groups.AsNoTracking().OrderBy(g => g.Name).ToList();
+    }
+
+    public Group? GetGroup(int id)
+    {
+        using var db = CreateContext();
+        return db.Groups.AsNoTracking().FirstOrDefault(g => g.Id == id);
+    }
+
+    public bool AddGroup(Group group)
+    {
+        if (string.IsNullOrWhiteSpace(group.Name))
+            return false;
+        using var db = CreateContext();
+        if (db.Groups.Any(g => g.Name == group.Name))
+            return false;
+        var stored = group.Clone();
+        stored.Id = 0;
+        db.Groups.Add(stored);
+        db.SaveChanges();
+        group.Id = stored.Id;
+        Publish(new ProviderEvent(ProviderAction.Add, ProviderObjectType.Group, stored.Name) { Object = GroupSnapshot.From(stored) });
+        return true;
+    }
+
+    public bool UpdateGroup(Group group)
+    {
+        if (string.IsNullOrWhiteSpace(group.Name))
+            return false;
+        using var db = CreateContext();
+        var stored = db.Groups.FirstOrDefault(g => g.Id == group.Id);
+        if (stored == null || db.Groups.Any(g => g.Id != group.Id && g.Name == group.Name))
+            return false;
+        var before = GroupSnapshot.From(stored);
+        var storageChanged = stored.Storage != group.Storage;
+        var copy = group.Clone();
+        stored.Name = copy.Name;
+        stored.Description = copy.Description;
+        stored.Permissions = copy.Permissions;
+        stored.PathFilters = copy.PathFilters;
+        stored.Storage = copy.Storage;
+        ReplaceMounts(stored.VirtualFolders, copy.VirtualFolders);
+        stored.AllowedAuthMethods = copy.AllowedAuthMethods;
+        stored.AllowedIps = copy.AllowedIps;
+        stored.RoleId = copy.RoleId;
+        db.SaveChanges();
+
+        var changed = ChangedFields(before, GroupSnapshot.From(stored));
+        if (storageChanged && !changed.Contains(nameof(GroupSnapshot.StorageProvider)))
+            changed.Add("Storage");
+        if (changed.Count > 0)
+            Publish(new ProviderEvent(ProviderAction.Update, ProviderObjectType.Group, stored.Name)
+            {
+                Object = GroupSnapshot.From(stored),
+                ChangedFields = changed,
+            });
+        return true;
+    }
+
+    public bool RemoveGroup(int id)
+    {
+        using var db = CreateContext();
+        var stored = db.Groups.FirstOrDefault(g => g.Id == id);
+        if (stored == null)
+            return false;
+        // The secondary groups are a JSON list: check them in memory.
+        if (db.Users.AsNoTracking().AsEnumerable().Any(u => GroupService.IsMember(u, id)))
+            return false;
+        db.Groups.Remove(stored);
+        db.SaveChanges();
+        Publish(new ProviderEvent(ProviderAction.Delete, ProviderObjectType.Group, stored.Name) { Object = GroupSnapshot.From(stored) });
         return true;
     }
 

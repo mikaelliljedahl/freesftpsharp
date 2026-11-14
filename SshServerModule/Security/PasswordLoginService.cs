@@ -9,6 +9,7 @@ using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Net;
 using SshServer.Interfaces.TwoFactor;
+using SshServer.Interfaces.Users;
 
 namespace FxSsh.SshServerModule.Security
 {
@@ -40,16 +41,17 @@ namespace FxSsh.SshServerModule.Security
     /// the SFTP login of <c>HostedServer</c>, in one place.
     /// <list type="number">
     /// <item>The global IP rules and the auto-ban (<see cref="IpFilter"/>, <see cref="LoginBanTracker"/>).</item>
-    /// <item>The user, its IP whitelist and the password: the stored PBKDF2 hash (<see cref="User.AllowedAuthMethods"/>
-    /// must allow the password; a user with a multi-step login or a TOTP second factor (#63) cannot log in with the
-    /// password alone, because these protocols cannot ask for a second step), or an app password of the user for the
-    /// protocol (<see cref="User.AppPasswords"/>).</item>
+    /// <item>The lifecycle of the user (#61, <see cref="UserLoginRules"/>: status and expiry; the password age for the
+    /// password), its effective allowed networks (its own or of its groups) and the password: the stored PBKDF2 hash (the
+    /// effective login methods must allow the password; a user with a multi-step login or a TOTP second factor (#63)
+    /// cannot log in with the password alone, because these protocols cannot ask for a second step), or an app password
+    /// of the user for the protocol (<see cref="User.AppPasswords"/>).</item>
     /// <item>The protocol (<see cref="User.AllowedProtocols"/>), checked after the credentials, so only the owner of the
     /// account learns that the protocol is refused.</item>
     /// </list>
     /// A failure takes the time of a key derivation (also for an unknown user), counts for the auto-ban and gives a
-    /// <c>LoginFailed</c> event; a new ban gives an <c>IpBanned</c> event. The caller publishes <c>LoginOk</c> and
-    /// <c>Logout</c>, because it knows the session.
+    /// <c>LoginFailed</c> event; a new ban gives an <c>IpBanned</c> event. The caller checks the session limit
+    /// (<c>IConnectionRegistry.TrySetAuthenticated</c>) and publishes <c>LoginOk</c> and <c>Logout</c>, because it knows the session.
     /// </summary>
     public sealed class PasswordLoginService
     {
@@ -62,13 +64,16 @@ namespace FxSsh.SshServerModule.Security
         private readonly ILogger _logger;
         private readonly IpFilter _ipFilter;
         private readonly ITwoFactorVerifier? _twoFactor;
+        private readonly IEffectiveUserSettingsService _userSettings;
 
         /// <param name="events">The event bus (AddSshServerEvents). Null: no events.</param>
         /// <param name="twoFactor">The second factor (#63). Null: no user has one.</param>
+        /// <param name="userSettings">The effective settings of the users with their groups (AddSshServerStorage). Null: one over <paramref name="repository"/>.</param>
         public PasswordLoginService(ISettingsRepository repository, LoginBanTracker bans, ILogger<PasswordLoginService> logger, IEventBus? events = null,
-            ITwoFactorVerifier? twoFactor = null)
+            ITwoFactorVerifier? twoFactor = null, IEffectiveUserSettingsService? userSettings = null)
         {
             _twoFactor = twoFactor;
+            _userSettings = userSettings ?? new EffectiveUserSettingsService(repository);
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _bans = bans ?? throw new ArgumentNullException(nameof(bans));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -137,19 +142,33 @@ namespace FxSsh.SshServerModule.Security
                 return (null, "unknown user");
             }
 
-            if (!UserLogics.VerifyUserIpWhitelisted(user, new IPEndPoint(address, 0)))
+            var now = Time.GetUtcNow().UtcDateTime;
+            if (UserLoginRules.Refusal(user, AuthMethods.None, now, 0) is { } lifecycle)
+            {
+                UserLogics.SimulatePasswordCheck();
+                return (null, lifecycle);
+            }
+
+            var settings = _userSettings.Resolve(user);
+            if (!UserLogics.VerifyUserIpWhitelisted(settings.AllowedIps, new IPEndPoint(address, 0)))
             {
                 UserLogics.SimulatePasswordCheck();
                 return (null, "the address is not in the whitelist of the user");
             }
 
-            if (AppPasswordGenerator.Find(user, password, protocol, Time.GetUtcNow().UtcDateTime) != null)
+            if (AppPasswordGenerator.Find(user, password, protocol, now) != null)
                 return (AppPasswordMethod, null);
 
-            if ((user.AllowedAuthMethods & AuthMethods.Password) == 0)
+            if ((settings.AllowedAuthMethods & AuthMethods.Password) == 0)
             {
                 UserLogics.SimulatePasswordCheck();
                 return (null, "the password is not allowed for the user");
+            }
+
+            if (UserLoginRules.Refusal(user, AuthMethods.Password, now, _repository.ServerSettings.PasswordMaxAgeDays) is { } passwordAge)
+            {
+                UserLogics.SimulatePasswordCheck();
+                return (null, passwordAge);
             }
 
             if (AuthMethodRules.RequiredSteps(user).Count > 0)

@@ -75,7 +75,7 @@ public sealed class LiteDbImportTests : IDisposable
             HashedPassword = TestCredentials.LegacySha256Hash("pw"),
             OnlyWhitelistedIps = true,
             WhitelistedIps = new List<string> { "10.1.2.3" },
-            LastSuccessfulLogin = new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc),
+            LastLoginAt = new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc),
         });
         repository.AddUser(new User
         {
@@ -97,7 +97,7 @@ public sealed class LiteDbImportTests : IDisposable
         using var liteDb = new SettingsRepository(LiteDbPath);
         ISettingsRepository repository = liteDb;
         repository.AddUser(new User { Username = "carol", UserRootDirectory = "/srv/carol" });
-        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, repository.GetUser("carol").Permissions);
+        Assert.Null(repository.GetUser("carol").Permissions); // not set (#61): All at the root
 
         var user = repository.GetUser("carol");
         user.Permissions = new() { ["/"] = FilePermissions.None, ["/a/b"] = FilePermissions.Download | FilePermissions.List };
@@ -167,7 +167,7 @@ public sealed class LiteDbImportTests : IDisposable
         Assert.Equal(TestCredentials.LegacySha256Hash("pw"), alice.HashedPassword);
         Assert.True(alice.OnlyWhitelistedIps);
         Assert.Equal(new[] { "10.1.2.3" }, alice.WhitelistedIps);
-        Assert.Equal(new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc), alice.LastSuccessfulLogin.ToUniversalTime());
+        Assert.Equal(new DateTime(2025, 12, 24, 18, 0, 0, DateTimeKind.Utc), alice.LastLoginAt!.Value.ToUniversalTime());
         var bob = repository.GetUser("bob");
         var bobKey = Assert.Single(bob.PublicKeys!);
         Assert.Equal(Convert.ToBase64String(SshPublicKey.RsaBlob(BobKey)), bobKey.KeyBase64);
@@ -177,7 +177,7 @@ public sealed class LiteDbImportTests : IDisposable
         Assert.Null(bob.HashedPassword);
         Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.List, ["/in"] = FilePermissions.Upload }, bob.Permissions);
         Assert.Equal(["*.exe"], bob.PathFilters!["/in"].DeniedPatterns);
-        Assert.Equal(new Dictionary<string, FilePermissions> { ["/"] = FilePermissions.All }, alice.Permissions);
+        Assert.Null(alice.Permissions); // not set (#61): All at the root, or the permissions of a group
     }
 
     [Fact]

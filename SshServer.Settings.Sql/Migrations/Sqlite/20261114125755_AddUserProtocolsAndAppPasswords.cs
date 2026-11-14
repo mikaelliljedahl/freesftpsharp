@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 /// <inheritdoc />
-public partial class _20261114125057_AddUserProtocolsAndAppPasswords : Migration
+public partial class _20261114125755_AddUserProtocolsAndAppPasswords : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

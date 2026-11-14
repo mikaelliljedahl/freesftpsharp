@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Users;
 using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
 using FreeSftpSharp.Tests.Storage.Encrypted;
@@ -218,7 +219,7 @@ public sealed class StorageConfigServiceTests : IDisposable
             Permissions = new() { ["/"] = FilePermissions.All, ["/shared"] = FilePermissions.List | FilePermissions.Download },
         };
         var factory = new StorageFileSystemFactory(_registry, new UserStorageResolver(new UserRootDefaultStorage(), repository), _codec,
-            new EffectivePermissionsService());
+            new EffectiveUserSettingsService());
 
         var fileSystem = await factory.CreateAsync(user, new ClientContext("SFTP", "127.0.0.1"), Ct);
 
@@ -243,7 +244,7 @@ public sealed class StorageConfigServiceTests : IDisposable
         var folder = new VirtualFolder { Name = "broken", Storage = new StorageConfig { Provider = "local", Options = "{\"RootDirectory\":\"\"}" } };
         repository.AddVirtualFolder(folder);
         var factory = new StorageFileSystemFactory(_registry, new UserStorageResolver(new UserRootDefaultStorage(), repository), _codec,
-            new EffectivePermissionsService());
+            new EffectiveUserSettingsService());
         var user = new User { Username = "u", UserRootDirectory = _temp.Path, VirtualFolders = [new() { VirtualFolderId = folder.Id, MountPath = "/b" }] };
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(async () => await factory.CreateAsync(user, new ClientContext("SFTP", "127.0.0.1"), Ct));

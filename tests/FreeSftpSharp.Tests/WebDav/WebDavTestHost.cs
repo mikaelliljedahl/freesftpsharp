@@ -103,13 +103,14 @@ public sealed class WebDavTestHost : IAsyncDisposable
         var provider = new InMemoryStorageProvider(capabilities);
         var connections = new ConnectionRegistry(time);
         var events = new RecordingEventBus();
+        var repository = new InMemorySettingsRepository(new ServerSettings());
         var registry = new SshServerModule.Storage.StorageProviderRegistry([provider]);
         var codec = new SshServerModule.Storage.StorageOptionsCodec(registry, new TestSecretProtector());
         var factory = new SshServerModule.Storage.StorageFileSystemFactory(registry, new PerUserResolver(codec), codec,
-            new SshServer.Interfaces.Permissions.EffectivePermissionsService(), connections, events, time);
+            new SshServer.Interfaces.Users.EffectiveUserSettingsService(repository), connections, events, time);
 
         builder.Services.AddSingleton<TimeProvider>(time);
-        builder.Services.AddSingleton<ISettingsRepository>(new InMemorySettingsRepository(new ServerSettings()));
+        builder.Services.AddSingleton<ISettingsRepository>(repository);
         builder.Services.AddSingleton<IEventBus>(events);
         builder.Services.AddSingleton<IConnectionRegistry>(connections);
         builder.Services.AddSingleton<IFileSystemFactory>(factory);

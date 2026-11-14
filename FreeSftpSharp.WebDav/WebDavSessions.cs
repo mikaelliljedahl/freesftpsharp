@@ -10,6 +10,7 @@ using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Users;
 
 namespace FreeSftpSharp.WebDav;
 
@@ -66,10 +67,12 @@ internal sealed class WebDavSessionStore
     private readonly ILogger _logger;
     private readonly TimeSpan _idleTimeout;
     private readonly byte[] _keySecret = RandomNumberGenerator.GetBytes(32);
+    private readonly IEffectiveUserSettingsService _userSettings;
 
     public WebDavSessionStore(IConnectionRegistry connections, TimeProvider time, IOptions<WebDavOptions> options,
-        ILogger<WebDavSessionStore> logger, IEventBus? events = null)
+        ILogger<WebDavSessionStore> logger, IEffectiveUserSettingsService userSettings, IEventBus? events = null)
     {
+        _userSettings = userSettings;
         _connections = connections;
         _time = time;
         _logger = logger;
@@ -163,13 +166,25 @@ internal sealed class WebDavSessionStore
             await EndAsync(session, "the server stops");
     }
 
-    /// <summary>A hash of everything stored for the user except the last login time (which the login itself changes).</summary>
-    public static string StampOf(User user)
+    /// <summary>
+    /// A hash of everything stored for the user and its groups (#61), except the last login time, which the login itself
+    /// changes. Another value means that the rules of the session changed.
+    /// </summary>
+    public string StampOf(User user)
     {
         var node = JsonSerializer.SerializeToNode(user) as JsonObject ?? new JsonObject();
-        node.Remove(nameof(User.LastSuccessfulLogin));
-        return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(node.ToJsonString())));
+        node.Remove(nameof(User.LastLoginAt));
+        var groups = JsonSerializer.Serialize(_userSettings.Resolve(user).Groups);
+        return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(node.ToJsonString() + "\n" + groups)));
     }
+
+    /// <summary>A <c>LoginFailed</c> event of a login that passed the credentials but cannot have a session.</summary>
+    public ValueTask PublishLoginFailedAsync(string username, string remoteIp, string method, string reason) =>
+        PublishAsync(new AuthEvent(AuthEventType.LoginFailed)
+        {
+            Timestamp = _time.GetUtcNow(), Username = username, RemoteIp = remoteIp, Protocol = ConnectionProtocols.WebDav,
+            Method = method, Reason = reason,
+        });
 
     private static string? RemoteIpOf(ConnectionInfo? info)
     {

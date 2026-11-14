@@ -5,6 +5,8 @@ using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Permissions;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Users;
+using SshServer.Interfaces;
 
 namespace FreeSftpSharp.Tests.WebDav;
 
@@ -113,6 +115,27 @@ public sealed class WebDavSecurityTests
     }
 
     [Fact]
+    public async Task LifecycleRules_DisabledOrExpiredUser_AndTheSessionLimit()
+    {
+        await using var host = await WebDavTestHost.StartAsync();
+        host.AddUser("off", u => u.Status = UserStatus.Disabled);
+        host.AddUser("old", u => u.ExpiresAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        host.AddUser("one", u => u.MaxSessions = 1);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client("off").SendAsync("OPTIONS", "/dav/")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client("old").SendAsync("OPTIONS", "/dav/")).StatusCode);
+        Assert.Contains(host.Events.Published.OfType<AuthEvent>(), e => e is { Type: AuthEventType.LoginFailed, Reason: "the user is disabled" });
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client("one").SendAsync("OPTIONS", "/dav/")).StatusCode);
+        // Another address is another session: the limit of one refuses it.
+        var second = await host.Client("one").SendAsync("OPTIONS", "/dav/", null, (WebDavTestHost.RemoteIpHeader, "::1"));
+        Assert.Equal(HttpStatusCode.Forbidden, second.StatusCode);
+        Assert.Single(host.Connections.GetAll());
+        Assert.Contains(host.Events.Published.OfType<AuthEvent>(), e => e is { Type: AuthEventType.LoginFailed, Username: "one" }
+            && e.Reason!.Contains("maximum of 1 session"));
+    }
+
+    [Fact]
     public async Task FailedLogins_BanTheAddress()
     {
         await using var host = await WebDavTestHost.StartAsync();
@@ -146,7 +169,7 @@ public sealed class WebDavSecurityTests
         Assert.Equal("Microsoft-WebDAV-MiniRedir/10.0.19045", connection.ClientVersion);
         var login = Assert.Single(host.Events.Published.OfType<AuthEvent>(), e => e.Type == AuthEventType.LoginOk);
         Assert.Equal(connection.Id.ToString(), login.SessionId);
-        Assert.NotEqual(default, host.Repository.GetUser("alice").LastSuccessfulLogin);
+        Assert.NotNull(host.Repository.GetUser("alice").LastLoginAt);
 
         // The sweeper of the host runs on the fake clock too; the direct call covers a sweep that has not run yet.
         host.Time.Advance(TimeSpan.FromSeconds(301));

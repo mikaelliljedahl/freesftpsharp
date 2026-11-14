@@ -31,6 +31,9 @@ public sealed record AdminActor(string Username, AdminPermissions Permissions, i
     /// <summary>True when the user is in the scope: every user without a scope, else only the users of the role.</summary>
     public bool CanSee(User? user) => user != null && (ScopeRoleId == null || user.RoleId == ScopeRoleId);
 
+    /// <summary>True when the group (#61) is in the scope: every group without a scope, else only the groups of the role.</summary>
+    public bool CanSee(Groups.Group? group) => group != null && (ScopeRoleId == null || group.RoleId == ScopeRoleId);
+
     public static AdminActor From(Admin admin) =>
         new(admin.Username, AdminPermissionRules.Effective(admin), admin.ScopeRoleId);
 }

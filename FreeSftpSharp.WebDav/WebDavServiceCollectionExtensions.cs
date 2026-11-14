@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SshServer.Interfaces;
+using SshServer.Interfaces.Users;
 using SshServerModule.Connections;
 
 namespace FreeSftpSharp.WebDav;
@@ -25,6 +27,7 @@ public static class WebDavServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSshServerSecurity();
         services.AddSshServerConnections();
+        services.TryAddSingleton<IEffectiveUserSettingsService>(sp => new EffectiveUserSettingsService(sp.GetRequiredService<ISettingsRepository>()));
         services.TryAddSingleton(sp => new WebDavLockManager(sp.GetRequiredService<TimeProvider>()));
         services.TryAddSingleton<WebDavSessionStore>();
         services.TryAddSingleton<WebDavAuthenticator>();

@@ -28,7 +28,7 @@ public sealed class BanServerFixture : SftpServerFixture
     }
 }
 
-/// <summary>Global blacklist, global whitelist mode, auto-ban and LastSuccessfulLogin, with SSH.NET over 127.0.0.1.</summary>
+/// <summary>Global blacklist, global whitelist mode, auto-ban and LastLoginAt, with SSH.NET over 127.0.0.1.</summary>
 public sealed class IpFilterAndBanTests : IClassFixture<BanServerFixture>
 {
     private readonly BanServerFixture _server;
@@ -150,29 +150,29 @@ public sealed class IpFilterAndBanTests : IClassFixture<BanServerFixture>
     }
 
     [Fact]
-    public void A_successful_login_sets_LastSuccessfulLogin()
+    public void A_successful_login_sets_LastLoginAt()
     {
         var user = _server.Repository.GetUser(_server.Username);
-        user.LastSuccessfulLogin = default;
+        user.LastLoginAt = null;
         _server.Repository.UpdateUser(user);
         var expected = _server.Time.GetUtcNow().UtcDateTime;
 
         using (var client = _server.Connect())
             Assert.True(client.IsConnected);
 
-        Assert.Equal(expected, _server.Repository.GetUser(_server.Username).LastSuccessfulLogin);
+        Assert.Equal(expected, _server.Repository.GetUser(_server.Username).LastLoginAt);
     }
 
     [Fact]
-    public void A_failed_login_does_not_set_LastSuccessfulLogin()
+    public void A_failed_login_does_not_set_LastLoginAt()
     {
         var user = _server.Repository.GetUser(_server.Username);
-        user.LastSuccessfulLogin = default;
+        user.LastLoginAt = null;
         _server.Repository.UpdateUser(user);
 
         using (var wrong = _server.CreateClient(password: "wrong-password"))
             Assert.Throws<SshAuthenticationException>(() => wrong.Connect());
 
-        Assert.Equal(default, _server.Repository.GetUser(_server.Username).LastSuccessfulLogin);
+        Assert.Null(_server.Repository.GetUser(_server.Username).LastLoginAt);
     }
 }

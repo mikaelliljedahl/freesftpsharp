@@ -59,8 +59,9 @@ proxy), so that the request counts as HTTPS; do not use `AllowInsecureHttp` for 
 
 - **Login.** HTTP Basic with the user name and password (UTF-8). The rules are the ones of the SFTP login, in one
   place (`PasswordLoginService`): the global IP rules and the auto-ban (a wrong password counts as a failed login), the
-  IP whitelist of the user, the PBKDF2 password and `AllowedAuthMethods` (the password must be allowed). Digest is not
-  implemented.
+  status, expiry and password age of the user (#61), its allowed networks and login methods (its own or of its groups),
+  and the PBKDF2 password. A WebDAV session counts for the session limit of the user (`MaxSessions`, 403 when it is
+  reached). Digest is not implemented.
 - **Protocols.** `User.AllowedProtocols` (admin UI: user form, "Protocols"; default: all) says which protocols a user
   may use. A user without WebDAV gets 403, but only after a correct password, so a client without the password learns
   nothing. SFTP refuses a user without SFTP like a wrong password.

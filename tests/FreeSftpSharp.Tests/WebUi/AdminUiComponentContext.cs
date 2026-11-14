@@ -14,6 +14,7 @@ using SshServer.Interfaces.Admins;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Users;
+using SshServer.Interfaces.Groups;
 using SshServerModule.Connections;
 using SshServer.Interfaces.Events;
 using SshServer.TwoFactor;
@@ -91,6 +92,8 @@ public class AdminUiComponentContext : BunitContext
         Services.AddScoped<TwoFactorAdministration>();
         Services.AddScoped(sp => new UserAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
         Services.AddScoped(sp => new VirtualFolderService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
+        Services.AddScoped(sp => new GroupService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
+        Services.AddSingleton<IEffectiveUserSettingsService>(new EffectiveUserSettingsService(Repository));
         JSInterop.Mode = JSRuntimeMode.Loose;
 
         _authorization = AddAuthorization();

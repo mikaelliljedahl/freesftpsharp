@@ -42,6 +42,7 @@ public sealed class AdminUiPagesTests : IClassFixture<AdminUiFactory>
     [InlineData("/audit", "Audit")]
     [InlineData("/connections", "Connections")]
     [InlineData("/virtual-folders", "Virtual folders")]
+    [InlineData("/groups", "Groups")]
     public async Task Page_renders_after_login_with_the_layout(string path, string heading)
     {
         using var browser = await LoggedInBrowserAsync();

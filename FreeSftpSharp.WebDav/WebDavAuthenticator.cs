@@ -9,6 +9,7 @@ using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Net;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Users;
 
 namespace FreeSftpSharp.WebDav;
 
@@ -92,7 +93,7 @@ internal sealed class WebDavAuthenticator
         }
 
         var user = result.User!;
-        var stamp = WebDavSessionStore.StampOf(user);
+        var stamp = _sessions.StampOf(user);
         var remoteEndPoint = new IPEndPoint(remote, context.Connection.RemotePort).ToString();
         WebDavSession? created = null;
         var connection = _connections.Register(new ConnectionRegistration(ConnectionProtocols.WebDav, remoteEndPoint, async reason =>
@@ -104,7 +105,14 @@ internal sealed class WebDavAuthenticator
         {
             if (context.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent)
                 _connections.SetClientVersion(connection.Id, agent);
-            _connections.SetAuthenticated(connection.Id, user.Username, result.Method!);
+            if (!_connections.TrySetAuthenticated(connection.Id, user.Username, result.Method!, user.MaxSessions))
+            {
+                // The session limit of the user (#61): the open WebDAV and SFTP sessions count.
+                _connections.Unregister(connection.Id);
+                await _sessions.PublishLoginFailedAsync(user.Username, remote.ToString(), result.Method!, UserLoginRules.SessionLimitReason(user.MaxSessions));
+                await WriteForbiddenAsync(context, "Too many sessions of the user.");
+                return null;
+            }
             var fileSystem = await _fileSystems.CreateAsync(user, new ClientContext(ConnectionProtocols.WebDav, remote.ToString(), connection.Id),
                 context.RequestAborted);
             created = new WebDavSession(key, connection.Id, user, stamp, result.Method!, fileSystem, _login.Time.GetUtcNow());
@@ -135,7 +143,7 @@ internal sealed class WebDavAuthenticator
             var user = _repository.GetUser(username);
             if (user == null)
                 return;
-            user.LastSuccessfulLogin = _login.Time.GetUtcNow().UtcDateTime;
+            user.LastLoginAt = _login.Time.GetUtcNow().UtcDateTime;
             if (!_repository.UpdateUser(user))
                 _logger.LogWarning("Could not save the last login time of user {Username}.", username);
         }
