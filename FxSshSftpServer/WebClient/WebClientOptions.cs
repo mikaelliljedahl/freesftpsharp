@@ -15,6 +15,12 @@ namespace FxSshSftpServer.WebClient
         /// <summary>Turns the web client on. Default false.</summary>
         public bool Enabled { get; set; }
 
+        /// <summary>
+        /// Allow the web client over plain HTTP from other hosts than loopback. Default false: the password and the login
+        /// cookie travel only over HTTPS.
+        /// </summary>
+        public bool AllowInsecureHttp { get; set; }
+
         /// <summary>Failed logins (passwords and codes) from one client address before it is locked out.</summary>
         public int MaxFailedLogins { get; set; } = 5;
 

@@ -93,7 +93,8 @@ namespace FxSshSftpServer.WebClient
         /// </summary>
         public static IApplicationBuilder UseWebClient(this IApplicationBuilder app)
         {
-            var enabled = app.ApplicationServices.GetRequiredService<IOptions<WebClientOptions>>().Value.Enabled;
+            var options = app.ApplicationServices.GetRequiredService<IOptions<WebClientOptions>>().Value;
+            var enabled = options.Enabled;
             var logger = app.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger("FxSshSftpServer.WebClient");
             logger.LogInformation(enabled
                 ? "The web client for SFTP users is on at /client."
@@ -111,6 +112,13 @@ namespace FxSshSftpServer.WebClient
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     return;
                 }
+                if (!context.Request.IsHttps && !options.AllowInsecureHttp && !IsLocal(context.Connection.RemoteIpAddress))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "text/plain; charset=utf-8";
+                    await context.Response.WriteAsync("The web client needs HTTPS. Use the https:// address of this server.");
+                    return;
+                }
                 var headers = context.Response.Headers;
                 headers.ContentSecurityPolicy = ContentSecurityPolicy;
                 headers.XContentTypeOptions = "nosniff";
@@ -120,6 +128,9 @@ namespace FxSshSftpServer.WebClient
                 await next();
             });
         }
+
+        /// <summary>True for a request from this host (loopback), or without a network client (the test server).</summary>
+        private static bool IsLocal(System.Net.IPAddress address) => address == null || System.Net.IPAddress.IsLoopback(SshServer.Interfaces.Net.CidrNotation.Normalize(address));
 
         public static IEndpointRouteBuilder MapWebClient(this IEndpointRouteBuilder endpoints)
         {
