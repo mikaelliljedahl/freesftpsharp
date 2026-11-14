@@ -130,6 +130,59 @@ public sealed class AuditLogTests : IDisposable
     }
 
     [Fact]
+    public async Task The_next_run_comes_one_interval_after_the_start_of_a_run_that_is_still_busy()
+    {
+        // The time moves on while the first run still works. The timer for the next run must exist already,
+        // otherwise the job misses the interval and never runs again (a race in the first version).
+        var log = new BlockingAuditLog();
+        var job = new AuditRetentionService(log, Options.Create(new AuditOptions { RetentionDays = 90 }), _time, NullLogger<AuditRetentionService>.Instance);
+
+        await job.StartAsync(Ct);
+        try
+        {
+            await log.FirstRunStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+            _time.Advance(AuditRetentionService.Interval);
+            log.ReleaseFirstRun.SetResult();
+
+            await log.SecondRunStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        }
+        finally
+        {
+            log.ReleaseFirstRun.TrySetResult();
+            await job.StopAsync(Ct);
+        }
+    }
+
+    /// <summary>An audit log whose first delete waits until the test releases it.</summary>
+    private sealed class BlockingAuditLog : IAuditLog
+    {
+        private int _runs;
+        public TaskCompletionSource FirstRunStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstRun { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondRunStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool IsEnabled => true;
+
+        public Task AppendAsync(AuditEntry entry, CancellationToken ct) => Task.CompletedTask;
+
+        public Task<AuditQueryResult> QueryAsync(AuditQuery query, CancellationToken ct) => Task.FromResult(new AuditQueryResult([], 0));
+
+        public async Task<int> DeleteOlderThanAsync(DateTime cutoffUtc, CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref _runs) == 1)
+            {
+                FirstRunStarted.SetResult();
+                await ReleaseFirstRun.Task.WaitAsync(ct);
+            }
+            else
+            {
+                SecondRunStarted.TrySetResult();
+            }
+            return 0;
+        }
+    }
+
+    [Fact]
     public async Task A_retention_of_0_days_keeps_all_entries()
     {
         await new AuditSink(_log).HandleAsync(Upload("old", Now.AddYears(-5)), Ct);
