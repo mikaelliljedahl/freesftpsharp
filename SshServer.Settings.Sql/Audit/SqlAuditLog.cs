@@ -9,9 +9,6 @@ namespace SshServer.Settings.Sql.Audit;
 /// </summary>
 public sealed class SqlAuditLog : IAuditLog
 {
-    /// <summary>The most rows one query returns (the CSV export asks for this many).</summary>
-    public const int MaxTake = 100_000;
-
     private readonly DbContextOptions<SettingsDbContext> _options;
 
     public SqlAuditLog(DbContextOptions<SettingsDbContext> options)
@@ -51,7 +48,7 @@ public sealed class SqlAuditLog : IAuditLog
         var entries = await rows
             .OrderByDescending(a => a.TimestampUtc).ThenByDescending(a => a.Id)
             .Skip(Math.Max(0, query.Skip))
-            .Take(Math.Clamp(query.Take, 0, MaxTake))
+            .Take(Math.Clamp(query.Take, 0, AuditQuery.MaxTake))
             .ToListAsync(ct);
         return new AuditQueryResult(entries, total);
     }

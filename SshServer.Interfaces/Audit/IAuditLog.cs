@@ -3,6 +3,9 @@ namespace SshServer.Interfaces.Audit;
 /// <summary>A filter of the audit log. A null value does not filter.</summary>
 public sealed record AuditQuery
 {
+    /// <summary>The most entries one query returns (<see cref="Take"/> is limited to it); the CSV export asks for this many.</summary>
+    public const int MaxTake = 100_000;
+
     /// <summary>The user name, exact (without case).</summary>
     public string? Username { get; init; }
 

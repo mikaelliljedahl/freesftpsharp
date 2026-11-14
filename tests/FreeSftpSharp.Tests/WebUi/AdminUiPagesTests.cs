@@ -39,6 +39,7 @@ public sealed class AdminUiPagesTests : IClassFixture<AdminUiFactory>
     [InlineData("/users", "Users")]
     [InlineData("/general", "Server settings")]
     [InlineData("/access", "IP access and bans")]
+    [InlineData("/audit", "Audit")]
     [InlineData("/connections", "Connections")]
     public async Task Page_renders_after_login_with_the_layout(string path, string heading)
     {
