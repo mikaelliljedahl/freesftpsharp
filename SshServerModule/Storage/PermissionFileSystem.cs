@@ -269,6 +269,8 @@ namespace SshServerModule.Storage
             }
 
             public ValueTask DisposeAsync() => _inner.DisposeAsync();
+
+            public ValueTask AbortAsync() => _inner.AbortAsync();
         }
     }
 }

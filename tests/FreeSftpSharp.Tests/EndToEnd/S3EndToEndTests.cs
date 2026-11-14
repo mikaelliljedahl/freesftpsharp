@@ -126,7 +126,7 @@ public sealed class S3EndToEndTests : IClassFixture<S3SftpServerFixture>
         Assert.False(client.Exists(dir));
     }
 
-    [Fact(Skip = "Product bug: on a lost connection the SFTP engine (ForceClosed) closes the open files like a CLOSE request, so the S3 upload is completed with the data received so far. IFileHandle needs an abort path (follow-up of #53).")]
+    [Fact]
     public async Task Lost_connection_during_an_upload_leaves_no_object_and_no_multipart_upload()
     {
         S3TestServer.SkipIfUnavailable();

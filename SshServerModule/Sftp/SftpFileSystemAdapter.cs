@@ -470,6 +470,23 @@ namespace SshServerModule.Sftp
                     throw _owner.Translate(ex, _path);
                 }
             }
+
+            /// <summary>The session ended without a CLOSE: the storage drops an unfinished upload if it can.</summary>
+            public void Abort()
+            {
+                if (_disposed)
+                    return;
+                _disposed = true;
+
+                try
+                {
+                    SyncBridge.Wait(_handle.AbortAsync());
+                }
+                catch (Exception ex)
+                {
+                    throw _owner.Translate(ex, _path);
+                }
+            }
         }
 
         /// <summary>
