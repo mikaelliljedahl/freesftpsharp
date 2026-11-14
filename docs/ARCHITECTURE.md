@@ -187,6 +187,23 @@ the actor); the admin UI and the command line (`--create-admin`) use it.
 - **The login cookie is checked against the database.** It has a stamp of the security fields; the cookie handler (each
   request) and `AdminRevalidatingAuthenticationStateProvider` (each circuit) reject it when the administrator changed.
 
+## Two-factor authentication
+
+The TOTP second factor (#63) is the plug-in `SshServer.TwoFactor` (`AddTwoFactor(configuration)`, settings `Auth:Totp`).
+The protocols and the admin login know only `ITwoFactorVerifier` (`SshServer.Interfaces.TwoFactor`); the algorithm
+(`Totp`, RFC 6238) is a pure function there too. `TwoFactorService` is the one place for the rules: setup confirmed with
+a code, replay protection, recovery codes, the per-account limit for wrong codes and the reset. The enrolments are in
+the settings database (`ITwoFactorStore`, table TwoFactorEnrolments, removed with the user or administrator); the
+store compares a version, so one code cannot log in twice, also on two nodes. The secrets are encrypted with the data
+protection key ring of the host, like the webhook secrets.
+
+- **SSH.** Keyboard-interactive (RFC 4256, a local FxSsh patch) is a login method. `AuthenticationProgress` adds the code
+  step after the configured steps of a user with TOTP, so the server answers them with partial success and asks for the
+  code. A keyboard-interactive step asks for the code with TOTP and for the password without.
+- **Admin UI.** After the right password, `Login` sets a short encrypted cookie (`PendingTwoFactorLogin`) and `LoginCode`
+  issues the login cookie only after a valid code. `TwoFactorAdministration` (scoped) checks the permissions and the
+  scope of the signed-in administrator for every setup and reset; the pages use only it.
+
 ## General rules
 
 - **Dependencies point inwards.** `SshServer.Interfaces` references no other project and no SDK. Backends

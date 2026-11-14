@@ -15,6 +15,8 @@ using SshServer.Settings.Sql.Webhooks;
 using SshServer.Settings.Sql.EventRules;
 using SshServer.Interfaces.EventRules;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Interfaces.TwoFactor;
+using SshServer.Settings.Sql.TwoFactor;
 using Microsoft.Extensions.Options;
 
 namespace SshServer.Settings.Sql
@@ -30,7 +32,8 @@ namespace SshServer.Settings.Sql
         /// of the event rules (<see cref="IEventRuleStore"/>; the event rules plug-in, AddEventRules, uses it).
         /// Registers the encryption of the stored storage secrets too (<see cref="SecretProtection"/>).
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
-        /// provider keeps them in memory only.
+        /// provider keeps them in memory only. The TOTP enrolments (<see cref="ITwoFactorStore"/>, #63) are in the same
+        /// database; the LiteDB provider has none.
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -59,6 +62,11 @@ namespace SshServer.Settings.Sql
                         sp.GetRequiredService<ISettingsRepository>();
                         return new SqlAdminStore(dbOptions);
                     });
+                    services.TryAddSingleton<ITwoFactorStore>(sp =>
+                    {
+                        sp.GetRequiredService<ISettingsRepository>(); // creates and migrates the database
+                        return new SqlTwoFactorStore(dbOptions);
+                    });
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -72,6 +80,7 @@ namespace SshServer.Settings.Sql
                     services.TryAddSingleton<IWebhookStore, DisabledWebhookStore>();
                     services.TryAddSingleton<IEventRuleStore, DisabledEventRuleStore>();
                     services.TryAddSingleton<IAdminStore, InMemoryAdminStore>();
+                    services.TryAddSingleton<ITwoFactorStore, DisabledTwoFactorStore>();
                     break;
 
                 default:
