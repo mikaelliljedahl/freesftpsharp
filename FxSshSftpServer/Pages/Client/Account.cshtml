@@ -18,8 +18,15 @@
         <section class="card h-100" id="password-section">
             <div class="card-header fw-semibold"><i class="bi bi-key"></i> Password</div>
             <div class="card-body">
-                <p class="small text-body-secondary">The password of your SFTP and web logins.</p>
-                <a class="btn btn-outline-primary" href="/client/changepassword" id="change-password">Change password</a>
+                @if (Model.PasswordManagedBy is { } provider)
+                {
+                    <p class="small text-body-secondary mb-0" id="password-managed">@SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(provider)</p>
+                }
+                else
+                {
+                    <p class="small text-body-secondary">The password of your SFTP and web logins.</p>
+                    <a class="btn btn-outline-primary" href="/client/changepassword" id="change-password">Change password</a>
+                }
             </div>
         </section>
     </div>

@@ -17,11 +17,16 @@ namespace FxSshSftpServer.Pages.Client
     public class ChangePasswordModel : PageModel
     {
         private readonly ClientPasswordChange _change;
+        private readonly ClientAccountService _account;
 
-        public ChangePasswordModel(ClientPasswordChange change)
+        public ChangePasswordModel(ClientPasswordChange change, ClientAccountService account)
         {
             _change = change;
+            _account = account;
         }
+
+        /// <summary>The external provider that manages the password (#64): then there is no form.</summary>
+        public string ManagedBy { get; private set; }
 
         [BindProperty, DataType(DataType.Password)]
         public string CurrentPassword { get; set; }
@@ -36,12 +41,23 @@ namespace FxSshSftpServer.Pages.Client
 
         public bool MustChange => ClientClaims.MustChangePassword(User);
 
-        public void OnGet()
+        public IActionResult OnGet()
         {
+            ManagedBy = _account.PasswordManagedBy(User.Identity!.Name);
+            if (ManagedBy != null)
+                ErrorMessage = SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(ManagedBy);
+            return Page();
         }
 
         public async Task<IActionResult> OnPostAsync()
         {
+            ManagedBy = _account.PasswordManagedBy(User.Identity!.Name);
+            if (ManagedBy != null)
+            {
+                ErrorMessage = SshServer.Interfaces.Authentication.ExternalCredentials.PasswordManagedMessage(ManagedBy);
+                ModelState.Clear();
+                return new PageResult { StatusCode = StatusCodes.Status403Forbidden };
+            }
             var error = await _change.ChangeAsync(HttpContext, CurrentPassword, NewPassword, RepeatPassword);
             if (error == null)
                 return LocalRedirect(MustChange ? ClientAuth.BasePath : "/client/account?changed=password");

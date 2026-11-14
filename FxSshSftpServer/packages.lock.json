@@ -539,6 +539,11 @@
         "resolved": "7.0.0",
         "contentHash": "GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A=="
       },
+      "System.DirectoryServices.Protocols": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "gmes+wSLYzyp0lh05nIox1qhWAHt71GKWHycDRhkwgULlaSRh5icX9SuGMooLQ9N95Bn21iJkPFy3mqfBvPUrw=="
+      },
       "System.Drawing.Common": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -605,6 +610,20 @@
           "SshServer.Interfaces": "[1.0.0, )",
           "SshServer.Webhooks": "[1.0.0, )",
           "SshServerModule": "[1.0.0, )"
+        }
+      },
+      "sshserver.authentication.http": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "SshServer.Webhooks": "[1.0.0, )"
+        }
+      },
+      "sshserver.authentication.ldap": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Interfaces": "[1.0.0, )",
+          "System.DirectoryServices.Protocols": "[11.0.0, )"
         }
       },
       "sshserver.eventrules": {

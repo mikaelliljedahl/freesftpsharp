@@ -10,6 +10,7 @@ using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Net;
 using SshServer.Interfaces.TwoFactor;
 using SshServer.Interfaces.Users;
+using SshServerModule.Authentication;
 
 namespace FxSsh.SshServerModule.Security
 {
@@ -68,6 +69,9 @@ namespace FxSsh.SshServerModule.Security
     /// of the user for the protocol (<see cref="User.AppPasswords"/>).</item>
     /// <item>With <see cref="PasswordLoginOptions.Interactive"/> (the web client, #69) a second factor and an expired
     /// password do not refuse the login: the caller asks for the code and for a new password.</item>
+    /// <item>The password itself goes through the authentication providers (#64, <see cref="IUserAuthenticator"/>): the
+    /// stored hash for a local user, the directory or the HTTP hook for their users, which are created at their first
+    /// login and checked again with the settings of their groups.</item>
     /// <item>The protocol (<see cref="User.AllowedProtocols"/>), checked after the credentials, so only the owner of the
     /// account learns that the protocol is refused.</item>
     /// </list>
@@ -87,13 +91,17 @@ namespace FxSsh.SshServerModule.Security
         private readonly IpFilter _ipFilter;
         private readonly ITwoFactorVerifier? _twoFactor;
         private readonly IEffectiveUserSettingsService _userSettings;
+        private readonly IUserAuthenticator _authenticator;
 
         /// <param name="events">The event bus (AddSshServerEvents). Null: no events.</param>
         /// <param name="twoFactor">The second factor (#63). Null: no user has one.</param>
         /// <param name="userSettings">The effective settings of the users with their groups (AddSshServerStorage). Null: one over <paramref name="repository"/>.</param>
+        /// <param name="authenticator">The credential check with the authentication providers (AddSshServerAuthentication, #64). Null: the database only.</param>
         public PasswordLoginService(ISettingsRepository repository, LoginBanTracker bans, ILogger<PasswordLoginService> logger, IEventBus? events = null,
-            ITwoFactorVerifier? twoFactor = null, IEffectiveUserSettingsService? userSettings = null)
+            ITwoFactorVerifier? twoFactor = null, IEffectiveUserSettingsService? userSettings = null, IUserAuthenticator? authenticator = null)
         {
+            _authenticator = authenticator ?? new UserAuthenticator(
+                [new DatabaseAuthenticationProvider(repository ?? throw new ArgumentNullException(nameof(repository)), null, bans?.Time)], repository);
             _twoFactor = twoFactor;
             _userSettings = userSettings ?? new EffectiveUserSettingsService(repository);
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
@@ -127,7 +135,10 @@ namespace FxSsh.SshServerModule.Security
             }
 
             var user = string.IsNullOrEmpty(username) ? null : _repository.GetUser(username);
-            var (method, failure, totp, expired) = await VerifyAsync(user, password, protocol, address, options, ct);
+            string? method;
+            string? failure;
+            bool totp, expired;
+            (user, method, failure, totp, expired) = await VerifyAsync(user, username, password, protocol, protocolName, address, options, ct);
             if (failure != null)
             {
                 _logger.LogInformation("{Protocol} login of {Username} from {Address} failed: {Reason}.", protocolName, LogText.Clean(username), address, failure);
@@ -156,52 +167,93 @@ namespace FxSsh.SshServerModule.Security
             return new PasswordLoginResult(PasswordLoginStatus.Ok, user, method, null, totp, expired);
         }
 
-        /// <summary>Returns the method that succeeded, or the reason of the failure. Every failure costs one key derivation.</summary>
-        private async ValueTask<(string? Method, string? Failure, bool Totp, bool PasswordExpired)> VerifyAsync(User? user, string? password,
-            UserProtocols protocol, IPAddress address, PasswordLoginOptions options, CancellationToken ct)
+        /// <summary>
+        /// Returns the user and the method that succeeded, or the reason of the failure. Every failure costs the time of a
+        /// wrong password (a key derivation, or the time of the provider of the user).
+        /// </summary>
+        private async ValueTask<(User? User, string? Method, string? Failure, bool Totp, bool PasswordExpired)> VerifyAsync(User? user,
+            string? username, string? password, UserProtocols protocol, string protocolName, IPAddress address, PasswordLoginOptions options,
+            CancellationToken ct)
         {
-            if (user == null)
+            var request = string.IsNullOrEmpty(username) ? null : new AuthRequest
+            {
+                Username = username, Method = AuthMethods.Password, Password = password ?? "", RemoteIp = address.ToString(),
+                Protocol = protocolName, StoredUser = user,
+            };
+            if (user == null && (request == null || !_authenticator.HasExternalProviders))
             {
                 UserLogics.SimulatePasswordCheck();
-                return (null, "unknown user", false, false);
+                return (null, null, "unknown user", false, false);
             }
 
-            var now = Time.GetUtcNow().UtcDateTime;
-            if (UserLoginRules.Refusal(user, AuthMethods.None, now, 0) is { } lifecycle)
+            var totp = false;
+            var expired = false;
+            if (user != null)
             {
-                UserLogics.SimulatePasswordCheck();
-                return (null, lifecycle, false, false);
+                if (Refusal(user, address) is { } refusal)
+                {
+                    await _authenticator.SpendFailureTimeAsync(request!, ct);
+                    return (null, null, refusal, false, false);
+                }
+                if (!options.IsInteractive && AppPasswordGenerator.Find(user, password, protocol, Time.GetUtcNow().UtcDateTime) != null)
+                    return (user, AppPasswordMethod, null, false, false);
+                string? passwordRefusal;
+                (passwordRefusal, totp, expired) = await PasswordRefusalAsync(user, options, ct);
+                if (passwordRefusal != null)
+                {
+                    await _authenticator.SpendFailureTimeAsync(request!, ct);
+                    return (null, null, passwordRefusal, false, false);
+                }
             }
 
+            var check = await _authenticator.VerifyAsync(request!, ct);
+            if (!check.Succeeded)
+                return (null, null, check.Reason, false, false);
+            if (check.NeedsSave)
+            {
+                // A user of a provider, new or with new groups: the same checks with it (the credential time is spent).
+                if (Refusal(check.User!, address) is { } refusal)
+                    return (null, null, refusal, false, false);
+                string? passwordRefusal;
+                (passwordRefusal, totp, expired) = await PasswordRefusalAsync(check.User!, options, ct);
+                if (passwordRefusal != null)
+                    return (null, null, passwordRefusal, false, false);
+                if (!_authenticator.Save(check))
+                    return (null, null, "the user of the authentication provider cannot be saved", false, false);
+            }
+            return (check.User, PasswordMethod, null, totp, expired);
+        }
+
+        /// <summary>Status, expiry and the allowed networks of the user (with its groups).</summary>
+        private string? Refusal(User user, IPAddress address)
+        {
+            if (UserLoginRules.Refusal(user, AuthMethods.None, Time.GetUtcNow().UtcDateTime, 0) is { } lifecycle)
+                return lifecycle;
             var settings = _userSettings.Resolve(user);
-            if (!UserLogics.VerifyUserIpWhitelisted(settings.AllowedIps, new IPEndPoint(address, 0)))
-            {
-                UserLogics.SimulatePasswordCheck();
-                return (null, "the address is not in the whitelist of the user", false, false);
-            }
+            return UserLogics.VerifyUserIpWhitelisted(settings.AllowedIps, new IPEndPoint(address, 0))
+                ? null
+                : "the address is not in the whitelist of the user";
+        }
 
-            if (!options.IsInteractive && AppPasswordGenerator.Find(user, password, protocol, now) != null)
-                return (AppPasswordMethod, null, false, false);
-
+        /// <summary>
+        /// Whether the password may log the user in: the method, the password age, no multi-step login, and (not
+        /// interactive) no second factor. Also whether it has a second factor and an expired password (interactive).
+        /// </summary>
+        private async ValueTask<(string? Refusal, bool Totp, bool PasswordExpired)> PasswordRefusalAsync(User user, PasswordLoginOptions options,
+            CancellationToken ct)
+        {
+            var now = Time.GetUtcNow().UtcDateTime;
+            var settings = _userSettings.Resolve(user);
             if ((settings.AllowedAuthMethods & AuthMethods.Password) == 0)
-            {
-                UserLogics.SimulatePasswordCheck();
-                return (null, "the password is not allowed for the user", false, false);
-            }
+                return ("the password is not allowed for the user", false, false);
 
             var maxAge = _repository.ServerSettings.PasswordMaxAgeDays;
             var expired = options.IsInteractive && UserLoginRules.IsPasswordExpired(user, now, maxAge);
             if (!expired && UserLoginRules.Refusal(user, AuthMethods.Password, now, maxAge) is { } passwordAge)
-            {
-                UserLogics.SimulatePasswordCheck();
-                return (null, passwordAge, false, false);
-            }
+                return (passwordAge, false, false);
 
             if (AuthMethodRules.RequiredSteps(user).Count > 0)
-            {
-                UserLogics.SimulatePasswordCheck();
-                return (null, options.IsInteractive ? "the user has a multi-step login, which the web client cannot do" : "the user has a multi-step login; use an app password", false, false);
-            }
+                return (options.IsInteractive ? "the user has a multi-step login, which the web client cannot do" : "the user has a multi-step login; use an app password", false, false);
 
             bool totp;
             try
@@ -211,18 +263,11 @@ namespace FxSsh.SshServerModule.Security
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "The second factor of user {Username} cannot be read; the login is refused.", LogText.Clean(user.Username));
-                UserLogics.SimulatePasswordCheck();
-                return (null, "the second factor cannot be checked", false, false);
+                return ("the second factor cannot be checked", false, false);
             }
             if (totp && !options.IsInteractive)
-            {
-                UserLogics.SimulatePasswordCheck();
-                return (null, "the user has a second factor; use an app password", false, false);
-            }
-
-            return UserLogics.VerifyUserPassword(user, password, _repository, _logger)
-                ? (PasswordMethod, null, totp, expired)
-                : (null, "wrong password", false, false);
+                return ("the user has a second factor; use an app password", false, false);
+            return (null, totp, expired);
         }
 
         private async ValueTask RecordFailureAsync(IPAddress address, string protocolName, CancellationToken ct)

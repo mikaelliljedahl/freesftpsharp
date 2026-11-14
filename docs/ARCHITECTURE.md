@@ -208,6 +208,25 @@ recorded (`IConnectionRegistry.TrySetAuthenticated`, one step with the count), s
 both take the last session. The `DisabledUserDisconnector` sink (registered by `AddSshServerConnections()`) closes the
 connections of a user that is disabled or removed, from the provider events, through the registry.
 
+## Authentication providers
+
+The credential of a login (password, public key) is checked by the `IAuthenticationProvider`s (#64,
+`SshServer.Interfaces.Authentication`) through one service, `IUserAuthenticator` (`UserAuthenticator`,
+`AddSshServerAuthentication()`). The built-in `DatabaseAuthenticationProvider` checks the stored hash and keys; the
+plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Authentication.Ldap`
+(`AddLdapAuthentication()`) register only when their section is configured. The core never knows a provider type.
+
+- **Chain.** The providers run in the order of `Auth:Providers` (default: the database, then the plug-ins); the first
+  success or failure wins, "not handled" asks the next one. An exception of a provider is a failure (fail closed).
+- **Ownership.** `User.AuthenticationProvider` (null: the database) names the one provider that checks a stored user.
+- **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). The
+  `ExternalUserProvisioner` makes the user in memory; the protocol checks it like a stored user and calls
+  `IUserAuthenticator.Save` when the login is verified (SSH: after the signature of a public key). The status and the
+  expiry stay local.
+- **Every protocol** does the same steps: read the stored user, check `UserLoginRules` and the effective settings
+  (refusal: `SpendFailureTimeAsync`, the time of a wrong password), `VerifyAsync`, check again with a returned user,
+  `Save`. `HostedServer` does it for SSH, `PasswordLoginService` for WebDAV, the web client and the later password protocols.
+
 ## Quotas and bandwidth
 
 The limits of a user (#62) are `User.DiskQuota` (bytes and files of the own storage, "/" without the virtual folders),
