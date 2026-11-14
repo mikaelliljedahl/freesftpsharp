@@ -28,4 +28,12 @@ public sealed class EffectivePermissions
     /// <summary>True when the user may do everything everywhere and no filter applies.</summary>
     public bool IsUnrestricted =>
         Permissions.All(p => p.Value == FilePermissions.All) && Filters.Values.All(f => f.IsEmpty);
+
+    /// <summary>
+    /// These permissions limited to <paramref name="mask"/> in every directory (the intersection with "everything in
+    /// <paramref name="mask"/> everywhere"); the path filters stay. A share link (#70) uses the permissions of its owner limited
+    /// to its scope.
+    /// </summary>
+    public EffectivePermissions Restrict(FilePermissions mask) =>
+        new(Permissions.ToDictionary(p => p.Key, p => p.Value & mask, StringComparer.Ordinal), Filters);
 }

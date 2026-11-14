@@ -87,6 +87,7 @@ public static class RestApiExtensions
         WebhookEndpoints.Map(api);
         GroupEndpoints.Map(api);
         EventRuleEndpoints.Map(api);
+        ShareEndpoints.Map(api);
         SettingsEndpoints.Map(api);
         DumpEndpoints.Map(api);
         // An unknown route under /api/v1 is a 404 problem (after the login), not the login page of the UI.

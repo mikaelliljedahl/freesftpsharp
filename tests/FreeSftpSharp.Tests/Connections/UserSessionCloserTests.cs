@@ -6,16 +6,16 @@ using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.Connections;
 
-/// <summary><see cref="DisabledUserDisconnector"/> (issue #61): a disabled or removed user loses its open sessions.</summary>
-public sealed class DisabledUserDisconnectorTests
+/// <summary><see cref="UserSessionCloser"/> (issues #61 and #132): a disabled or removed user loses its open sessions.</summary>
+public sealed class UserSessionCloserTests
 {
     private readonly ConnectionRegistry _registry = new(new FakeTimeProvider());
     private readonly List<(string User, string Reason)> _closed = new();
-    private readonly DisabledUserDisconnector _sink;
+    private readonly UserSessionCloser _sink;
 
-    public DisabledUserDisconnectorTests()
+    public UserSessionCloserTests()
     {
-        _sink = new DisabledUserDisconnector(_registry);
+        _sink = new UserSessionCloser(_registry);
     }
 
     private Guid Open(string username)
@@ -45,7 +45,7 @@ public sealed class DisabledUserDisconnectorTests
 
         await _sink.HandleAsync(Update("alice", UserStatus.Disabled, "Status"), CancellationToken.None);
 
-        Assert.Equal([("alice", "The user was disabled."), ("Alice", "The user was disabled.")], _closed);
+        Assert.Equal([("alice", "The account was disabled."), ("Alice", "The account was disabled.")], _closed);
         Assert.Equal([bob], _registry.GetAll().Select(c => c.Id));
     }
 
@@ -60,6 +60,6 @@ public sealed class DisabledUserDisconnectorTests
         Assert.Empty(_closed);
 
         await _sink.HandleAsync(new ProviderEvent(ProviderAction.Delete, ProviderObjectType.User, "alice"), CancellationToken.None);
-        Assert.Equal([("alice", "The user was removed.")], _closed);
+        Assert.Equal([("alice", "The account was removed.")], _closed);
     }
 }

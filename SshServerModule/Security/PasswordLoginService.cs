@@ -58,7 +58,7 @@ namespace FxSsh.SshServerModule.Security
     }
 
     /// <summary>
-    /// The user name and password login of the protocols that are not SSH (WebDAV #71, later FTP #72): the same rules as
+    /// The user name and password login of the protocols that are not SSH (WebDAV #71, FTP #72): the same rules as
     /// the SFTP login of <c>HostedServer</c>, in one place.
     /// <list type="number">
     /// <item>The global IP rules and the auto-ban (<see cref="IpFilter"/>, <see cref="LoginBanTracker"/>).</item>

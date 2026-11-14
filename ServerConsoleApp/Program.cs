@@ -26,6 +26,7 @@ using FxSshSftpServer.Security;
 using SshServerModule.Observability;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
+using FreeSftpSharp.Ftp;
 using SshServer.Interfaces.Users;
 using SshServerModule.Authentication;
 using SshServer.Authentication.Http;
@@ -88,6 +89,7 @@ await new HostBuilder()
     services.AddSshServerSecurity();
     services.AddSshServerConnections();
     services.AddSshServerListenOptions();
+    services.AddFtp(hostContext.Configuration); // FTP and FTPS (#72): off until Ftp:Enabled is true
 })
 .RunConsoleAsync();
 

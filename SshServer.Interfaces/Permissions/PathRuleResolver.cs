@@ -94,8 +94,8 @@ public sealed class PathRuleResolver
     private static bool Matches(string pattern, string name) =>
         FileSystemName.MatchesSimpleExpression(pattern, name, ignoreCase: true);
 
-    /// <summary>True when <paramref name="path"/> is <paramref name="directory"/> or below it (both canonical).</summary>
-    private static bool IsAtOrBelow(string path, string directory) =>
+    /// <summary>True when <paramref name="path"/> is <paramref name="directory"/> or below it (both canonical, see <see cref="Canonical(string, bool)"/>).</summary>
+    public static bool IsAtOrBelow(string path, string directory) =>
         directory == VirtualPath.Root
         || path == directory
         || (path.Length > directory.Length && path[directory.Length] == '/' && path.StartsWith(directory, StringComparison.Ordinal));
@@ -103,11 +103,16 @@ public sealed class PathRuleResolver
     private static IEnumerable<string> Segments(string canonicalPath) =>
         canonicalPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
-    /// <summary>The normalized path, in the form in which the storage compares it.</summary>
-    private string Canonical(string path)
+    private string Canonical(string path) => Canonical(path, _caseInsensitivePaths);
+
+    /// <summary>
+    /// The normalized path, in the form in which the storage compares it: on a storage with
+    /// <see cref="StorageCapabilities.CaseInsensitivePaths"/> upper case, without trailing dots and spaces of a segment.
+    /// </summary>
+    public static string Canonical(string path, bool caseInsensitivePaths)
     {
         var normalized = VirtualPath.Normalize(path);
-        if (!_caseInsensitivePaths)
+        if (!caseInsensitivePaths)
             return normalized;
         var segments = Segments(normalized)
             .Select(s => s.TrimEnd('.', ' ').ToUpperInvariant())

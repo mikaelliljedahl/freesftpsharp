@@ -74,7 +74,7 @@ namespace SshServerModule.Connections
         }
 
         public int CountSessions(string username, Guid except)
-            => _connections.Values.Count(e => e.Snapshot() is { } info && info.Id != except
+            => _connections.Values.Count(e => e.Snapshot() is { } info && info.Id != except && info.Protocol != ConnectionProtocols.HttpShare
                                               && string.Equals(info.Username, username, StringComparison.OrdinalIgnoreCase));
 
         public void RecordActivity(Guid id)

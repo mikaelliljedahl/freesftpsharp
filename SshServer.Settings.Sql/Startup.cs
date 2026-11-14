@@ -22,6 +22,8 @@ using SshServer.Interfaces.Webhooks;
 using SshServer.Interfaces.TwoFactor;
 using SshServer.Settings.Sql.TwoFactor;
 using Microsoft.Extensions.Options;
+using SshServer.Interfaces.Shares;
+using SshServer.Settings.Sql.Shares;
 
 namespace SshServer.Settings.Sql
 {
@@ -39,7 +41,8 @@ namespace SshServer.Settings.Sql
         /// The administrators and scope roles (<see cref="IAdminStore"/>, #60) are in the same database; the LiteDB
         /// provider keeps them in memory only. The TOTP enrolments (<see cref="ITwoFactorStore"/>, #63) are in the same
         /// database; the LiteDB provider has none. The REST API keys and the token signing key (<see cref="IApiKeyStore"/>,
-        /// <see cref="IApiSigningKeyStore"/>, #67) are in the same database; the LiteDB provider keeps them in memory only.
+        /// <see cref="IApiSigningKeyStore"/>, #67) and the share links (<see cref="IShareStore"/>, #70) are in the same database;
+        /// the LiteDB provider keeps them in memory only.
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -83,6 +86,11 @@ namespace SshServer.Settings.Sql
                         sp.GetRequiredService<ISettingsRepository>(); // creates and migrates the database
                         return new SqlTwoFactorStore(dbOptions);
                     });
+                    services.TryAddSingleton<IShareStore>(sp =>
+                    {
+                        sp.GetRequiredService<ISettingsRepository>(); // creates and migrates the database
+                        return new SqlShareStore(dbOptions);
+                    });
                     services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
                     services.TryAddSingleton(TimeProvider.System);
                     services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
@@ -100,6 +108,7 @@ namespace SshServer.Settings.Sql
                     services.TryAddSingleton<IApiKeyStore>(sp => sp.GetRequiredService<InMemoryApiKeyStore>());
                     services.TryAddSingleton<IApiSigningKeyStore>(sp => sp.GetRequiredService<InMemoryApiKeyStore>());
                     services.TryAddSingleton<ITwoFactorStore, DisabledTwoFactorStore>();
+                    services.TryAddSingleton<IShareStore, InMemoryShareStore>();
                     break;
 
                 default:

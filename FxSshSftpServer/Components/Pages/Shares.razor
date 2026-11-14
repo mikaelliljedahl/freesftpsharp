@@ -1,0 +1,103 @@
+@page "/share-links"
+@using SshServer.Interfaces.Shares
+@attribute [Authorize(Policy = AdminPolicies.ManageUsers)]
+@inject ScopedShares SharesService
+@inject ToastService Toasts
+
+<PageTitle>Shares - FreeSftpSharp admin</PageTitle>
+
+@* The share links (#70) of the users. The links themselves are /shares/{id} (the web client); this page is /share-links. *@
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Shares</h1>
+        <p class="text-body-secondary mb-0">
+            The share links that users made in the web client: downloads and upload folders for people without an account.
+            Revoke a link to stop it at once.
+        </p>
+    </div>
+    <button type="button" class="btn btn-outline-secondary" @onclick="LoadAsync" id="refresh-shares"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+</div>
+
+<div class="card">
+    <div class="card-header fw-semibold"><i class="bi bi-link-45deg"></i> Share links <span class="badge text-bg-secondary" id="admin-share-count">@shares.Count</span></div>
+    @if (shares.Count == 0)
+    {
+        <div class="card-body text-body-secondary" id="no-admin-shares">No user has a share link.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="admin-share-table">
+                <thead>
+                    <tr>
+                        <th scope="col">User</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Paths</th>
+                        <th scope="col">Allows</th>
+                        <th scope="col">Uses</th>
+                        <th scope="col">Expires (UTC)</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var share in shares)
+                    {
+                        <tr class="admin-share-row" data-share-id="@share.Id">
+                            <td class="fw-semibold">@share.Username</td>
+                            <td>
+                                @share.Name
+                                @if (share.HasPassword)
+                                {
+                                    <i class="bi bi-lock" title="With password"></i>
+                                }
+                                <div class="small text-body-secondary">created @share.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                            </td>
+                            <td class="font-monospace small text-break">@string.Join(", ", share.Paths)</td>
+                            <td>@share.Scope@(share.AllowOverwrite ? ", overwrite" : "")</td>
+                            <td>@share.UsedCount@(share.MaxUses > 0 ? " / " + share.MaxUses : "")</td>
+                            <td class="text-nowrap">@(share.ExpiresAt?.ToString("yyyy-MM-dd HH:mm") ?? "never")</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-danger revoke-share" @onclick="() => AskRevoke(share)">
+                                    <i class="bi bi-x-circle"></i> Revoke
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="revokeDialog" Title="Revoke the share" ConfirmText="Revoke" OnConfirm="RevokeAsync">
+    Revoke the share "@selected?.Name" of @selected?.Username? Its link stops working at once.
+</ConfirmDialog>
+
+@code {
+    private IReadOnlyList<ShareView> shares = [];
+    private ShareView selected;
+    private ConfirmDialog revokeDialog;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => shares = await SharesService.ListAsync(null, default);
+
+    private void AskRevoke(ShareView share)
+    {
+        selected = share;
+        revokeDialog.Open();
+    }
+
+    private async Task RevokeAsync()
+    {
+        var share = selected;
+        selected = null;
+        if (share is null)
+            return;
+        if (await SharesService.RevokeAsync(share.Id, default))
+            Toasts.ShowSuccess($"The share \"{share.Name}\" of {share.Username} was revoked.");
+        else
+            Toasts.ShowWarning("The share did not exist any more.");
+        await LoadAsync();
+    }
+}

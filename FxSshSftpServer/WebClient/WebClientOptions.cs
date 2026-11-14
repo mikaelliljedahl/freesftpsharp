@@ -38,6 +38,9 @@ namespace FxSshSftpServer.WebClient
         /// <summary>The unfinished uploads one session can have at the same time.</summary>
         public int MaxUploadsPerSession { get; set; } = 16;
 
+        /// <summary>The requests per client address and minute on the share links (#70); more get 429.</summary>
+        public int ShareRequestsPerMinute { get; set; } = 300;
+
         public TimeSpan SessionIdle => TimeSpan.FromMinutes(SessionIdleMinutes);
 
         public TimeSpan UploadIdle => TimeSpan.FromMinutes(UploadIdleMinutes);
@@ -63,6 +66,8 @@ namespace FxSshSftpServer.WebClient
                 return ValidateOptionsResult.Fail("WebClient:UploadIdleMinutes must be at least 1.");
             if (options.MaxUploadsPerSession < 1)
                 return ValidateOptionsResult.Fail("WebClient:MaxUploadsPerSession must be at least 1.");
+            if (options.ShareRequestsPerMinute < 1)
+                return ValidateOptionsResult.Fail("WebClient:ShareRequestsPerMinute must be at least 1.");
             return ValidateOptionsResult.Success;
         }
     }

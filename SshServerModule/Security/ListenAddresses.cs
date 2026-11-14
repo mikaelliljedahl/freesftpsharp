@@ -6,8 +6,8 @@ using System.Net;
 
 namespace FxSsh.SshServerModule.Security
 {
-    /// <summary>The local addresses the server listens on, from <c>ServerSettings.BindToAddress</c>.</summary>
-    internal static class ListenAddresses
+    /// <summary>The local addresses the server listens on, from <c>ServerSettings.BindToAddress</c> (and <c>Ftp:BindAddresses</c>).</summary>
+    public static class ListenAddresses
     {
         /// <summary>
         /// Empty or null: <see cref="IPAddress.IPv6Any"/> (FxSsh then listens dual stack, IPv4 and IPv6, as before).
@@ -15,7 +15,7 @@ namespace FxSsh.SshServerModule.Security
         /// the same port would fail). Invalid entries are logged and skipped; when no entry is valid the server does
         /// not start, so that it never listens on more addresses than the administrator asked for.
         /// </summary>
-        internal static IReadOnlyList<IPAddress> Resolve(IEnumerable<string> bindToAddress, ILogger logger)
+        public static IReadOnlyList<IPAddress> Resolve(IEnumerable<string> bindToAddress, ILogger logger)
         {
             var entries = (bindToAddress ?? Enumerable.Empty<string>()).Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
             if (entries.Count == 0)

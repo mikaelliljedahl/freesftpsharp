@@ -47,9 +47,16 @@ public static class ConnectionProtocols
 {
     public const string Sftp = "SFTP";
     public const string WebDav = "WebDAV";
+    public const string Ftp = "FTP";
 
     /// <summary>A browser session of the web client (#69); one connection per login.</summary>
     public const string Http = "HTTP";
+
+    /// <summary>
+    /// The visitors of a share link (#70): one connection per share and client address. Such a connection has the owner
+    /// as its user, but it does not count for the session limit of the owner.
+    /// </summary>
+    public const string HttpShare = "HTTPShare";
 }
 
 public enum ConnectionEventKind
