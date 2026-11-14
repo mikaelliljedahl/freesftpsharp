@@ -25,6 +25,8 @@ using SshServer.EventRules;
 using FxSshSftpServer.Security;
 using SshServerModule.Observability;
 using SshServer.Settings.Sql;
+using SshServer.Settings.PostgreSql;
+using SshServer.Settings.SqlServer;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
 
@@ -66,6 +68,8 @@ await new HostBuilder()
         configure.AddSerilog(Log.Logger);
     });
     services.AddSshServerSettings(hostContext.Configuration);
+    services.AddPostgreSqlSettings(); // Settings:Provider=PostgreSQL (#75); the default stays SQLite
+    services.AddSqlServerSettings(); // Settings:Provider=SqlServer (#75)
     services.AddSshServerEvents();
     services.AddServerDataProtection(hostContext.Configuration); // encrypts the webhook and TOTP secrets
     services.AddWebhooks(hostContext.Configuration); // webhooks (#66): nothing is sent until one is configured
@@ -100,7 +104,7 @@ static int RunUserCommand(string[] args)
     try
     {
         // With the event bus, so that the audit log has the changes of the command. Disposing the provider delivers them.
-        using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddSshServerEvents().BuildServiceProvider();
+        using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddPostgreSqlSettings().AddSqlServerSettings().AddSshServerEvents().BuildServiceProvider();
         return UserCommand.Run(args, provider.GetRequiredService<UserAdministrationService>(),
             Console.In, Console.Out, Console.Error,
             interactive: !Console.IsInputRedirected, promptHidden: ReadHidden);

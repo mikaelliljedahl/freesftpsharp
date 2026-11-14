@@ -4,6 +4,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Interfaces;
 using SshServer.Settings.Sql;
+using SshServer.Settings.Sql.Database;
+using SshServer.Settings.PostgreSql;
+using SshServer.Settings.SqlServer;
 
 namespace FreeSftpSharp.Tests.Settings;
 
@@ -19,6 +22,9 @@ public sealed class SettingsConfigurationTests : IDisposable
             .AddInMemoryCollection(values.Select(v => new KeyValuePair<string, string?>(v.Key, v.Value)))
             .Build();
 
+    private static string Resolve(SettingsStorageOptions options, string baseDirectory)
+        => new SqliteSettingsDatabaseProvider().ResolveConnectionString(options.ConfiguredConnectionString, baseDirectory);
+
     private static string DataSource(string connectionString) => new SqliteConnectionStringBuilder(connectionString).DataSource;
 
     [Fact]
@@ -26,8 +32,9 @@ public sealed class SettingsConfigurationTests : IDisposable
     {
         var options = SettingsStorageOptions.FromConfiguration(Config(), _temp.Path);
 
-        Assert.Equal(SettingsProvider.Sqlite, options.Provider);
-        Assert.Equal(Path.Combine(_temp.Path, "freesftpsharp.db"), DataSource(options.ConnectionString));
+        Assert.Equal("Sqlite", options.Provider);
+        Assert.False(options.IsLiteDb);
+        Assert.Equal(Path.Combine(_temp.Path, "freesftpsharp.db"), DataSource(Resolve(options, _temp.Path)));
         Assert.Equal("config.db", Path.GetFileName(options.LiteDbPath));
     }
 
@@ -37,7 +44,7 @@ public sealed class SettingsConfigurationTests : IDisposable
         var options = SettingsStorageOptions.FromConfiguration(
             Config(("ConnectionStrings:Settings", "Data Source=data/settings.db")), _temp.Path);
 
-        Assert.Equal(Path.Combine(_temp.Path, "data", "settings.db"), DataSource(options.ConnectionString));
+        Assert.Equal(Path.Combine(_temp.Path, "data", "settings.db"), DataSource(Resolve(options, _temp.Path)));
     }
 
     [Fact]
@@ -45,10 +52,10 @@ public sealed class SettingsConfigurationTests : IDisposable
     {
         var absolute = _temp.File("abs.db");
 
-        Assert.Equal(absolute, DataSource(SettingsStorageOptions.FromConfiguration(
-            Config(("ConnectionStrings:Settings", $"Data Source={absolute}")), "/somewhere/else").ConnectionString));
-        Assert.Equal(":memory:", DataSource(SettingsStorageOptions.FromConfiguration(
-            Config(("ConnectionStrings:Settings", "Data Source=:memory:")), _temp.Path).ConnectionString));
+        Assert.Equal(absolute, DataSource(Resolve(SettingsStorageOptions.FromConfiguration(
+            Config(("ConnectionStrings:Settings", $"Data Source={absolute}")), "/somewhere/else"), "/somewhere/else")));
+        Assert.Equal(":memory:", DataSource(Resolve(SettingsStorageOptions.FromConfiguration(
+            Config(("ConnectionStrings:Settings", "Data Source=:memory:")), _temp.Path), _temp.Path)));
     }
 
     [Theory]
@@ -59,16 +66,21 @@ public sealed class SettingsConfigurationTests : IDisposable
         var options = SettingsStorageOptions.FromConfiguration(
             Config(("Settings:Provider", value), ("Settings:LiteDbPath", "old.db")), _temp.Path);
 
-        Assert.Equal(SettingsProvider.LiteDb, options.Provider);
+        Assert.True(options.IsLiteDb);
         Assert.Equal(_temp.File("old.db"), options.LiteDbPath);
     }
 
     [Fact]
     public void An_unknown_provider_is_an_error()
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            SettingsStorageOptions.FromConfiguration(Config(("Settings:Provider", "Oracle")), _temp.Path));
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSshServerSettings(Config(("Settings:Provider", "Oracle")))
+            .BuildServiceProvider();
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.GetRequiredService<ISettingsRepository>());
         Assert.Contains("Oracle", error.Message);
+        Assert.Contains("PostgreSQL", error.Message); // tells how to get the other providers
     }
 
     [Fact]
@@ -103,5 +115,37 @@ public sealed class SettingsConfigurationTests : IDisposable
         Assert.True(File.Exists(_temp.File("config.db")));
         Assert.False(File.Exists(_temp.File("freesftpsharp.db")));
         repository.Dispose();
+    }
+
+    [Theory]
+    [InlineData("PostgreSQL", "Host=db;Database=freesftpsharp", "Npgsql.EntityFrameworkCore.PostgreSQL")]
+    [InlineData("postgresql", "Host=db;Database=freesftpsharp", "Npgsql.EntityFrameworkCore.PostgreSQL")]
+    [InlineData("SqlServer", "Server=db;Database=freesftpsharp", "Microsoft.EntityFrameworkCore.SqlServer")]
+    public void A_registered_database_provider_is_selected_by_its_name(string name, string connectionString, string efProvider)
+    {
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSshServerSettings(Config(("Settings:Provider", name), ("ConnectionStrings:Settings", connectionString)))
+            .AddPostgreSqlSettings()
+            .AddSqlServerSettings()
+            .BuildServiceProvider();
+
+        var database = services.GetRequiredService<SettingsDatabase>();
+
+        using var context = new SshServer.Settings.Sql.SettingsDbContext(database.Options);
+        Assert.Equal(efProvider, context.Database.ProviderName);
+    }
+
+    [Fact]
+    public void A_server_database_without_a_connection_string_is_an_error()
+    {
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSshServerSettings(Config(("Settings:Provider", "PostgreSQL")))
+            .AddPostgreSqlSettings()
+            .BuildServiceProvider();
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.GetRequiredService<SettingsDatabase>());
+        Assert.Contains("ConnectionStrings:Settings", error.Message);
     }
 }
