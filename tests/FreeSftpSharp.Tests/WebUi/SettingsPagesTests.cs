@@ -30,12 +30,12 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         var rsaKey = Repository.ServerSettings.ServerRsaKey;
         var page = Render<ServerSettingsPage>();
 
-        page.Find("#listen-port").Change("2022");
-        page.Find("#bind-addresses").Change("127.0.0.1\n::1");
-        page.Find("#server-banner").Change("Files");
-        page.Find("#idle-timeout").Change("120");
-        page.Find("#enable-direct-tcpip").Change(true);
-        page.Find("#server-settings-form").Submit();
+        page.Change("#listen-port", "2022");
+        page.Change("#bind-addresses", "127.0.0.1\n::1");
+        page.Change("#server-banner", "Files");
+        page.Change("#idle-timeout", "120");
+        page.Change("#enable-direct-tcpip", true);
+        page.Submit("#server-settings-form");
 
         var stored = Repository.ServerSettings;
         Assert.Equal(2022, stored.ListenToPort);
@@ -54,7 +54,7 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         var page = Render<ServerSettingsPage>();
         Assert.Empty(page.FindAll("#direct-tcpip-warning"));
 
-        page.Find("#enable-direct-tcpip").Change(true);
+        page.Change("#enable-direct-tcpip", true);
 
         Assert.NotNull(page.Find("#direct-tcpip-warning"));
     }
@@ -66,8 +66,8 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
     {
         var page = Render<ServerSettingsPage>();
 
-        page.Find("#listen-port").Change(port);
-        page.Find("#server-settings-form").Submit();
+        page.Change("#listen-port", port);
+        page.Submit("#server-settings-form");
 
         Assert.Contains("The port must be a number from 1 to 65535.", page.Markup);
         Assert.Equal(2222, Repository.ServerSettings.ListenToPort);
@@ -78,8 +78,8 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
     {
         var page = Render<ServerSettingsPage>();
 
-        page.Find("#bind-addresses").Change("localhost");
-        page.Find("#server-settings-form").Submit();
+        page.Change("#bind-addresses", "localhost");
+        page.Submit("#server-settings-form");
 
         Assert.Contains("Not a valid IP address: localhost", page.Markup);
         Assert.NotNull(Repository.ServerSettings.BindToAddress);
@@ -120,14 +120,14 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
     {
         var page = Render<AccessControl>();
 
-        page.Find("#blacklist").Change("203.0.113.0/24\n2001:db8::/32");
-        page.Find("#whitelist-mode").Change(true);
-        page.Find("#whitelist").Change("192.168.1.0/24, 10.1.2.3");
-        page.Find("#max-attempts").Change("3");
-        page.Find("#failure-window").Change("60");
-        page.Find("#ban-duration").Change("900");
-        page.Find("#exempt-loopback").Change(false);
-        page.Find("#access-form").Submit();
+        page.Change("#blacklist", "203.0.113.0/24\n2001:db8::/32");
+        page.Change("#whitelist-mode", true);
+        page.Change("#whitelist", "192.168.1.0/24, 10.1.2.3");
+        page.Change("#max-attempts", "3");
+        page.Change("#failure-window", "60");
+        page.Change("#ban-duration", "900");
+        page.Change("#exempt-loopback", false);
+        page.Submit("#access-form");
 
         var stored = Repository.ServerSettings;
         Assert.Equal(new[] { "203.0.113.0/24", "2001:db8::/32" }, stored.BlacklistedIps);
@@ -149,8 +149,8 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
     {
         var page = Render<AccessControl>();
 
-        page.Find(field).Change("192.168.0.0/16\n" + entry);
-        page.Find("#access-form").Submit();
+        page.Change(field, "192.168.0.0/16\n" + entry);
+        page.Submit("#access-form");
 
         Assert.Contains("Not a valid network: " + entry, page.Markup);
         Assert.NotNull(Repository.ServerSettings.BlacklistedIps);
@@ -165,7 +165,7 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
     {
         var page = Render<AccessControl>();
 
-        page.Find("#whitelist-mode").Change(true);
+        page.Change("#whitelist-mode", true);
 
         Assert.NotNull(page.Find("#empty-whitelist-note"));
     }
@@ -181,8 +181,9 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         Assert.Contains("198.51.100.7", page.Find("#ban-table").TextContent);
         Assert.Contains("2001:db8::9", page.Find("#ban-table").TextContent);
 
-        var row = page.FindAll("#ban-table tbody tr").Single(r => r.TextContent.Contains("198.51.100.7"));
-        row.QuerySelector(".unban-button")!.Click();
+        PageEvents.Trigger(
+            () => page.FindAll("#ban-table tbody tr").Single(r => r.TextContent.Contains("198.51.100.7")).QuerySelector(".unban-button")!,
+            e => e.Click());
 
         Assert.False(Bans.IsBanned(System.Net.IPAddress.Parse("198.51.100.7")));
         Assert.True(Bans.IsBanned(System.Net.IPAddress.Parse("2001:db8::9")));
@@ -207,7 +208,7 @@ public sealed class SettingsPagesTests : AdminUiComponentContext
         var page = Render<AccessControl>();
 
         Clock.Advance(TimeSpan.FromMinutes(31));
-        page.Find("#refresh-bans").Click();
+        page.Click("#refresh-bans");
 
         Assert.NotNull(page.Find("#no-bans"));
     }
