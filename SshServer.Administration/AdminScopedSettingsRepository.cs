@@ -57,6 +57,14 @@ namespace SshServer.Administration
                 return _inner.UpdateServerSettings(updatedSettings);
         }
 
+        public string EnsureServerEcdsaKey(string newKey)
+        {
+            var actor = _current.Actor;
+            actor.Demand(AdminPermissions.ManageSettings);
+            using (As(actor))
+                return _inner.EnsureServerEcdsaKey(newKey);
+        }
+
         /// <summary>The user, or null when there is none or it is not visible to the administrator.</summary>
         public User GetUser(string username)
         {

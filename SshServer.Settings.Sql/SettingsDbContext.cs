@@ -64,6 +64,9 @@ public class SettingsDbContext : DbContext
     /// </summary>
     internal const string LegacyRsaPublicKey = "RsaPublicKey";
 
+    /// <summary>The shadow column of the server settings that keeps them to one row (#149): always 1, with a unique index.</summary>
+    internal const string ServerSettingsSingleton = "Singleton";
+
     public SettingsDbContext(DbContextOptions<SettingsDbContext> options) : base(options)
     {
     }
@@ -97,6 +100,10 @@ public class SettingsDbContext : DbContext
         {
             b.ToTable("ServerSettings");
             b.HasKey(s => s.Id);
+            // One row only (#149): every row gets the same value of this column, and the unique index refuses a second
+            // row, so two nodes that start on an empty database cannot both create the settings (and two host keys).
+            b.Property<int>(ServerSettingsSingleton).HasDefaultValue(1);
+            b.HasIndex(ServerSettingsSingleton).IsUnique();
             b.Property(s => s.ServerRsaKey).IsRequired(false);
             b.Property(s => s.ServerEcdsaKey).IsRequired(false);
             b.Property(s => s.ServerBanner).IsRequired(false);

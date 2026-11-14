@@ -18,7 +18,10 @@ through HAProxy, both nodes serve logins, and the REST API lists an open session
 
 The server creates and migrates the schema at the start, also when several nodes start at the same time (EF Core takes
 a migration lock). The user needs the right to create tables; on PostgreSQL the first migration creates the `citext`
-extension (a trusted extension: the owner of the database may create it). On SQL Server keep a case-insensitive
+extension (a trusted extension: the owner of the database may create it). Nodes that start at the same time on an empty database
+make one row of server settings and one set of host keys: the table keeps one row (a unique column), the ECDSA key is
+stored only when there is none yet, and every node reads back the stored keys, so a client behind the balancer sees the
+same host key on every node. On SQL Server keep a case-insensitive
 (`_CI_`) collation for the database: user, group and folder names compare without case on every provider.
 
 Each provider is its own project with its own migrations: `SshServer.Settings.Sql` (SQLite, `Migrations/Sqlite`),

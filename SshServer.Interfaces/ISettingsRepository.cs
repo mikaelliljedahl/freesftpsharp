@@ -9,6 +9,22 @@ public interface ISettingsRepository
     void Dispose();
     ServerSettings ServerSettings { get; }
     bool UpdateServerSettings(ServerSettings updatedSettings);
+
+    /// <summary>
+    /// Stores <paramref name="newKey"/> as the ECDSA host key when the settings have none yet, and returns the stored key:
+    /// the new one, or the one that is already there (also when another node stored it a moment before). The SQL store
+    /// does it in one conditional update, so nodes that start at the same time all get the same key (#149).
+    /// </summary>
+    string EnsureServerEcdsaKey(string newKey)
+    {
+        var settings = ServerSettings;
+        if (string.IsNullOrWhiteSpace(settings.ServerEcdsaKey))
+        {
+            settings.ServerEcdsaKey = newKey;
+            UpdateServerSettings(settings);
+        }
+        return ServerSettings.ServerEcdsaKey!;
+    }
     User GetUser(string username);
     bool RemoveUser(string username);
     List<User> GetAllUsers();

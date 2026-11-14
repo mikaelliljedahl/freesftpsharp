@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -63,7 +64,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
 
         // A database without applied migrations is new (or empty). Only then is the LiteDB file imported.
         var isNew = !db.Database.GetAppliedMigrations().Any();
-        db.Database.Migrate();
+        Migrate();
 
         if (isNew && !string.IsNullOrEmpty(legacyLiteDbPath) && File.Exists(legacyLiteDbPath)
             && !db.ServerSettings.Any() && !db.Users.Any())
@@ -74,15 +75,81 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         MigrateLegacyPublicKeys(db);
 
         if (!db.ServerSettings.Any())
+            CreateServerSettings(createHostKey);
+    }
+
+    /// <summary>
+    /// Applies the pending migrations. Nodes that start at the same time on one database migrate at the same time (#149):
+    /// EF Core takes a migration lock, but on PostgreSQL the lock is held per migration transaction, so a node can apply a
+    /// migration that the other one applied a moment before and fail (its transaction is rolled back). The node then reads
+    /// the applied migrations again and goes on with the ones that are still pending.
+    /// </summary>
+    private void Migrate()
+    {
+        const int attempts = 5;
+        for (var attempt = 1; ; attempt++)
         {
-            db.ServerSettings.Add(new ServerSettings
+            using var db = CreateContext();
+            try
             {
-                ServerRsaKey = createHostKey(),
-                ListenToPort = 22, // default port, as in the LiteDB repository
-            });
+                db.Database.Migrate();
+                return;
+            }
+            catch (Exception ex) when (attempt < attempts && ex is DbException or DbUpdateException or InvalidOperationException)
+            {
+                _logger.LogInformation("The migration of the settings database failed ({Message}); another node may migrate it at the same time. Trying again.",
+                    ex.Message);
+                Thread.Sleep(TimeSpan.FromMilliseconds(250 * attempt));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates the one row of the server settings with a new host key. Several nodes may start on an empty database at
+    /// the same time (#149): the unique singleton column refuses every row but the first, and a node that loses keeps the
+    /// row (and the host key) of the other one.
+    /// </summary>
+    private void CreateServerSettings(Func<string> createHostKey)
+    {
+        var settings = new ServerSettings
+        {
+            ServerRsaKey = createHostKey(),
+            ListenToPort = 22, // default port, as in the LiteDB repository
+        };
+        using var db = CreateContext();
+        db.ServerSettings.Add(settings);
+        try
+        {
             db.SaveChanges();
             _logger.LogInformation("Created new server settings with a new host key in the settings database");
         }
+        catch (DbUpdateException) when (ServerSettingsExist())
+        {
+            _logger.LogInformation("Another node created the server settings at the same time; this node uses them and their host key.");
+        }
+    }
+
+    private bool ServerSettingsExist()
+    {
+        using var db = CreateContext();
+        return db.ServerSettings.Any();
+    }
+
+    public string EnsureServerEcdsaKey(string newKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(newKey);
+        using var db = CreateContext();
+        // One conditional update: of nodes that start at the same time only the first stores its key (#149).
+        var stored = db.ServerSettings.Where(s => s.ServerEcdsaKey == null || s.ServerEcdsaKey == "")
+            .ExecuteUpdate(u => u.SetProperty(s => s.ServerEcdsaKey, newKey));
+        var settings = db.ServerSettings.AsNoTracking().OrderBy(s => s.Id).First();
+        if (stored > 0)
+            Publish(new ProviderEvent(ProviderAction.Update, ProviderObjectType.ServerSettings, "server")
+            {
+                Object = ServerSettingsSnapshot.From(settings),
+                ChangedFields = ["HostKey"],
+            });
+        return settings.ServerEcdsaKey!;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using System.Net;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
@@ -60,6 +61,63 @@ public sealed class SettingsProviderTests
         // A second start on the same database migrates nothing and keeps the settings.
         using var again = Repository(db);
         Assert.Equal(TestCredentials.HostKey, again.ServerSettings.ServerRsaKey);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_database_refuses_a_second_row_of_server_settings(string provider)
+    {
+        // Two nodes on an empty database both insert the settings (#149): only the first row is accepted.
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var repository = Repository(db);
+        await using var context = new SettingsDbContext(db.Options);
+        context.ServerSettings.Add(new ServerSettings { ServerRsaKey = "another-node-key", ListenToPort = 22 });
+
+        Assert.Throws<DbUpdateException>(() => context.SaveChanges());
+
+        Assert.Equal(TestCredentials.HostKey, Repository(db).ServerSettings.ServerRsaKey);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_database_with_two_rows_of_server_settings_keeps_the_first_at_the_upgrade(string provider)
+    {
+        // Before #149 two nodes on an empty database could both insert the settings; every read took the lowest id.
+        await using var db = await TestDatabase.CreateAsync(provider);
+        await using (var context = new SettingsDbContext(db.Options))
+        {
+            var before = context.Database.GetMigrations().SkipLast(1).Last();
+            Assert.EndsWith("_SingleServerSettingsRow", context.Database.GetMigrations().Last());
+            await context.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().MigrateAsync(before, cancellationToken: Ct);
+            foreach (var key in new[] { "first-key", "second-key" })
+                await context.Database.ExecuteSqlRawAsync(
+                    "INSERT INTO \"ServerSettings\" (\"ServerRsaKey\", \"ListenToPort\", \"OnlyWhitelistedIps\", \"MaxLoginAttemptsBeforeBan\", " +
+                    "\"LoginFailureWindowSeconds\", \"BanDurationSeconds\", \"ExemptLoopbackFromBan\", \"PasswordMaxAgeDays\", \"IdleTimeout\", " +
+                    "\"EnableCommand\", \"EnableDirectTcpIp\") VALUES ({0}, 22, {1}, 0, 600, 1800, {2}, 0, 600, {1}, {1})",
+                    [key, false, true], Ct);
+        }
+
+        using var repository = new SqlSettingsRepository(db.Options, createHostKey: () => throw new InvalidOperationException("must not be called"));
+
+        Assert.Equal("first-key", repository.ServerSettings.ServerRsaKey);
+        await using var after = new SettingsDbContext(db.Options);
+        Assert.Equal(1, await after.ServerSettings.CountAsync(Ct));
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_ecdsa_host_key_of_the_first_node_wins_and_the_other_node_gets_it(string provider)
+    {
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var nodeA = Repository(db);
+        using var nodeB = Repository(db);
+        var seenByA = nodeA.ServerSettings; // node A read the settings without an ECDSA key ...
+        Assert.Null(seenByA.ServerEcdsaKey);
+
+        Assert.Equal("key-of-b", nodeB.EnsureServerEcdsaKey("key-of-b")); // ... node B stores its key first ...
+
+        Assert.Equal("key-of-b", nodeA.EnsureServerEcdsaKey("key-of-a")); // ... and node A gets the key of B, not its own
+        Assert.Equal("key-of-b", Repository(db).ServerSettings.ServerEcdsaKey);
     }
 
     [Theory]
