@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,6 +37,7 @@ namespace FxSshSftpServer.WebClient
             services.AddSingleton<ClientSessions>();
             services.AddSingleton<UploadSessions>();
             services.AddSingleton<ClientStorageFactory>();
+            services.TryAddSingleton<SshServer.Interfaces.Audit.AuditActorContext>();
             services.AddSingleton<ClientAccountService>();
             services.AddSingleton<ClientPasswordChange>();
             services.AddSingleton<ClientLoginFlow>();

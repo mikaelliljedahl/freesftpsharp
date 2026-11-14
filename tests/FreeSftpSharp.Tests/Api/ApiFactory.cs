@@ -69,7 +69,7 @@ public sealed class ApiFactory : AdminUiFactory
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ISettingsRepository>();
-            services.AddSingleton<ISettingsRepository>(sp => new SqlSettingsRepository(_db, events: sp.GetService<IEventBus>(),
+            services.AddSingleton<ISettingsRepository>(sp => new SqlSettingsRepository(_db, events: sp.GetService<IEventBus>(), actors: sp.GetRequiredService<AuditActorContext>(),
                 createHostKey: () => TestCredentials.HostKey));
             services.RemoveAll<IAdminStore>();
             services.AddSingleton<IAdminStore>(new SqlAdminStore(_db));

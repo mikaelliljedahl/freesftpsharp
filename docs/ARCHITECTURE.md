@@ -113,7 +113,14 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
   (`IEventBus.AskAsync`). The first deny wins; the protocol answers "permission denied" and the storage is not touched.
 - **Audit log.** The `AuditSink` writes every event to the `AuditEntries` table of the settings database; the
   `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
-  admin UI page "Audit" and later the REST API read it through `IAuditLog`.
+  admin UI page "Audit" and the REST API (`GET /api/v1/audit`) read it through `IAuditLog`.
+- **Actor.** Every `ProviderEvent` has the actor of the change (#134): the administrator, with its API key for a REST API
+  call (`AdminActor.AuditName`, "name (API key ci)"), "self" for a change of users in the web client, else "system"
+  (the command line, the logins, the jobs and the event rules). The admin services that publish their own events
+  (administrators, roles, webhooks, event rules, API keys) take the `AdminActor`. The settings repository is a
+  singleton, so it reads the actor of the call from `AuditActorContext` (an `AsyncLocal` in one singleton, not a
+  parameter of every method); `AdminScopedSettingsRepository` sets it around each change, so the admin UI and the
+  REST API need no code of their own.
 - **Webhooks** (#66) are the plug-in `SshServer.Webhooks` (`AddWebhooks()`), with the store `IWebhookStore` of the
   settings database. The `WebhookSink` writes one outbox row (`WebhookDeliveries`) per matching asynchronous webhook,
   and the `WebhookDispatcher` (a hosted service) sends the rows with retries; it claims a row with a lease column, so
