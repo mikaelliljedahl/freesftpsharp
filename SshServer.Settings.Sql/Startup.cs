@@ -6,6 +6,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Audit;
+using SshServer.Interfaces.Events;
+using SshServer.Settings.Sql.Audit;
+using Microsoft.Extensions.Options;
 
 namespace SshServer.Settings.Sql
 {
@@ -14,6 +18,8 @@ namespace SshServer.Settings.Sql
         /// <summary>
         /// Registers the <see cref="ISettingsRepository"/> selected by the configuration
         /// (see <see cref="SettingsStorageOptions"/>): SQLite by default, LiteDB when <c>Settings:Provider</c> is <c>LiteDb</c>.
+        /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
+        /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>).
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
@@ -23,14 +29,24 @@ namespace SshServer.Settings.Sql
             switch (options.Provider)
             {
                 case SettingsProvider.Sqlite:
+                    var dbOptions = CreateDbContextOptions(options);
                     services.AddSingleton<ISettingsRepository>(sp => new SqlSettingsRepository(
-                        CreateDbContextOptions(options),
+                        dbOptions,
                         sp.GetService<ILogger<SqlSettingsRepository>>(),
-                        options.LiteDbPath));
+                        options.LiteDbPath,
+                        events: sp.GetService<IEventBus>(),
+                        time: sp.GetService<TimeProvider>()));
+                    services.TryAddSingleton<IAuditLog>(_ => new SqlAuditLog(dbOptions));
+                    services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
+                    services.TryAddSingleton(TimeProvider.System);
+                    services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();
+                    services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AuditOptions>, AuditOptionsValidator>());
+                    services.AddHostedService<AuditRetentionService>();
                     break;
 
                 case SettingsProvider.LiteDb:
                     services.AddSingleton<ISettingsRepository>(_ => new SettingsRepository(options.LiteDbPath));
+                    services.TryAddSingleton<IAuditLog, DisabledAuditLog>();
                     break;
 
                 default:

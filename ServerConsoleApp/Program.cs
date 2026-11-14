@@ -13,6 +13,7 @@ using FxSsh.SshServerModule;
 using SshServer.Interfaces;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
+using SshServerModule.Events;
 using SshServer.Settings.Sql;
 using FxSsh.SshServerModule.Cli;
 using SshServer.Interfaces.Users;
@@ -49,6 +50,7 @@ await new HostBuilder()
         configure.AddSerilog(Log.Logger);
     });
     services.AddSshServerSettings(hostContext.Configuration);
+    services.AddSshServerEvents();
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
     services.AddHostedService<HostedServer>();
@@ -71,7 +73,8 @@ static int RunUserCommand(string[] args)
 
     try
     {
-        using var provider = new ServiceCollection().AddSshServerSettings(configuration).BuildServiceProvider();
+        // With the event bus, so that the audit log has the changes of the command. Disposing the provider delivers them.
+        using var provider = new ServiceCollection().AddLogging().AddSshServerSettings(configuration).AddSshServerEvents().BuildServiceProvider();
         return UserCommand.Run(args, provider.GetRequiredService<UserAdministrationService>(),
             Console.In, Console.Out, Console.Error,
             interactive: !Console.IsInputRedirected, promptHidden: ReadHidden);

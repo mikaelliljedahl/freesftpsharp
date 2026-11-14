@@ -8,6 +8,7 @@ using Renci.SshNet;
 using SshServer.Filesystem.LocalDisk;
 using SshServerModule.Storage;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Events;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
 
@@ -29,6 +30,7 @@ public class SftpServerFixture : IAsyncLifetime
 
     private HostedServer? _server;
     private InMemorySettingsRepository? _repository;
+    private IEventBus? _eventBus;
 
     public int Port { get; private set; }
     /// <summary><c>ServerSettings.IdleTimeout</c> in seconds. Override it in a derived fixture.</summary>
@@ -41,6 +43,8 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual SshServerOptions? CreateListenOptions(int port) => null;
     /// <summary>The clock of the server (bans, LastSuccessfulLogin). Override it with a FakeTimeProvider.</summary>
     protected virtual TimeProvider CreateTimeProvider() => TimeProvider.System;
+    /// <summary>The event bus of the server (file, auth and system events). Null: no events. Override it in a derived fixture.</summary>
+    protected virtual IEventBus? CreateEventBus() => null;
     /// <summary>The auto-ban state of the running server.</summary>
     public LoginBanTracker BanTracker { get; private set; } = null!;
     public string TempDirectory { get; }
@@ -105,6 +109,9 @@ public class SftpServerFixture : IAsyncLifetime
             }
             _server = null;
         }
+
+        if (_eventBus is IAsyncDisposable bus)
+            await bus.DisposeAsync();
 
         try
         {
@@ -186,13 +193,15 @@ public class SftpServerFixture : IAsyncLifetime
         });
 
         BanTracker = new LoginBanTracker(CreateTimeProvider());
-        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(), repository, BanTracker,
-            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null);
+        _eventBus ??= CreateEventBus(); // one bus for all start attempts
+        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(_eventBus), repository, BanTracker,
+            CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
+            _eventBus);
     }
 
     /// <summary>The storage of the hosts: the "local" provider at the user root (AddSshServerStorage + AddLocalDiskStorage).</summary>
-    private static StorageFileSystemFactory LocalDiskFileSystemFactory()
-        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver());
+    private static StorageFileSystemFactory LocalDiskFileSystemFactory(IEventBus? events)
+        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), events);
 
     private static int GetFreeTcpPort()
     {

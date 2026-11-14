@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Net;
 using SshServerModule.Sftp;
@@ -37,13 +38,22 @@ namespace FxSsh.SshServerModule
         private readonly LoginBanTracker _bans;
         private readonly IpFilter _ipFilter;
         private readonly SshServerOptions _options;
+        private readonly IEventBus _events;
+
+        /// <summary>The protocol name of the auth events.</summary>
+        internal const string SshProtocol = "SSH";
+
+        /// <summary>The protocol name of the file events of the SFTP subsystem.</summary>
+        internal const string SftpProtocol = "SFTP";
 
         /// <param name="options">Port and bind addresses from the configuration; they override the stored settings. Null: stored settings only.</param>
         /// <param name="banTracker">The auto-ban state, shared with the admin UI (AddSshServerSecurity). Null: a private one.</param>
+        /// <param name="events">The event bus for the auth and system events (AddSshServerEvents). Null: no events.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
-            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null)
+            LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IEventBus events = null)
         {
             _options = options?.Value;
+            _events = events;
             _logger = logger;
             _settingsRepository = settingsRepository;
             _fileSystemFactory = fileSystemFactory;
@@ -86,10 +96,14 @@ namespace FxSsh.SshServerModule
                 await StopServersAsync(); // do not keep a part of the listeners open
                 throw;
             }
+
+            Publish(new SystemEvent(SystemEventType.Started) { Timestamp = Now, Source = SshProtocol,
+                Message = $"Listening on port {listen.Port}." });
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
+            Publish(new SystemEvent(SystemEventType.Stopping) { Timestamp = Now, Source = SshProtocol });
             await StopServersAsync();
             _settingsRepository.Dispose();
         }
@@ -138,7 +152,7 @@ namespace FxSsh.SshServerModule
             }
             else if (e is ConnectionService connectionService)
             {
-                connectionService.SubsystemRequested += OnSubsystemRequested;
+                connectionService.SubsystemRequested += (s, args) => OnSubsystemRequested(session, args);
 
                 if (_settingsRepository.ServerSettings.EnableCommand)
                     connectionService.CommandOpened += OnServiceCommandOpened;
@@ -164,30 +178,43 @@ namespace FxSsh.SshServerModule
         private sealed class AuthAttempt
         {
             public volatile string AcceptedUsername;
+            public volatile string AcceptedMethod;
         }
 
         void OnUserAuth(UserAuthArgs e, AuthAttempt attempt)
         {
             e.Result = false;
             attempt.AcceptedUsername = null;
-            Authenticate(e);
+            var failure = Authenticate(e);
 
             if (e.Result)
+            {
                 attempt.AcceptedUsername = e.Username;
-            else if (e.AuthMethod == "password")
+                attempt.AcceptedMethod = e.AuthMethod;
+                return;
+            }
+
+            if (e.AuthMethod != "none") // clients try "none" first to get the list of methods
+                Publish(new AuthEvent(AuthEventType.LoginFailed)
+                {
+                    Timestamp = Now, Username = e.Username, RemoteIp = RemoteIp(e.Session), Protocol = SshProtocol,
+                    Method = e.AuthMethod, Reason = failure,
+                });
+            if (e.AuthMethod == "password")
                 RecordFailedLogin(e.Session);
             // Failed public keys are not counted: clients offer each key of their agent, so a user with several keys
             // would be banned. A wrong public key cannot be guessed like a password.
         }
 
-        void Authenticate(UserAuthArgs e)
+        /// <summary>Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null.</summary>
+        string Authenticate(UserAuthArgs e)
         {
             if (e.Session.RemoteEndPoint is IPEndPoint remote && _bans.IsBanned(remote.Address))
             {
                 // Banned while this session was open: no more attempts on it.
                 _logger.LogInformation("Authentication ({Method}) of {Username} refused: {RemoteEndPoint} is banned.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
-                return;
+                return "the address is banned";
             }
 
             var user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
@@ -197,14 +224,14 @@ namespace FxSsh.SshServerModule
                     UserLogics.SimulatePasswordCheck(); // same time as for a real user
                 _logger.LogInformation("Authentication ({Method}) failed for unknown user {Username} from {RemoteEndPoint}.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint);
-                return;
+                return "unknown user";
             }
 
             if (!UserLogics.VerifyUserIpWhitelisted(user, e.Session.RemoteEndPoint))
             {
                 _logger.LogInformation("Client {RemoteEndPoint} is not in the IP whitelist of user {Username}.",
                     e.Session.RemoteEndPoint, e.Username);
-                return;
+                return "the address is not in the whitelist of the user";
             }
 
             switch (e.AuthMethod)
@@ -213,14 +240,14 @@ namespace FxSsh.SshServerModule
                     e.Result = UserLogics.VerifyUserKey(user, e.Fingerprint);
                     _logger.LogInformation("Public key authentication of {Username}, {KeyAlgorithm} SHA256:{Fingerprint}. Successful: {Result}",
                         e.Username, e.KeyAlgorithm, e.Fingerprint, e.Result);
-                    break;
+                    return e.Result ? null : "the public key is not accepted";
                 case "password":
                     e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
                     _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
-                    break;
+                    return e.Result ? null : "wrong password";
                 default:
                     _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
-                    break;
+                    return "the method is not supported";
             }
         }
 
@@ -231,9 +258,16 @@ namespace FxSsh.SshServerModule
 
             var settings = _settingsRepository.ServerSettings;
             if (_bans.RecordFailure(remote.Address, BanPolicy.FromSettings(settings)))
+            {
                 _logger.LogWarning("Banned {Address} for {Seconds} s after {Failures} failed logins within {Window} s.",
                     CidrNotation.Normalize(remote.Address), settings.BanDurationSeconds, settings.MaxLoginAttemptsBeforeBan,
                     settings.LoginFailureWindowSeconds);
+                Publish(new AuthEvent(AuthEventType.IpBanned)
+                {
+                    Timestamp = Now, RemoteIp = CidrNotation.Normalize(remote.Address).ToString(), Protocol = SshProtocol,
+                    Reason = $"{settings.MaxLoginAttemptsBeforeBan} failed logins within {settings.LoginFailureWindowSeconds} s; banned for {settings.BanDurationSeconds} s",
+                });
+            }
         }
 
         /// <summary>Called after the whole authentication succeeded (for a public key: after the signature check).</summary>
@@ -242,6 +276,16 @@ namespace FxSsh.SshServerModule
             var username = attempt.AcceptedUsername;
             if (username == null)
                 return;
+
+            var method = attempt.AcceptedMethod;
+            Publish(new AuthEvent(AuthEventType.LoginOk)
+            {
+                Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
+            });
+            session.Disconnected += (s, args) => Publish(new AuthEvent(AuthEventType.Logout)
+            {
+                Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
+            });
 
             try
             {
@@ -260,7 +304,7 @@ namespace FxSsh.SshServerModule
             }
         }
 
-        void OnSubsystemRequested(object sender, SubsystemRequestedArgs e)
+        void OnSubsystemRequested(Session session, SubsystemRequestedArgs e)
         {
             _logger.LogInformation("Channel {ChannelId} requested subsystem \"{Name}\".", e.Channel.ServerChannelId, e.Name);
 
@@ -275,7 +319,7 @@ namespace FxSsh.SshServerModule
             IFileSystem storage;
             try
             {
-                storage = SyncBridge.Wait(_fileSystemFactory.CreateAsync(user, CancellationToken.None));
+                storage = SyncBridge.Wait(_fileSystemFactory.CreateAsync(user, new ClientContext(SftpProtocol, RemoteIp(session)), CancellationToken.None));
             }
             catch (Exception ex) when (ex is ArgumentException or FileSystemException or System.Collections.Generic.KeyNotFoundException)
             {
@@ -286,6 +330,29 @@ namespace FxSsh.SshServerModule
             var fileSystem = new SftpFileSystemAdapter(storage, _logger, user.Username);
             new SftpService(fileSystem).Attach(e.Channel);
             e.Agreed = true;
+        }
+
+        private DateTimeOffset Now => _bans.Time.GetUtcNow();
+
+        private static string RemoteIp(Session session)
+            => session.RemoteEndPoint is IPEndPoint remote ? CidrNotation.Normalize(remote.Address).ToString() : session.RemoteEndPoint?.ToString();
+
+        /// <summary>
+        /// Publishes an event from the synchronous SSH callbacks. The bus only queues it, so this returns at once unless
+        /// the queue of a sink is full. A failure never breaks the SSH session.
+        /// </summary>
+        private void Publish(IEvent @event)
+        {
+            if (_events == null)
+                return;
+            try
+            {
+                SyncBridge.Wait(_events.PublishAsync(@event, CancellationToken.None));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not publish the {Category} event {Type}.", @event.Category, @event.TypeName);
+            }
         }
 
         /// <summary>

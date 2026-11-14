@@ -15,12 +15,83 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261113221412_AddIpFilterAndBanSettings";
+    public override string LastMigrationId => "20261114080100_AddAuditLog";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder.HasAnnotation("ProductVersion", "11.0.0");
+
+        modelBuilder.Entity("SshServer.Interfaces.Audit.AuditEntry", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Actor")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Category")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Details")
+                    .HasColumnType("TEXT");
+
+                b.Property<long?>("ElapsedMilliseconds")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Message")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Path")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Protocol")
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("RemoteIp")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("SessionId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<long?>("Size")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TargetPath")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("TimestampUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Type")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TimestampUtc");
+
+                b.HasIndex("Username");
+
+                b.ToTable("AuditEntries");
+            });
 
         modelBuilder.Entity("SshServer.Interfaces.ServerSettings", b =>
             {

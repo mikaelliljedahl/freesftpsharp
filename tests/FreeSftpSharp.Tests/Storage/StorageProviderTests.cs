@@ -1,3 +1,4 @@
+using SshServerModule.Events;
 using Microsoft.Extensions.DependencyInjection;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
@@ -29,12 +30,29 @@ public sealed class StorageProviderTests : IDisposable
         using var services = new ServiceCollection().AddSshServerStorage().AddLocalDiskStorage().BuildServiceProvider();
 
         var fileSystem = await services.GetRequiredService<IFileSystemFactory>()
-            .CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, Ct);
+            .CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, Client, Ct);
 
         Assert.IsType<LocalFileSystem>(fileSystem);
         Assert.Equal(1, (await fileSystem.StatAsync("/a.txt", true, Ct))!.Size);
         Assert.Equal(["local"], services.GetRequiredService<IStorageProviderRegistry>().Providers.Select(p => p.Name));
     }
+
+    [Fact]
+    public async Task With_the_event_bus_the_storage_is_wrapped_in_the_events_decorator()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        File.WriteAllText(Path.Combine(_tempDirectory, "a.txt"), "a");
+        await using var services = new ServiceCollection().AddLogging().AddSshServerEvents().AddSshServerStorage().AddLocalDiskStorage()
+            .BuildServiceProvider();
+
+        var fileSystem = await services.GetRequiredService<IFileSystemFactory>()
+            .CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, Client, Ct);
+
+        Assert.IsType<EventingFileSystem>(fileSystem);
+        Assert.Equal(1, (await fileSystem.StatAsync("/a.txt", true, Ct))!.Size);
+    }
+
+    private static readonly ClientContext Client = new("SFTP", "127.0.0.1");
 
     [Fact]
     public void Registration_twice_registers_the_provider_once()
@@ -106,7 +124,7 @@ public sealed class StorageProviderTests : IDisposable
     {
         var factory = new StorageFileSystemFactory(new StorageProviderRegistry([]), new FixedResolver(new StorageSelection("s3", new object())));
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await factory.CreateAsync(new User(), Ct));
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await factory.CreateAsync(new User(), Client, Ct));
     }
 
     private sealed class FixedResolver(StorageSelection selection) : IUserStorageResolver
