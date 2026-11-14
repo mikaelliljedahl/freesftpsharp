@@ -233,7 +233,8 @@ plug-ins `SshServer.Authentication.Http` (`AddHttpAuthHook()`) and `SshServer.Au
 - **Chain.** The providers run in the order of `Auth:Providers` (default: the database, then the plug-ins); the first
   success or failure wins, "not handled" asks the next one. An exception of a provider is a failure (fail closed).
 - **Ownership.** `User.AuthenticationProvider` (null: the database) names the one provider that checks a stored user.
-- **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). The
+- **Just in time.** A provider can return an `ExternalUser` (groups by name, permissions, networks, session limit). Its
+  JSON form is `UserAttributes` (#136), with the names and types of the REST API user; the HTTP hook answers with it. The
   `ExternalUserProvisioner` makes the user in memory; the protocol checks it like a stored user and calls
   `IUserAuthenticator.Save` when the login is verified (SSH: after the signature of a public key). The status and the
   expiry stay local.

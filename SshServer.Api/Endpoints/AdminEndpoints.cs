@@ -5,6 +5,7 @@ using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using SshServer.Administration;
+using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
 
 namespace SshServer.Api.Endpoints;

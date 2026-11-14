@@ -113,6 +113,64 @@ public sealed class HttpAuthHookTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_200_with_a_user_in_the_rest_api_format_accepts_without_a_warning()
+    {
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200,
+            """{"username":"alice","primaryGroup":"staff","groups":["a"],"permissions":{"/":["List","Download"],"/in":["upload"]},"whitelistedIps":["10.0.0.0/8"],"maxSessions":3,"description":"camel"}""");
+
+        var check = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.True(check.Succeeded);
+        var user = check.User!;
+        Assert.Equal(FilePermissions.List | FilePermissions.Download, user.Permissions!["/"]);
+        Assert.Equal(FilePermissions.Upload, user.Permissions["/in"]);
+        Assert.Equal(["10.0.0.0/8"], user.WhitelistedIps);
+        Assert.True(user.OnlyWhitelistedIps);
+        Assert.Equal(3, user.MaxSessions);
+        Assert.Equal("camel", user.Description);
+        Assert.DoesNotContain(_logs.Messages, m => m.Contains("deprecated", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_new_format_can_keep_a_network_list_without_enforcing_it()
+    {
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"onlyWhitelistedIps":false,"whitelistedIps":["10.0.0.0/8"]}""");
+
+        var check = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.True(check.Succeeded);
+        Assert.Equal(["10.0.0.0/8"], check.User!.WhitelistedIps);
+        Assert.False(check.User.OnlyWhitelistedIps);
+    }
+
+    [Fact]
+    public async Task The_deprecated_snake_case_answer_is_still_accepted_with_one_warning_per_process()
+    {
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"primary_group":"staff","allowed_ips":["10.0.0.0/8"],"max_sessions":2}""");
+
+        var first = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+        var second = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.True(first.Succeeded);
+        Assert.True(second.Succeeded);
+        Assert.Equal(2, second.User!.MaxSessions);
+        Assert.Equal(["10.0.0.0/8"], second.User.WhitelistedIps);
+        Assert.True(second.User.OnlyWhitelistedIps);
+        Assert.Single(_logs.Messages, m => m.Contains("deprecated snake_case format", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_answer_that_mixes_both_formats_for_one_field_refuses()
+    {
+        _receiver.Respond = (_, _) => new ReceiverAnswer(200, """{"max_sessions":2,"maxSessions":3}""");
+
+        var check = await _authenticator.VerifyAsync(Request(), TestContext.Current.CancellationToken);
+
+        Assert.False(check.Succeeded);
+        Assert.Equal("the answer is not a valid user: the answer has both \"max_sessions\" and \"maxSessions\"", check.Reason);
+    }
+
+    [Fact]
     public async Task The_request_has_the_credential_and_a_valid_signature()
     {
         _receiver.Respond = (_, _) => new ReceiverAnswer(200, "{}");
@@ -190,6 +248,9 @@ public sealed class HttpAuthHookTests : IAsyncLifetime
     [InlineData("""{"username":"mallory"}""")]
     [InlineData("""{"permissions":{"/":["Everything"]}}""")]
     [InlineData("""{"max_sessions":"many"}""")]
+    [InlineData("""{"maxSessions":"many"}""")]
+    [InlineData("""{"whitelistedIps":"10.0.0.0/8"}""")]
+    [InlineData("""{"permissions":{"/":null}}""")]
     public async Task An_answer_that_is_not_a_valid_user_refuses(string body)
     {
         _receiver.Respond = (_, _) => new ReceiverAnswer(200, body);

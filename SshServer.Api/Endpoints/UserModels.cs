@@ -8,7 +8,8 @@ namespace SshServer.Api.Endpoints;
 
 /// <summary>
 /// An SFTP user in the API: its own settings (the groups, #61, give the settings that are not set here). The password hash
-/// and the storage secrets are never returned.
+/// and the storage secrets are never returned. The fields that an authentication provider may set have the names and the
+/// types of <see cref="UserAttributes"/> (#136), the answer of the authentication hook.
 /// </summary>
 public sealed record UserView(
     string Username,
@@ -19,7 +20,7 @@ public sealed record UserView(
     IReadOnlyList<string> RequireAllOf,
     bool OnlyWhitelistedIps,
     IReadOnlyList<string> WhitelistedIps,
-    IReadOnlyDictionary<string, IReadOnlyList<string>>? Permissions,
+    Dictionary<string, List<string>>? Permissions,
     IReadOnlyDictionary<string, PathFilterModel> PathFilters,
     StorageView? Storage,
     IReadOnlyList<VirtualFolderMountModel> VirtualFolders,
@@ -46,7 +47,7 @@ public sealed record UserView(
         (user.RequireAllOf ?? []).Select(AuthMethodRules.ToSshName).ToList(),
         user.OnlyWhitelistedIps,
         user.WhitelistedIps?.ToList() ?? [],
-        UserWrite.PermissionsOf(user),
+        UserAttributes.PermissionNames(user.Permissions),
         (user.PathFilters ?? []).ToDictionary(f => f.Key, f => PathFilterModel.From(f.Value), StringComparer.Ordinal),
         storage.View(user.Storage),
         (user.VirtualFolders ?? []).Select(VirtualFolderMountModel.From).ToList(),
@@ -102,7 +103,8 @@ public sealed record UserQuotasView(QuotaSettingsModel Settings, SshServerModule
 
 /// <summary>
 /// An SFTP user to create (POST) or to save (PUT; a PATCH is merged into the stored user first). A value that is not
-/// given gets its default, except the write-only <see cref="Password"/>: without it the stored password stays.
+/// given gets its default, except the write-only <see cref="Password"/>: without it the stored password stays. The
+/// fields of <see cref="UserAttributes"/> (#136) have the same names and types here.
 /// </summary>
 public sealed record UserWrite
 {
@@ -187,7 +189,7 @@ public sealed record UserWrite
         RequireAllOf = (user.RequireAllOf ?? []).Select(AuthMethodRules.ToSshName).ToList(),
         OnlyWhitelistedIps = user.OnlyWhitelistedIps,
         WhitelistedIps = user.WhitelistedIps?.ToList() ?? [],
-        Permissions = PermissionsOf(user)?.ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal),
+        Permissions = UserAttributes.PermissionNames(user.Permissions),
         PathFilters = (user.PathFilters ?? []).ToDictionary(f => f.Key, f => PathFilterModel.From(f.Value), StringComparer.Ordinal),
         Storage = storage.WriteModel(user.Storage),
         VirtualFolders = (user.VirtualFolders ?? []).Select(VirtualFolderMountModel.From).ToList(),
@@ -202,12 +204,6 @@ public sealed record UserWrite
         TransferQuota = user.TransferQuota,
         Bandwidth = user.Bandwidth,
     };
-
-    /// <summary>The own permissions of the user, or null when it sets none (the groups give them, else All at "/").</summary>
-    internal static IReadOnlyDictionary<string, IReadOnlyList<string>>? PermissionsOf(User user) =>
-        user.Permissions is { Count: > 0 } permissions
-            ? permissions.ToDictionary(p => p.Key, p => FlagNames.Of(p.Value), StringComparer.Ordinal)
-            : null;
 }
 
 /// <summary>Public keys to add to a user: the text of an authorized_keys file, or one PEM public key.</summary>
