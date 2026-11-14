@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Interfaces.Events;
 
 namespace SshServer.Webhooks;
 
@@ -47,13 +48,15 @@ public static class WebhookValidator
                 errors.Add($"The value of the header {header} cannot have a line break.");
         }
 
-        var unknown = input.EventTypes.Where(e => !WebhookEventNames.IsKnown(e)).ToArray();
+        var unknown = input.EventTypes.Where(e => !EventNames.IsKnown(e)).ToArray();
         if (unknown.Length > 0)
             errors.Add("Unknown events: " + string.Join(", ", unknown) + ".");
 
-        if (input.Sync)
+        if (input.Sync && input.OnlyForEventRules)
+            errors.Add("A webhook only for event rules cannot be synchronous.");
+        else if (input.Sync)
         {
-            if (input.EventTypes.Count == 0 || input.EventTypes.Any(e => !WebhookEventNames.PreEvents.Contains(e)))
+            if (input.EventTypes.Count == 0 || input.EventTypes.Any(e => !EventNames.PreEvents.Contains(e)))
                 errors.Add("A synchronous webhook is only for the events File.PreUpload, File.PreDownload and File.PreDelete. Select one or more of them, and no others.");
         }
         else if (input.FailOpen)

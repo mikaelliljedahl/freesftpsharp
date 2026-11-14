@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114122311_AddQuotas")]
-partial class _20261114122311_AddQuotas
+[Migration("20261114121903_AddEventRules")]
+partial class _20261114121903_AddEventRules
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -167,6 +167,102 @@ partial class _20261114122311_AddQuotas
                 b.ToTable("AuditEntries");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRule", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Actions")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Conditions")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("CronExpression")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("EventTypes")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("LastScheduledRunUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("TimeZone")
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("EventRules");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("DurationMs")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Message")
+                    .IsRequired()
+                    .HasMaxLength(4000)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("RuleId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("StartedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("RuleId", "StartedUtc");
+
+                b.ToTable("EventRuleRuns");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.ServerSettings", b =>
             {
                 b.Property<int>("Id")
@@ -261,12 +357,6 @@ partial class _20261114122311_AddQuotas
                     .HasMaxLength(128)
                     .HasColumnType("TEXT");
 
-                b.Property<string>("Bandwidth")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("DiskQuota")
-                    .HasColumnType("TEXT");
-
                 b.Property<string>("HashedPassword")
                     .HasColumnType("TEXT");
 
@@ -295,9 +385,6 @@ partial class _20261114122311_AddQuotas
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Storage")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("UserRootDirectory")
@@ -352,6 +439,9 @@ partial class _20261114122311_AddQuotas
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
                     .UseCollation("NOCASE");
+
+                b.Property<bool>("OnlyForEventRules")
+                    .HasColumnType("INTEGER");
 
                 b.Property<string>("PathGlob")
                     .HasMaxLength(1024)
@@ -455,41 +545,21 @@ partial class _20261114122311_AddQuotas
                 b.ToTable("WebhookDeliveries");
             });
 
-        modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>
-            {
-                b.Property<string>("Scope")
-                    .HasMaxLength(300)
-                    .HasColumnType("TEXT");
-
-                b.Property<long>("DownloadedBytes")
-                    .HasColumnType("INTEGER");
-
-                b.Property<DateTime?>("ScannedUtc")
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime>("UpdatedUtc")
-                    .HasColumnType("TEXT");
-
-                b.Property<long>("UploadedBytes")
-                    .HasColumnType("INTEGER");
-
-                b.Property<long>("UsedBytes")
-                    .HasColumnType("INTEGER");
-
-                b.Property<long>("UsedFiles")
-                    .HasColumnType("INTEGER");
-
-                b.HasKey("Scope");
-
-                b.ToTable("QuotaUsages");
-            });
-
         modelBuilder.Entity("SshServer.Interfaces.Admins.Admin", b =>
             {
                 b.HasOne("SshServer.Interfaces.Admins.Role", null)
                     .WithMany()
                     .HasForeignKey("ScopeRoleId")
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.EventRules.EventRuleRun", b =>
+            {
+                b.HasOne("SshServer.Interfaces.EventRules.EventRule", null)
+                    .WithMany()
+                    .HasForeignKey("RuleId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
@@ -508,9 +578,6 @@ partial class _20261114122311_AddQuotas
                         b1.Property<string>("MountPath")
                             .IsRequired()
                             .HasMaxLength(1024)
-                            .HasColumnType("TEXT");
-
-                        b1.Property<string>("Quota")
                             .HasColumnType("TEXT");
 
                         b1.Property<int>("UserId")

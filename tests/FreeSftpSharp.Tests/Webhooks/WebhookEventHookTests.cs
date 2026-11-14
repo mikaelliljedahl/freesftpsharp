@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Admins;
 using System.Diagnostics;
 using SshServer.Interfaces.Events;
 using SshServer.Interfaces.Webhooks;
@@ -105,7 +106,7 @@ public sealed class WebhookEventHookTests : IAsyncLifetime
 
         Assert.True((await _host.Hook.DecideAsync(PreUpload(), Ct)).IsDenied);
 
-        var saved = await _host.Admin.SaveAsync(SyncHook("closed", failOpen: true) with { Id = closed }, Ct);
+        var saved = await _host.Admin.SaveAsync(AdminActor.System, SyncHook("closed", failOpen: true) with { Id = closed }, Ct);
         Assert.True(saved.Succeeded, string.Join(" ", saved.Errors));
         Assert.False((await _host.Hook.DecideAsync(PreUpload(), Ct)).IsDenied);
     }

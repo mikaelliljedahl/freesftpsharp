@@ -1,3 +1,4 @@
+using SshServer.Interfaces.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SshServer.Interfaces.Events;
@@ -37,7 +38,7 @@ public sealed class ActiveWebhook
     /// <summary>True when the event passes the event type, user and path filters.</summary>
     public bool Matches(IEvent @event, string eventName)
     {
-        if (_eventTypes.Count == 0 ? WebhookEventNames.PreEvents.Contains(eventName) : !_eventTypes.Contains(eventName))
+        if (_eventTypes.Count == 0 ? EventNames.PreEvents.Contains(eventName) : !_eventTypes.Contains(eventName))
             return false;
 
         if (_users.Count > 0)
@@ -63,7 +64,7 @@ public sealed class ActiveWebhook
     }
 }
 
-/// <summary>The enabled webhooks at one time: the asynchronous and the synchronous ones.</summary>
+/// <summary>The enabled webhooks at one time: the asynchronous and the synchronous ones, and the ones only for event rules.</summary>
 public sealed class WebhookCatalogSnapshot
 {
     public static WebhookCatalogSnapshot Empty { get; } = new([]);
@@ -73,15 +74,20 @@ public sealed class WebhookCatalogSnapshot
     public WebhookCatalogSnapshot(IReadOnlyList<ActiveWebhook> webhooks)
     {
         _byId = webhooks.ToDictionary(w => w.Id);
-        Async = webhooks.Where(w => !w.Definition.Sync).ToArray();
-        Sync = webhooks.Where(w => w.Definition.Sync).ToArray();
+        Async = webhooks.Where(w => !w.Definition.Sync && !w.Definition.OnlyForEventRules).ToArray();
+        Sync = webhooks.Where(w => w.Definition.Sync && !w.Definition.OnlyForEventRules).ToArray();
     }
 
+    /// <summary>The asynchronous webhooks that get the events of their filters (not the ones only for event rules).</summary>
     public IReadOnlyList<ActiveWebhook> Async { get; }
 
     public IReadOnlyList<ActiveWebhook> Sync { get; }
 
+    /// <summary>Any enabled webhook, also one only for event rules.</summary>
     public ActiveWebhook? Find(int id) => _byId.GetValueOrDefault(id);
+
+    /// <summary>Any enabled webhook by its name (case-insensitive).</summary>
+    public ActiveWebhook? Find(string name) => _byId.Values.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>
