@@ -93,6 +93,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             try
             {
                 db.Database.Migrate();
+                Database.AfterMigrationExtension.Run(db);
                 return;
             }
             catch (Exception ex) when (attempt < attempts && ex is DbException or DbUpdateException or InvalidOperationException)

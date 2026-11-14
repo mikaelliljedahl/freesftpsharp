@@ -20,6 +20,7 @@ using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.TwoFactor;
 using SshServer.Interfaces.Webhooks;
+using SshServer.Interfaces.Security;
 using SshServer.Settings.Sql;
 using SshServer.Settings.Sql.Admins;
 using SshServer.Settings.Sql.Api;
@@ -103,6 +104,68 @@ public sealed class SettingsProviderTests
         await using var after = new SettingsDbContext(db.Options);
         Assert.Equal(1, await after.ServerSettings.CountAsync(Ct));
     }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_AdminAuth_import_of_two_nodes_at_the_same_time_keeps_one_admin_without_an_error(string provider)
+    {
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var repository = Repository(db);
+        var hash = PasswordHasher.Hash("Admin-Pass-1", PasswordHasher.MinimumIterations);
+        // Node B checks that there is no administrator; node A stores its import just before B saves (#149).
+        var otherNode = new AdminAdministrationService(new SqlAdminStore(db.Options), repository);
+        var options = new DbContextOptionsBuilder<SettingsDbContext>(db.Options)
+            .AddInterceptors(new BeforeFirstSave(() => Assert.True(otherNode.ImportConfiguredAdminAsync("admin", hash, Ct).GetAwaiter().GetResult())))
+            .Options;
+        var store = new SqlAdminStore(options);
+
+        Assert.False(await new AdminAdministrationService(store, repository).ImportConfiguredAdminAsync("admin", hash, Ct));
+
+        Assert.Equal(["admin"], (await store.ListAdminsAsync(Ct)).Select(a => a.Username));
+    }
+
+    /// <summary>Runs an action once, just before the first SaveChanges of a context on these options.</summary>
+    private sealed class BeforeFirstSave(Action action) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private int _done;
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _done, 1) == 0)
+                action();
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_node_that_connected_before_another_node_migrated_the_database_works(string provider)
+    {
+        // Node B connects to the empty database first (PostgreSQL then loads the types without citext) ...
+        await using var db = await TestDatabase.CreateAsync(provider);
+        await using (var context = new SettingsDbContext(db.Options))
+            Assert.Empty(await context.Database.GetAppliedMigrationsAsync(Ct));
+        // ... node A migrates it, with a connection of its own (another connection string: another Npgsql data source) ...
+        var builder = new DbContextOptionsBuilder<SettingsDbContext>();
+        db.Provider.Configure(builder, OtherNode(provider, db.ConnectionString));
+        using (new SqlSettingsRepository(builder.Options, createHostKey: () => TestCredentials.HostKey))
+        {
+        }
+
+        // ... and node B starts on it: names without case (citext on PostgreSQL) work.
+        using var nodeB = Repository(db);
+        Assert.True(nodeB.AddUser(new User { Username = "Carol", HashedPassword = "x" }));
+        Assert.Equal("Carol", nodeB.GetUser("carol")?.Username);
+    }
+
+    private static string OtherNode(string provider, string connectionString) => provider switch
+    {
+        "PostgreSQL" => connectionString + ";Application Name=other-node",
+        "SqlServer" => connectionString + ";Application Name=other-node",
+        _ => connectionString,
+    };
 
     [Theory]
     [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
