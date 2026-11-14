@@ -202,6 +202,31 @@ namespace FxSsh.Tests.Sftp
             channel.ForceClose();
         }
 
+        /// <summary>
+        /// An admin kicks a session with an upload in progress: the session completes its send queue before the channels
+        /// are force-closed, so the WINDOW_ADJUST of the finishing writes cannot be sent. The close must still complete.
+        /// </summary>
+        [TestMethod]
+        public async Task A_window_release_into_a_closed_session_does_not_stop_the_close()
+        {
+            var channel = new SessionChannel(_connection, 1, 1u << 30, 32768, 1000);
+            var fileSystem = new GatedFileSystem();
+            var service = new SftpService(fileSystem);
+            service.Attach(channel);
+            var handle = OpenOver(channel, fileSystem);
+            var data = new byte[30000];
+            for (uint id = 2; id < 40; id++) // below half of the window: each answered write sends a WINDOW_ADJUST
+                channel.OnData(Write(id, handle, 0, data));
+
+            await _session.DisconnectAsync(); // completes the send queue of the session; the channel is not closed yet
+            fileSystem.File.Gate.SetResult(); // the writes finish and release their window into the closed session
+            Assert.IsTrue(SpinWait.SpinUntil(() => fileSystem.File.Written.Length == 38, Timeout));
+            channel.ForceClose();
+
+            Assert.IsTrue(SpinWait.SpinUntil(() => fileSystem.File.Aborted, Timeout), "The open handle must be aborted.");
+            Assert.IsTrue(Task.Run(service.Dispose).Wait(Timeout), "Dispose must not hang.");
+        }
+
         [TestMethod]
         public void Reads_stop_while_the_replies_wait_for_the_peer_window()
         {

@@ -338,7 +338,7 @@ namespace FxSsh.Services.Sftp
                 if (length < 1 || length > MaxPacketLength)
                 {
                     Log.Warn($"SFTP: discarding invalid frame length {length}.");
-                    _releaseWindow?.Invoke((uint)_pendingBytes.Length);
+                    ReleaseWindow(_pendingBytes.Length);
                     _pendingBytes = null;
                     return;
                 }
@@ -394,10 +394,13 @@ namespace FxSsh.Services.Sftp
         }
 
         /// <summary>
-        /// Starts the close: no new request is handled (<see cref="Enqueue"/>
-        /// answers FAILURE, <see cref="RegisterHandle"/> refuses a handle), the
-        /// waiting requests are cancelled. Returns the task that completes when
-        /// the requests that already run have stopped. Idempotent, never throws.
+        /// Starts the close: a request that arrives after it is answered with
+        /// FAILURE (<see cref="Enqueue"/>), a handle opened after it is aborted
+        /// (<see cref="RegisterHandle"/>), and the waits are cancelled. The
+        /// requests that were already queued still run, as before the lanes
+        /// (they fail fast: their waits are cancelled and no new handle stays).
+        /// Returns the task that completes when the queued and running
+        /// requests have finished. Idempotent, never throws.
         /// </summary>
         private Task BeginClose()
         {
@@ -468,6 +471,19 @@ namespace FxSsh.Services.Sftp
         {
             lock (_laneLock)
                 return _idle.Task;
+        }
+
+        /// <summary>Gives the window of handled bytes back to the channel. Never throws.</summary>
+        private void ReleaseWindow(int bytes)
+        {
+            try
+            {
+                _releaseWindow?.Invoke((uint)bytes);
+            }
+            catch (Exception ex)
+            {
+                Log.Debug($"SFTP: the window release failed: {ex.Message}");
+            }
         }
 
         private void ReplySent(int bytes)
@@ -553,7 +569,7 @@ namespace FxSsh.Services.Sftp
             if (lane == null)
             {
                 RejectClosed(payload);
-                _releaseWindow?.Invoke((uint)payload.Length + 4);
+                ReleaseWindow(payload.Length + 4);
                 return;
             }
 
@@ -605,12 +621,14 @@ namespace FxSsh.Services.Sftp
                 }
                 finally
                 {
-                    _releaseWindow?.Invoke((uint)payload.Length + 4);
+                    // The count first: the close waits for it, whatever the
+                    // window release does.
                     lock (_laneLock)
                     {
                         if (--_pendingRequests == 0)
                             _idle.TrySetResult();
                     }
+                    ReleaseWindow(payload.Length + 4);
                 }
             }
         }

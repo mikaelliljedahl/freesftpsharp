@@ -508,9 +508,10 @@ namespace FxSsh.Services
 
         /// <summary>
         /// The consumer is done with <paramref name="bytes"/> received bytes:
-        /// their window can go back to the peer. Thread-safe. Without
-        /// <see cref="DeferWindowAdjust"/> the channel calls it itself on
-        /// receipt.
+        /// their window can go back to the peer. Thread-safe and never throws
+        /// (the consumer calls it in its cleanup, also while the session is
+        /// torn down). Without <see cref="DeferWindowAdjust"/> the channel
+        /// calls it itself on receipt.
         /// </summary>
         public void ReleaseWindow(uint bytes)
         {
@@ -532,9 +533,16 @@ namespace FxSsh.Services
                 ServerWindowSize += bytesToAdd;
             }
 
-            if (_forceClosed)
+            // No adjust after our CHANNEL_CLOSE (RFC 4254 5.3) or the teardown;
+            // a session whose send queue is already completed drops it.
+            lock (_windowLocker)
+            {
+                if (_forceClosed)
+                    return;
+            }
+            if (ServerClosed)
                 return;
-            _connectionService._session.SendMessage(new ChannelWindowAdjustMessage
+            _connectionService._session.TrySendMessage(new ChannelWindowAdjustMessage
             {
                 RecipientChannel = ClientChannelId,
                 BytesToAdd = bytesToAdd,
