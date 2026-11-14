@@ -27,6 +27,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{A2
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FxSsh", "external\FxSsh\FxSsh\FxSsh.csproj", "{E6C351AE-02D6-4145-931D-FCBCA37986C4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Filesystem.Encrypted", "SshServer.Filesystem.Encrypted\SshServer.Filesystem.Encrypted.csproj", "{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -73,6 +75,10 @@ Global
 		{15D5D843-59F7-41CA-83FF-C055F0149337}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{15D5D843-59F7-41CA-83FF-C055F0149337}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{15D5D843-59F7-41CA-83FF-C055F0149337}.Release|Any CPU.Build.0 = Release|Any CPU
+		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{73BBC7BF-4055-4FEC-88E7-E990CA466AAB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
