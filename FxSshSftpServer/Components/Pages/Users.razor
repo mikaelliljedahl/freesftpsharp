@@ -47,6 +47,10 @@
                     <QuickGrid Items="FilteredUsers" Class="table table-hover align-middle quickgrid-table" id="user-table">
                         <PropertyColumn Title="User name" Property="@(u => u.Username)" Sortable="true" InitialSortDirection="SortDirection.Ascending" IsDefaultSortColumn="true" />
                         <TemplateColumn Title="Login">
+                            @if (context.AuthenticationProvider is { } provider)
+                            {
+                                <span class="badge text-bg-primary me-1" title="Signs in through this authentication provider">@provider</span>
+                            }
                             @if (!string.IsNullOrWhiteSpace(context.HashedPassword))
                             {
                                 <span class="badge text-bg-secondary me-1">password</span>
@@ -240,6 +244,13 @@
 
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
+                            @if (form.AuthenticationProvider is { } owner)
+                            {
+                                <div class="alert alert-info small py-2" id="external-provider-note">
+                                    This user signs in through the authentication provider <strong>@owner</strong>, which checks its
+                                    password and keys. A password or key set here is not used.
+                                </div>
+                            }
                             <div class="small text-body-secondary mb-2">
                                 @if (form.HasPassword)
                                 {

@@ -17,6 +17,7 @@ using SshServer.Interfaces.Net;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces.TwoFactor;
 using SshServerModule.Sftp;
+using SshServerModule.Authentication;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -48,6 +49,7 @@ namespace FxSsh.SshServerModule
         private readonly IEventBus _events;
         private readonly IEffectiveUserSettingsService _userSettings;
         private readonly ITwoFactorVerifier _twoFactor;
+        private readonly IUserAuthenticator _authenticator;
 
         /// <summary>The prompt of the TOTP verification code (keyboard-interactive, echo off).</summary>
         internal const string CodePrompt = "Verification code: ";
@@ -64,9 +66,11 @@ namespace FxSsh.SshServerModule
         /// <param name="events">The event bus for the auth and system events (AddSshServerEvents). Null: no events.</param>
         /// <param name="userSettings">The effective settings of the users with their groups (AddSshServerStorage). Null: one over <paramref name="settingsRepository"/>.</param>
         /// <param name="twoFactor">The TOTP second factor (AddTwoFactor, #63). Null: no user has a second factor.</param>
+        /// <param name="authenticator">The credential check with the authentication providers (AddSshServerAuthentication, #64). Null: the database only.</param>
         public HostedServer(ILogger<HostedServer> logger, IFileSystemFactory fileSystemFactory, ISettingsRepository settingsRepository,
             LoginBanTracker banTracker = null, IOptions<SshServerOptions> options = null, IConnectionRegistry connections = null,
-            IEventBus events = null, ITwoFactorVerifier twoFactor = null, IEffectiveUserSettingsService userSettings = null)
+            IEventBus events = null, ITwoFactorVerifier twoFactor = null, IEffectiveUserSettingsService userSettings = null,
+            IUserAuthenticator authenticator = null)
         {
             _twoFactor = twoFactor;
             _userSettings = userSettings ?? new EffectiveUserSettingsService(settingsRepository);
@@ -78,6 +82,8 @@ namespace FxSsh.SshServerModule
             _fileSystemFactory = fileSystemFactory;
             _bans = banTracker ?? new LoginBanTracker(TimeProvider.System);
             _ipFilter = new IpFilter(logger);
+            _authenticator = authenticator ?? new UserAuthenticator(
+                [new DatabaseAuthenticationProvider(settingsRepository, null, _bans.Time)], settingsRepository);
         }
 
         /// <summary>True while the SSH listeners are bound (after a successful start, until the stop). For the readiness check.</summary>
@@ -237,6 +243,12 @@ namespace FxSsh.SshServerModule
 
             /// <summary>True when the open keyboard-interactive prompt asks for the verification code, false: the password.</summary>
             public bool PromptAsksForCode;
+
+            /// <summary>
+            /// The user that an external authentication provider returned with the last accepted request (#64), saved when
+            /// the step is verified (for a public key: after the signature check). Null: nothing to save.
+            /// </summary>
+            public CredentialCheck Provisioned;
         }
 
         void OnUserAuth(UserAuthService service, UserAuthArgs e, AuthAttempt attempt, Guid connectionId)
@@ -246,6 +258,7 @@ namespace FxSsh.SshServerModule
             e.InfoRequest = null;
             attempt.AcceptedUsername = null;
             attempt.PendingUser = null;
+            attempt.Provisioned = null;
 
             // Keyboard-interactive (RFC 4256): the request only gets the prompt; the response is checked below.
             if (e.AuthMethod == AuthMethodRules.KeyboardInteractiveName && e.Responses == null && SendPrompt(e, attempt))
@@ -311,6 +324,13 @@ namespace FxSsh.SshServerModule
             var user = attempt.PendingUser;
             if (user == null)
                 return;
+            if (attempt.Provisioned != null && !_authenticator.Save(attempt.Provisioned))
+            {
+                // The next step finds no stored user and asks the provider again; the login is complete only when it is saved.
+                _logger.LogWarning("User {Username} of the authentication provider {Provider} could not be saved after step {Step}.",
+                    e.Username, attempt.Provisioned.Provider, attempt.Progress.Completed.Count + 1);
+            }
+            attempt.Provisioned = null;
             attempt.Progress.CompleteStep(user, attempt.PendingMethod, attempt.PendingTotp);
             var next = attempt.Progress.MethodsThatCanContinue(user, attempt.PendingTotp) ?? FailureMessage.DefaultAuthenticationsThatCanContinue;
             service.AuthenticationsThatCanContinue = next;
@@ -338,8 +358,9 @@ namespace FxSsh.SshServerModule
 
         /// <summary>
         /// Sets <c>e.Result</c>; returns why the authentication failed (for the events), or null. <paramref name="user"/>
-        /// is the stored user (null when it is unknown), <paramref name="method"/> the method of the request,
-        /// <paramref name="totp"/> whether the user has a TOTP second factor.
+        /// is the user to log in (null when it is unknown; a user of an external provider that is not saved yet, #64),
+        /// <paramref name="method"/> the method of the request, <paramref name="totp"/> whether the user has a TOTP second
+        /// factor.
         /// </summary>
         string Authenticate(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, out User user, out AuthMethods method, out bool totp)
         {
@@ -358,7 +379,8 @@ namespace FxSsh.SshServerModule
             }
 
             user = e.Username == null ? null : _settingsRepository.GetUser(e.Username);
-            if (user == null)
+            var request = CredentialRequest(e, method, passwordLike, user);
+            if (user == null && (request == null || !_authenticator.HasExternalProviders))
             {
                 attempt.Progress.Reset();
                 if (passwordLike)
@@ -368,15 +390,61 @@ namespace FxSsh.SshServerModule
                 return "unknown user";
             }
 
-            // Status, expiry, password age and session limit (issue #61): refused like a wrong credential, in the same time.
+            if (user != null)
+            {
+                // Refused like a wrong credential, in the same time (#61, #64).
+                var refusal = CheckLogin(e, attempt, connectionId, user, method, passwordLike, out totp);
+                if (refusal != null)
+                {
+                    if (passwordLike)
+                        SyncBridge.Wait(_authenticator.SpendFailureTimeAsync(request, CancellationToken.None));
+                    return refusal;
+                }
+            }
+
+            switch (method)
+            {
+                case AuthMethods.PublicKey:
+                case AuthMethods.Password:
+                    return VerifyCredential(e, attempt, connectionId, request, ref user, ref totp);
+                case AuthMethods.KeyboardInteractive:
+                    return VerifyKeyboardInteractive(e, attempt, connectionId, request, ref user, ref totp);
+                default:
+                    _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
+                    return "the method is not supported";
+            }
+        }
+
+        /// <summary>
+        /// The credential of a password or public key request for the authentication providers (#64), or null for a request
+        /// without one (the verification code, "none", an unknown method).
+        /// </summary>
+        static AuthRequest CredentialRequest(UserAuthArgs e, AuthMethods method, bool passwordLike, User user)
+        {
+            if (e.Username == null)
+                return null;
+            if (method == AuthMethods.PublicKey && e.Key != null)
+                return new AuthRequest { Username = e.Username, Method = method, PublicKey = e.Key, RemoteIp = RemoteIp(e.Session), Protocol = SshProtocol, StoredUser = user };
+            if (!passwordLike)
+                return null;
+            var password = method == AuthMethods.Password ? e.Password ?? "" : (e.Responses is [var single] ? single : null) ?? "";
+            return new AuthRequest { Username = e.Username, Method = method, Password = password, RemoteIp = RemoteIp(e.Session), Protocol = SshProtocol, StoredUser = user };
+        }
+
+        /// <summary>
+        /// The checks before the credential (#61): status, expiry, password age, session limit, the networks of the user,
+        /// its second factor and the steps of its login. Returns the reason of a refusal, or null; the caller spends the
+        /// time of a wrong password.
+        /// </summary>
+        string CheckLogin(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, User user, AuthMethods method, bool passwordLike, out bool totp)
+        {
+            totp = false;
             // A password over keyboard-interactive is a password too (for the password age).
             var lifecycle = UserLoginRules.Refusal(user, passwordLike ? AuthMethods.Password : method, Now.UtcDateTime,
                                 _settingsRepository.ServerSettings.PasswordMaxAgeDays)
                             ?? UserLoginRules.SessionLimitRefusal(user, _connections.CountSessions(user.Username, connectionId));
             if (lifecycle != null)
             {
-                if (passwordLike)
-                    UserLogics.SimulatePasswordCheck();
                 _logger.LogInformation("Authentication ({Method}) of {Username} from {RemoteEndPoint} refused: {Reason}.",
                     e.AuthMethod, e.Username, e.Session.RemoteEndPoint, lifecycle);
                 return lifecycle;
@@ -397,51 +465,63 @@ namespace FxSsh.SshServerModule
             var refusal = attempt.Progress.Check(user, method, totp, settings.AllowedAuthMethods);
             if (refusal != null)
             {
-                if (passwordLike)
-                    UserLogics.SimulatePasswordCheck(); // the same time as a wrong password
                 _logger.LogInformation("Authentication ({Method}) of {Username} refused: {Reason}.", e.AuthMethod, e.Username, refusal);
                 return refusal;
             }
+            return null;
+        }
 
-            switch (method)
+        /// <summary>
+        /// Checks a password or public key with the authentication providers (#64). A user that an external provider
+        /// created or changed is checked again with its new settings and saved when the step is verified.
+        /// </summary>
+        string VerifyCredential(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, AuthRequest request, ref User user, ref bool totp)
+        {
+            var check = SyncBridge.Wait(_authenticator.VerifyAsync(request, CancellationToken.None));
+            if (request.PublicKey != null)
+                _logger.LogInformation("Public key authentication of {Username}, {KeyAlgorithm} SHA256:{Fingerprint} ({Provider}). Successful: {Result}",
+                    e.Username, e.KeyAlgorithm, e.Fingerprint, check.Provider, check.Succeeded);
+            else
+                _logger.LogInformation("Password authentication{Variant} of {Username} ({Provider}). Successful: {Result}",
+                    request.Method == AuthMethods.KeyboardInteractive ? " (keyboard-interactive)" : "", e.Username, check.Provider, check.Succeeded);
+
+            if (!check.Succeeded)
             {
-                case AuthMethods.PublicKey:
-                    e.Result = UserLogics.VerifyUserKey(user, e.Key, Now.UtcDateTime);
-                    _logger.LogInformation("Public key authentication of {Username}, {KeyAlgorithm} SHA256:{Fingerprint}. Successful: {Result}",
-                        e.Username, e.KeyAlgorithm, e.Fingerprint, e.Result);
-                    return e.Result ? null : "the public key is not accepted";
-                case AuthMethods.Password:
-                    e.Result = UserLogics.VerifyUserPassword(user, e.Password, _settingsRepository, _logger);
-                    _logger.LogInformation("Password authentication of {Username}. Successful: {Result}", e.Username, e.Result);
-                    return e.Result ? null : "wrong password";
-                case AuthMethods.KeyboardInteractive:
-                    return VerifyKeyboardInteractive(e, attempt, user, totp);
-                default:
-                    _logger.LogInformation("Authentication method {Method} is not supported (user {Username}).", e.AuthMethod, e.Username);
-                    return "the method is not supported";
+                if (user == null)
+                    attempt.Progress.Reset(); // as for an unknown user
+                return check.Reason;
             }
+
+            if (check.NeedsSave)
+            {
+                // The credential time is spent: a refusal here costs nothing more.
+                var refusal = CheckLogin(e, attempt, connectionId, check.User, request.Method, request.IsPassword, out var hasTotp);
+                if (refusal != null)
+                    return refusal;
+                totp = hasTotp;
+                attempt.Provisioned = check;
+            }
+            user = check.User;
+            e.Result = true;
+            return null;
         }
 
         /// <summary>Checks the response to the keyboard-interactive prompt: the verification code or the password.</summary>
-        string VerifyKeyboardInteractive(UserAuthArgs e, AuthAttempt attempt, User user, bool totp)
+        string VerifyKeyboardInteractive(UserAuthArgs e, AuthAttempt attempt, Guid connectionId, AuthRequest request, ref User user, ref bool totp)
         {
-            var answer = e.Responses is [var single] ? single : null;
-            if (attempt.PromptAsksForCode != attempt.Progress.KeyboardInteractiveAsksForCode(user, totp))
+            if (user != null && attempt.PromptAsksForCode != attempt.Progress.KeyboardInteractiveAsksForCode(user, totp))
             {
                 // The second factor of the user changed between the prompt and the response.
                 if (!attempt.PromptAsksForCode)
-                    UserLogics.SimulatePasswordCheck();
+                    SyncBridge.Wait(_authenticator.SpendFailureTimeAsync(request, CancellationToken.None));
                 _logger.LogInformation("Keyboard-interactive authentication of {Username} refused: the login changed during the prompt.", e.Username);
                 return "the login changed during the prompt";
             }
 
             if (!attempt.PromptAsksForCode)
-            {
-                e.Result = UserLogics.VerifyUserPassword(user, answer ?? "", _settingsRepository, _logger);
-                _logger.LogInformation("Password authentication (keyboard-interactive) of {Username}. Successful: {Result}", e.Username, e.Result);
-                return e.Result ? null : "wrong password";
-            }
+                return VerifyCredential(e, attempt, connectionId, request, ref user, ref totp);
 
+            var answer = e.Responses is [var single] ? single : null;
             TwoFactorCheck check;
             try
             {
@@ -495,6 +575,22 @@ namespace FxSsh.SshServerModule
                 return;
 
             var method = attempt.AcceptedMethod;
+            if (attempt.Provisioned is { } provisioned)
+            {
+                attempt.Provisioned = null;
+                if (!_authenticator.Save(provisioned))
+                {
+                    const string reason = "the user of the authentication provider cannot be saved";
+                    _logger.LogWarning("The login of {Username} from {RemoteEndPoint} is refused: {Reason}.", username, session.RemoteEndPoint, reason);
+                    Publish(new AuthEvent(AuthEventType.LoginFailed)
+                    {
+                        Timestamp = Now, Username = username, RemoteIp = RemoteIp(session), Protocol = SshProtocol, Method = method,
+                        Reason = reason, SessionId = connectionId.ToString(),
+                    });
+                    _ = session.DisconnectAsync(DisconnectReason.ByApplication, "The login cannot be completed.");
+                    return;
+                }
+            }
             if (!_connections.TrySetAuthenticated(connectionId, username, method, attempt.AcceptedMaxSessions))
             {
                 // Another login of the user took the last session between the check and now (issue #61).

@@ -43,12 +43,24 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.TwoFactor", "SshS
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.EventRules", "SshServer.EventRules\SshServer.EventRules.csproj", "{521DF722-9B70-4ECF-9A93-0106D0C76005}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Authentication.Http", "SshServer.Authentication.Http\SshServer.Authentication.Http.csproj", "{8BA937BB-9431-4AB5-BBF0-6C1E759A952F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SshServer.Authentication.Ldap", "SshServer.Authentication.Ldap\SshServer.Authentication.Ldap.csproj", "{52F87009-B8F6-4878-AE8B-C78607A18DDD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8BA937BB-9431-4AB5-BBF0-6C1E759A952F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BA937BB-9431-4AB5-BBF0-6C1E759A952F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BA937BB-9431-4AB5-BBF0-6C1E759A952F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BA937BB-9431-4AB5-BBF0-6C1E759A952F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{52F87009-B8F6-4878-AE8B-C78607A18DDD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{52F87009-B8F6-4878-AE8B-C78607A18DDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{52F87009-B8F6-4878-AE8B-C78607A18DDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{52F87009-B8F6-4878-AE8B-C78607A18DDD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{711EA26A-A4D8-429D-9AE6-AA60CE42D01A}.Release|Any CPU.ActiveCfg = Release|Any CPU

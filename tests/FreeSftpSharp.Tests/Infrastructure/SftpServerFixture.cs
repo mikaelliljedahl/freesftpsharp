@@ -57,6 +57,8 @@ public class SftpServerFixture : IAsyncLifetime
     protected virtual IEventBus? CreateEventBus() => null;
     /// <summary>The TOTP second factor of the server (#63). Null: no second factor. Override it in a derived fixture.</summary>
     protected virtual TwoFactorService? CreateTwoFactor(TimeProvider time) => null;
+    /// <summary>The credential check with the authentication providers (#64). Null: the database only. Override it in a derived fixture.</summary>
+    protected virtual SshServer.Interfaces.Authentication.IUserAuthenticator? CreateAuthenticator(ISettingsRepository repository) => null;
     /// <summary>The TOTP second factor of the running server, or null.</summary>
     public TwoFactorService? TwoFactor { get; private set; }
     /// <summary>The auto-ban state of the running server.</summary>
@@ -217,7 +219,7 @@ public class SftpServerFixture : IAsyncLifetime
         TwoFactor ??= CreateTwoFactor(time);
         return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(Connections, _eventBus, repository), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
-            Connections, _eventBus, TwoFactor);
+            Connections, _eventBus, TwoFactor, authenticator: CreateAuthenticator(repository));
     }
 
     /// <summary>

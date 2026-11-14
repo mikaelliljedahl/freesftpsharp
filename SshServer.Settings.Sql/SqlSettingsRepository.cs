@@ -312,6 +312,7 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         to.PasswordChangedAt = from.PasswordChangedAt;
         to.PrimaryGroupId = from.PrimaryGroupId;
         to.SecondaryGroupIds = (from.SecondaryGroupIds ?? []).ToList();
+        to.AuthenticationProvider = from.AuthenticationProvider;
     }
 
     private static List<VirtualFolderMount> CopyMounts(IEnumerable<VirtualFolderMount>? mounts)

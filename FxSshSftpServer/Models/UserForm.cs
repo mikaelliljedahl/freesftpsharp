@@ -20,6 +20,9 @@ namespace FxSshSftpServer.Models
         /// <summary>True for a user that is not saved yet. The user name of a saved user cannot change (the repository finds users by name).</summary>
         public bool IsNew { get; set; }
 
+        /// <summary>The external authentication provider that owns the user (#64, read-only), or null for a local user.</summary>
+        public string AuthenticationProvider { get; set; }
+
         [Required(ErrorMessage = "Enter a user name.")]
         [StringLength(UserAdministrationService.MaximumUserNameLength, ErrorMessage = "The user name can have at most 100 characters.")]
         [RegularExpression(UserAdministrationService.UserNamePattern, ErrorMessage = "The user name cannot have spaces, ':', '/' or '\\'.")]
@@ -144,6 +147,7 @@ namespace FxSshSftpServer.Models
             Enabled = user.Status == UserStatus.Enabled,
             ExpiresOn = user.ExpiresAt?.Date,
             MaxSessions = user.MaxSessions,
+            AuthenticationProvider = user.AuthenticationProvider,
             PasswordChangedAt = user.PasswordChangedAt,
             PrimaryGroupId = user.PrimaryGroupId ?? 0,
             SecondaryGroupIds = (user.SecondaryGroupIds ?? new List<int>()).ToList(),
