@@ -158,6 +158,8 @@ public class SettingsDbContext : DbContext
             // A group with members cannot be removed (GroupService checks it first, with a clear message).
             b.HasOne<Group>().WithMany().HasForeignKey(u => u.PrimaryGroupId).OnDelete(DeleteBehavior.Restrict);
             b.PrimitiveCollection(u => u.SecondaryGroupIds).IsRequired();
+            // The authentication provider that owns the user (#64); null: the local database.
+            b.Property(u => u.AuthenticationProvider).IsRequired(false).HasMaxLength(64);
             b.OwnsMany(u => u.VirtualFolders, m =>
             {
                 m.ToTable("UserVirtualFolders");

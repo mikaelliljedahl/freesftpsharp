@@ -350,6 +350,35 @@ public sealed class WebClientEndpointTests : IClassFixture<WebClientFactory>
     }
 
     [Fact]
+    public async Task The_password_of_a_user_of_an_external_provider_cannot_be_changed()
+    {
+        var name = NewName("external");
+        _factory.AddUser(name);
+        using var browser = await _factory.LogInAsync(name);
+        var user = _factory.Repository.GetUser(name);
+        var hash = user.HashedPassword;
+        user.AuthenticationProvider = "ldap"; // as if the directory had created it (#64)
+        _factory.Repository.UpdateUser(user);
+
+        var account = await (await browser.Http.GetAsync("/client/account", Ct)).Content.ReadAsStringAsync(Ct);
+        var page = await browser.Http.GetAsync("/client/changepassword", Ct);
+        var change = await browser.Http.PostAsync("/client/changepassword", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["CurrentPassword"] = WebClientFactory.UserPassword,
+            ["NewPassword"] = "A-New-Password-7",
+            ["RepeatPassword"] = "A-New-Password-7",
+            ["__RequestVerificationToken"] = ClientBrowser.FormToken(account),
+        }), Ct);
+
+        Assert.DoesNotContain("id=\"change-password\"", account);
+        Assert.Contains("The password of this account is managed by ldap.", account);
+        Assert.DoesNotContain("change-password-submit", await page.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(HttpStatusCode.Forbidden, change.StatusCode);
+        Assert.Contains("The password of this account is managed by ldap.", await change.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(hash, _factory.Repository.GetUser(name).HashedPassword);
+    }
+
+    [Fact]
     public async Task An_expired_password_must_be_changed_first()
     {
         var name = NewName("expired");

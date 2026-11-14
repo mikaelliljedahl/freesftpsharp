@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114135659_AddShares")]
-partial class _20261114135659_AddShares
+[Migration("20261114133236_AddUserAuthenticationProvider")]
+partial class _20261114133236_AddUserAuthenticationProvider
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -417,79 +417,12 @@ partial class _20261114135659_AddShares
                 b.Property<string>("ServerRsaKey")
                     .HasColumnType("TEXT");
 
-                b.Property<string>("Shares")
-                    .HasColumnType("TEXT");
-
                 b.PrimitiveCollection<string>("WhitelistedIps")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
 
                 b.ToTable("ServerSettings");
-            });
-
-        modelBuilder.Entity("SshServer.Interfaces.Shares.Share", b =>
-            {
-                b.Property<string>("Id")
-                    .HasMaxLength(64)
-                    .HasColumnType("TEXT");
-
-                b.Property<bool>("AllowOverwrite")
-                    .HasColumnType("INTEGER");
-
-                b.PrimitiveCollection<string>("AllowedIps")
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime>("CreatedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("Description")
-                    .HasMaxLength(1000)
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime?>("ExpiresAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<DateTime?>("LastUsedAt")
-                    .HasColumnType("TEXT");
-
-                b.Property<int>("MaxUses")
-                    .HasColumnType("INTEGER");
-
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(100)
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("PasswordHash")
-                    .HasMaxLength(256)
-                    .HasColumnType("TEXT");
-
-                b.PrimitiveCollection<string>("Paths")
-                    .IsRequired()
-                    .HasColumnType("TEXT");
-
-                b.Property<string>("Scope")
-                    .IsRequired()
-                    .HasMaxLength(16)
-                    .HasColumnType("TEXT");
-
-                b.Property<int>("UsedCount")
-                    .HasColumnType("INTEGER");
-
-                b.Property<int>("UserId")
-                    .HasColumnType("INTEGER");
-
-                b.Property<string>("Username")
-                    .IsRequired()
-                    .HasMaxLength(256)
-                    .HasColumnType("TEXT");
-
-                b.HasKey("Id");
-
-                b.HasIndex("UserId");
-
-                b.ToTable("Shares");
             });
 
         modelBuilder.Entity("SshServer.Interfaces.Storage.VirtualFolder", b =>
@@ -536,6 +469,10 @@ partial class _20261114135659_AddShares
                     .HasColumnType("TEXT");
 
                 b.Property<string>("AppPasswords")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AuthenticationProvider")
+                    .HasMaxLength(64)
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Bandwidth")
@@ -932,15 +869,6 @@ partial class _20261114135659_AddShares
                     });
 
                 b.Navigation("VirtualFolders");
-            });
-
-        modelBuilder.Entity("SshServer.Interfaces.Shares.Share", b =>
-            {
-                b.HasOne("SshServer.Interfaces.User", null)
-                    .WithMany()
-                    .HasForeignKey("UserId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
             });
 
         modelBuilder.Entity("SshServer.Interfaces.User", b =>

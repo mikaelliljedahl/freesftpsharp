@@ -39,6 +39,8 @@
     <ProjectReference Include="..\..\SshServer.Webhooks\SshServer.Webhooks.csproj" />
     <ProjectReference Include="..\..\SshServer.TwoFactor\SshServer.TwoFactor.csproj" />
     <ProjectReference Include="..\..\SshServer.EventRules\SshServer.EventRules.csproj" />
+    <ProjectReference Include="..\..\SshServer.Authentication.Http\SshServer.Authentication.Http.csproj" />
+    <ProjectReference Include="..\..\SshServer.Authentication.Ldap\SshServer.Authentication.Ldap.csproj" />
     <ProjectReference Include="..\..\FxSshSftpServer\FxSshSftpServer.csproj" />
     <ProjectReference Include="..\..\SshServer.Administration\SshServer.Administration.csproj" />
     <ProjectReference Include="..\..\SshServer.Api\SshServer.Api.csproj" />

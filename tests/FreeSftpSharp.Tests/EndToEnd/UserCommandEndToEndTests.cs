@@ -117,6 +117,9 @@ public class UserCommandEndToEndTests : IAsyncLifetime
                      || k.StartsWith("Settings__", StringComparison.OrdinalIgnoreCase)
                      || k.StartsWith("ConnectionStrings__", StringComparison.OrdinalIgnoreCase)).ToList())
             info.Environment.Remove(key);
+        // The admin UI of the app listens on http://localhost:5000 by default (appsettings.json). Test classes run in
+        // parallel, so every app instance takes a free port of its own.
+        info.Environment["Kestrel__Endpoints__Http__Url"] = "http://127.0.0.1:0";
         return info;
     }
 

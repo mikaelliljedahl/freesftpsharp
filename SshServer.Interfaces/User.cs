@@ -118,6 +118,16 @@ public class User
     /// user. Null: only administrators without a scope see the user.
     /// </summary>
     public int? RoleId { get; set; }
+
+    /// <summary>
+    /// The authentication provider that owns the user (issue #64, <see cref="IAuthenticationProvider.Name"/>), for
+    /// example "ldap" for a user that an LDAP directory created at its first login. Only that provider checks its
+    /// credential. Null: the local database (the stored password and keys).
+    /// </summary>
+    public string? AuthenticationProvider { get; set; }
+
+    /// <summary>A shallow copy: the lists and dictionaries are shared; replace them, do not change them in the copy.</summary>
+    public User ShallowCopy() => (User)MemberwiseClone();
 }
 
 /// <summary>The status of a <see cref="User"/> (issue #61).</summary>
