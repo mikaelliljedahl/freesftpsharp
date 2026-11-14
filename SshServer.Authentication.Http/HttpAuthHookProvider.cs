@@ -26,6 +26,7 @@ public sealed class HttpAuthHookProvider : IAuthenticationProvider
     private readonly HttpAuthHookOptions _options;
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
+    private int _legacyWarned;
 
     public HttpAuthHookProvider(IHttpClientFactory clients, IOptions<HttpAuthHookOptions> options, TimeProvider time, ILogger<HttpAuthHookProvider> logger)
     {
@@ -67,7 +68,10 @@ public sealed class HttpAuthHookProvider : IAuthenticationProvider
                         return Refuse(request, $"the answer is larger than {MaxResponseBytes / 1024} KiB");
                     try
                     {
-                        return AuthResult.Success(HttpAuthHookPayload.ParseUser(answer, request.Username));
+                        var user = HttpAuthHookPayload.ParseUser(answer, request.Username, out var legacyFormat);
+                        if (legacyFormat)
+                            WarnLegacyFormat();
+                        return AuthResult.Success(user);
                     }
                     catch (FormatException ex)
                     {
@@ -86,6 +90,14 @@ public sealed class HttpAuthHookProvider : IAuthenticationProvider
         {
             return Refuse(request, "the authentication hook cannot be reached: " + ex.Message);
         }
+    }
+
+    /// <summary>Once per provider (one per process): the snake_case answer is deprecated (#136).</summary>
+    private void WarnLegacyFormat()
+    {
+        if (Interlocked.Exchange(ref _legacyWarned, 1) == 0)
+            _logger.LogWarning("The authentication hook answered in the deprecated snake_case format (primary_group, allowed_ips, max_sessions). "
+                + "Answer with the camelCase names of the REST API user (primaryGroup, whitelistedIps, maxSessions); the old format will be removed in the next release. See docs/AUTHENTICATION.md.");
     }
 
     private AuthResult Refuse(AuthRequest request, string reason)

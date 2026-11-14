@@ -122,7 +122,7 @@ organisation plugs in its own identity logic without C#, like the external authe
 | `TimeoutSeconds` | 10 | The time for one answer (1 to 60). |
 | `PublicKeys` | true | Also ask the hook for public key logins. |
 
-The server sends a `POST` with a JSON body (snake_case). `password` is only in a password login, `public_key` (an
+The server sends a `POST` with a JSON body (snake_case, unchanged). `password` is only in a password login, `public_key` (an
 `authorized_keys` line) only in a key login. For an SSH public key the hook can be asked twice per key (OpenSSH asks
 whether a key is accepted before it signs).
 
@@ -132,25 +132,42 @@ whether a key is accepted before it signs).
 
 The answer:
 
-- `200` with a user: the login is accepted. Every field is optional; a missing field leaves the stored value.
-  `username`, when given, must be the name of the request.
+- `200` with a user: the login is accepted. Every field is optional; a missing field (or `null`) leaves the stored
+  value. `username`, when given, must be the name of the request.
 
   ```json
   {
     "username": "alice",
-    "primary_group": "staff",
+    "primaryGroup": "staff",
     "groups": [ "partners" ],
     "permissions": { "/": [ "List", "Download" ], "/incoming": [ "List", "Upload" ] },
-    "allowed_ips": [ "192.0.2.0/24" ],
-    "max_sessions": 2,
+    "onlyWhitelistedIps": true,
+    "whitelistedIps": [ "192.0.2.0/24" ],
+    "maxSessions": 2,
+    "allowedProtocols": [ "sftp", "webdav" ],
     "description": "Partner account"
   }
   ```
+
+  The answer is the `UserAttributes` object (`SshServer.Interfaces.Authentication`): the fields have the names and the
+  JSON types of the user of the REST API (`UserView` and `UserWrite` of `/api/v1/users`, see [REST-API.md](REST-API.md)),
+  so the same code can write both. Only the groups differ: the hook gives local group **names** (`primaryGroup`,
+  `groups`), because it does not know the local ids; the REST API has the ids (`primaryGroupId`, `secondaryGroupIds`).
+  `allowedProtocols` takes `sftp`, `webdav`, `web`, `ftp` and `all` (without case), like the REST API; an empty list
+  or an unknown name refuses the login. Without `onlyWhitelistedIps`, a non-empty `whitelistedIps` list also turns it on. The answer never sets the root
+  directory, the storage, the status or the expiry: the storage comes from the groups, the status and the expiry stay
+  local.
 
   The permissions are the names of `FilePermissions` (`List`, `Download`, `Upload`, `Overwrite`, `Delete`, `Rename`,
   `CreateDirectories`, `CreateSymlinks`, `ChangeMode`, `ChangeTimes`, `All`) and need an entry for `/`. Unknown groups
   are skipped with a warning; an invalid value refuses the login.
 - `204`: the hook does not know the user; the next provider is asked.
+
+**Deprecated: the snake_case answer.** The first version of the hook answered in snake_case: `primary_group`,
+`allowed_ips` and `max_sessions` (now `primaryGroup`, `whitelistedIps` and `maxSessions`; `username`, `groups`,
+`permissions` and `description` have the same names in both). This release still reads it, with the same meaning as
+before, and logs one warning per process at the first such answer. The next release reads only the camelCase names.
+An answer that gives one field in both forms is refused.
 - Anything else (`401`, `403`, `500`, a redirect), no answer within the timeout, or an answer over 64 KiB: refused.
 
 A sample service in Python (standard library only) that checks the signature:
@@ -175,7 +192,7 @@ class Hook(BaseHTTPRequestHandler):
             return self.answer(204)  # not ours: the next provider decides
         if not hmac.compare_digest(user["password"], request.get("password", "")):
             return self.answer(403)
-        self.answer(200, {"primary_group": user["groups"][0], "permissions": {"/": ["All"]}})
+        self.answer(200, {"primaryGroup": user["groups"][0], "permissions": {"/": ["All"]}})
 
     def answer(self, status, user=None):
         data = json.dumps(user).encode() if user is not None else b""
