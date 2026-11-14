@@ -17,8 +17,8 @@ namespace SshServerModule.Quotas
     /// <list type="bullet">
     /// <item>Open for writing: a new file reserves one file, and a full quota refuses to create it. A truncated file releases
     /// its old size. The check is on every write that makes the file larger, so one large write cannot go over the limit.</item>
-    /// <item>A write over the quota fails, every later write of the handle fails too, and at the close the handle is aborted
-    /// and the partial file is removed, so no partial file stays and the counters lose nothing.</item>
+    /// <item>A write over the quota fails, and at once the handle is aborted in the storage and the partial file is removed,
+    /// so no partial file stays and the counters lose nothing. Every later call of the handle fails too.</item>
     /// <item>A lost session (<see cref="IFileHandle.AbortAsync"/>) counts what the storage kept: a disk keeps the partial
     /// file, an object store keeps nothing (or the old object).</item>
     /// <item>Delete releases the file, a rename that replaces a file releases the replaced file, a size change by SETSTAT
@@ -157,8 +157,8 @@ namespace SshServerModule.Quotas
             => new(FileSystemError.QuotaExceeded, $"Quota exceeded: {VirtualPath.Normalize(path)}");
 
         /// <summary>
-        /// An open file: it knows the size that is counted for the file (<see cref="_size"/>) and reserves each growth. After
-        /// a refused write the file is removed at the close.
+        /// An open file: it knows the size that is counted for the file (<see cref="_size"/>) and reserves each growth. The
+        /// first refused write drops the file at once (a client does not always close a handle after a failed write).
         /// </summary>
         private sealed class Handle : IFileHandle
         {
@@ -168,7 +168,7 @@ namespace SshServerModule.Quotas
             private readonly bool _append;
             private readonly object _lock = new();
             private long _size;
-            private bool _exceeded;
+            private bool _exceeded; // a write was refused: the file is dropped and the storage handle is closed
             private bool _closed;
 
             public Handle(DiskQuotaFileSystem owner, IFileHandle inner, string path, long size, bool append)
@@ -182,23 +182,33 @@ namespace SshServerModule.Quotas
 
             private QuotaUsageTracker Tracker => _owner._tracker;
 
-            public ValueTask<int> ReadAsync(long offset, Memory<byte> buffer, CancellationToken ct) => _inner.ReadAsync(offset, buffer, ct);
+            public ValueTask<int> ReadAsync(long offset, Memory<byte> buffer, CancellationToken ct)
+            {
+                ThrowIfExceeded();
+                return _inner.ReadAsync(offset, buffer, ct);
+            }
 
             public async ValueTask WriteAsync(long offset, ReadOnlyMemory<byte> data, CancellationToken ct)
             {
-                long growth;
+                long growth = 0;
                 lock (_lock)
                 {
                     if (_exceeded)
                         throw Exceeded(_path);
-                    var end = (_append ? _size : offset) + data.Length;
-                    growth = Math.Max(0, end - _size);
-                    if (growth > 0 && !Tracker.TryReserveDisk(_owner._scope, _owner._limit, growth, 0))
+                    if (!_closed) // a closed handle: the storage refuses the write
                     {
-                        _exceeded = true;
-                        throw Exceeded(_path);
+                        var end = (_append ? _size : offset) + data.Length;
+                        growth = Math.Max(0, end - _size);
+                        if (growth > 0 && !Tracker.TryReserveDisk(_owner._scope, _owner._limit, growth, 0))
+                            _exceeded = _closed = true;
+                        else
+                            _size += growth;
                     }
-                    _size += growth;
+                }
+                if (_exceeded)
+                {
+                    await DropAsync();
+                    throw Exceeded(_path);
                 }
                 try
                 {
@@ -213,12 +223,21 @@ namespace SshServerModule.Quotas
                 }
             }
 
-            public ValueTask FlushAsync(CancellationToken ct) => _inner.FlushAsync(ct);
+            public ValueTask FlushAsync(CancellationToken ct)
+            {
+                ThrowIfExceeded();
+                return _inner.FlushAsync(ct);
+            }
 
-            public ValueTask<FileSystemEntry> StatAsync(CancellationToken ct) => _inner.StatAsync(ct);
+            public ValueTask<FileSystemEntry> StatAsync(CancellationToken ct)
+            {
+                ThrowIfExceeded();
+                return _inner.StatAsync(ct);
+            }
 
             public async ValueTask SetAttributesAsync(FileAttributesUpdate update, CancellationToken ct)
             {
+                ThrowIfExceeded();
                 if (update.Size is not { } size)
                 {
                     await _inner.SetAttributesAsync(update, ct);
@@ -236,29 +255,41 @@ namespace SshServerModule.Quotas
 
             public ValueTask AbortAsync() => CloseAsync(abort: true);
 
+            private void ThrowIfExceeded()
+            {
+                lock (_lock)
+                {
+                    if (_exceeded)
+                        throw Exceeded(_path);
+                }
+            }
+
             private async ValueTask CloseAsync(bool abort)
             {
-                bool exceeded;
                 lock (_lock)
                 {
                     if (_closed)
-                        return;
+                        return; // closed before, or dropped after a refused write
                     _closed = true;
-                    exceeded = _exceeded;
                 }
-
-                if (!exceeded && !abort)
+                if (!abort)
                 {
                     await _inner.DisposeAsync();
                     return;
                 }
+                // The session was lost: count what the storage kept (a disk keeps the partial file, an object store nothing).
+                await _inner.AbortAsync();
+                Reconcile(await StatQuietlyAsync());
+            }
 
-                // The file is not complete: drop it in the storage, then count what the storage kept.
+            /// <summary>Drops the file of a refused upload: the storage aborts it, and the partial file of this handle is removed.</summary>
+            private async ValueTask DropAsync()
+            {
                 await _inner.AbortAsync();
                 var after = await StatQuietlyAsync();
-                if (exceeded && after is { Type: FileSystemEntryType.File } && after.Size == _size)
+                // Remove only the partial file of this handle: an object store keeps the old object, which has another size.
+                if (after is { Type: FileSystemEntryType.File } && after.Size == _size)
                 {
-                    // The partial file of this handle (an object store keeps the old object, which has another size).
                     try
                     {
                         await _owner._inner.DeleteFileAsync(_path, CancellationToken.None);
@@ -269,8 +300,12 @@ namespace SshServerModule.Quotas
                         // It stays, and it stays counted.
                     }
                 }
-                Tracker.AddDisk(_owner._scope, (after?.Size ?? 0) - _size, after is null ? -1 : 0);
+                Reconcile(after);
             }
+
+            /// <summary>Changes the counters from what this handle counted to what the storage has now.</summary>
+            private void Reconcile(FileSystemEntry? after)
+                => Tracker.AddDisk(_owner._scope, (after?.Size ?? 0) - _size, after is null ? -1 : 0);
 
             private async ValueTask<FileSystemEntry?> StatQuietlyAsync()
             {
@@ -281,7 +316,8 @@ namespace SshServerModule.Quotas
                 }
                 catch (FileSystemException)
                 {
-                    return new FileSystemEntry(VirtualPath.GetName(VirtualPath.Normalize(_path)), FileSystemEntryType.File, _size, default, default); // unknown: keep the count
+                    // Unknown: keep what is counted.
+                    return new FileSystemEntry(VirtualPath.GetName(VirtualPath.Normalize(_path)), FileSystemEntryType.File, _size, default, default);
                 }
             }
         }

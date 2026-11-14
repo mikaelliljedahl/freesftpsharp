@@ -91,7 +91,8 @@ public sealed class DiskQuotaFileSystemTests
 
         var ex = await Assert.ThrowsAsync<FileSystemException>(async () => await handle.WriteAsync(0, new byte[1_001], Ct));
         Assert.Equal(FileSystemError.QuotaExceeded, ex.Error);
-        Assert.Equal(0, (await _backend.StatAsync("/big.bin", true, Ct))!.Size); // nothing reached the storage
+        Assert.Null(await _backend.StatAsync("/big.bin", true, Ct)); // dropped at once, before the client closes the handle
+        Assert.Equal((0L, 0L), (Usage.UsedBytes, Usage.UsedFiles));
 
         // A refused handle refuses every later write too, also a small one.
         await Assert.ThrowsAsync<FileSystemException>(async () => await handle.WriteAsync(0, new byte[1], Ct));
