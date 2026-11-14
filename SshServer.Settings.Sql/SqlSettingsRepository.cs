@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.Storage;
 using SshServer.Settings.LiteDb;
 
 namespace SshServer.Settings.Sql;
@@ -199,6 +200,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
             LastSuccessfulLogin = newUser.LastSuccessfulLogin,
             Permissions = newUser.Permissions,
             PathFilters = newUser.PathFilters,
+            Storage = newUser.Storage,
+            VirtualFolders = CopyMounts(newUser.VirtualFolders),
         };
         db.Users.Add(stored);
         db.SaveChanges();
@@ -226,6 +229,8 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
         stored.WhitelistedIps = updatedUser.WhitelistedIps;
         stored.Permissions = updatedUser.Permissions;
         stored.PathFilters = updatedUser.PathFilters;
+        stored.Storage = updatedUser.Storage;
+        ReplaceMounts(stored, updatedUser.VirtualFolders);
         db.SaveChanges();
 
         var changed = ChangedFields(before, UserSnapshot.From(stored));
@@ -240,6 +245,90 @@ public sealed class SqlSettingsRepository : ISettingsRepository, IDisposable
                 Object = UserSnapshot.From(stored),
                 ChangedFields = changed,
             });
+        return true;
+    }
+
+    private static List<VirtualFolderMount> CopyMounts(IEnumerable<VirtualFolderMount>? mounts)
+        => (mounts ?? []).Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath }).ToList();
+
+    /// <summary>Changes the mounts of a tracked user in place: unchanged mounts keep their row, so the unique index never sees a duplicate.</summary>
+    private static void ReplaceMounts(User stored, IEnumerable<VirtualFolderMount>? mounts)
+    {
+        var wanted = CopyMounts(mounts);
+        stored.VirtualFolders.RemoveAll(m => !wanted.Any(w => w.MountPath == m.MountPath && w.VirtualFolderId == m.VirtualFolderId));
+        foreach (var mount in wanted)
+        {
+            if (!stored.VirtualFolders.Any(m => m.MountPath == mount.MountPath && m.VirtualFolderId == mount.VirtualFolderId))
+                stored.VirtualFolders.Add(mount);
+        }
+    }
+
+    public List<VirtualFolder> GetVirtualFolders()
+    {
+        using var db = CreateContext();
+        return db.VirtualFolders.AsNoTracking().OrderBy(f => f.Name).ToList();
+    }
+
+    public VirtualFolder? GetVirtualFolder(int id)
+    {
+        using var db = CreateContext();
+        return db.VirtualFolders.AsNoTracking().FirstOrDefault(f => f.Id == id);
+    }
+
+    public bool AddVirtualFolder(VirtualFolder folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder.Name))
+            return false;
+        using var db = CreateContext();
+        if (db.VirtualFolders.Any(f => f.Name == folder.Name))
+            return false;
+        var stored = new VirtualFolder { Name = folder.Name, Description = folder.Description, Storage = folder.Storage };
+        db.VirtualFolders.Add(stored);
+        db.SaveChanges();
+        folder.Id = stored.Id;
+        Publish(new ProviderEvent(ProviderAction.Add, ProviderObjectType.VirtualFolder, stored.Name) { Object = VirtualFolderSnapshot.From(stored) });
+        return true;
+    }
+
+    public bool UpdateVirtualFolder(VirtualFolder folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder.Name))
+            return false;
+        using var db = CreateContext();
+        var stored = db.VirtualFolders.FirstOrDefault(f => f.Id == folder.Id);
+        if (stored == null || db.VirtualFolders.Any(f => f.Id != folder.Id && f.Name == folder.Name))
+            return false;
+        var before = VirtualFolderSnapshot.From(stored);
+        var storageChanged = stored.Storage != folder.Storage;
+        stored.Name = folder.Name;
+        stored.Description = folder.Description;
+        stored.Storage = folder.Storage;
+        db.SaveChanges();
+
+        var changed = ChangedFields(before, VirtualFolderSnapshot.From(stored));
+        if (storageChanged && !changed.Contains(nameof(VirtualFolderSnapshot.StorageProvider)))
+            changed.Add("Storage");
+        if (changed.Count > 0)
+            Publish(new ProviderEvent(ProviderAction.Update, ProviderObjectType.VirtualFolder, stored.Name)
+            {
+                Object = VirtualFolderSnapshot.From(stored),
+                ChangedFields = changed,
+            });
+        return true;
+    }
+
+    public bool RemoveVirtualFolder(int id)
+    {
+        using var db = CreateContext();
+        var stored = db.VirtualFolders.FirstOrDefault(f => f.Id == id);
+        if (stored == null)
+            return false;
+        // Unmount it from the users (the foreign key would do it too, but only with PRAGMA foreign_keys).
+        foreach (var user in db.Users.Where(u => u.VirtualFolders.Any(m => m.VirtualFolderId == id)).ToList())
+            user.VirtualFolders.RemoveAll(m => m.VirtualFolderId == id);
+        db.VirtualFolders.Remove(stored);
+        db.SaveChanges();
+        Publish(new ProviderEvent(ProviderAction.Delete, ProviderObjectType.VirtualFolder, stored.Name) { Object = VirtualFolderSnapshot.From(stored) });
         return true;
     }
 

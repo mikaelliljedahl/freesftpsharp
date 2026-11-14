@@ -23,11 +23,12 @@ public sealed class S3SftpServerFixture : SftpServerFixture
 {
     public string KeyPrefix { get; } = "e2e/" + Guid.NewGuid().ToString("N");
 
-    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
+    protected override IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
     {
         if (S3TestServer.Endpoint != null)
             S3TestServer.EnsureBucket(); // this fixture has its own client; on a new S3 server the bucket is missing
-        return new StorageFileSystemFactory(new StorageProviderRegistry([new S3StorageProvider(new S3ClientCache())]), new S3Resolver(S3TestServer.Options(KeyPrefix)), new EffectivePermissionsService(), connections, events);
+        return TestStorage.Factory([new S3StorageProvider(new S3ClientCache())],
+            codec => TestStorage.Fixed(codec, S3StorageProvider.ProviderName, S3TestServer.Options(KeyPrefix)), connections, events);
     }
 
     /// <summary>The object key of a virtual path such as "/dir/a.txt".</summary>
@@ -51,11 +52,6 @@ public sealed class S3SftpServerFixture : SftpServerFixture
         await base.DisposeAsync();
         if (S3TestServer.Endpoint != null)
             S3TestServer.DeletePrefix(KeyPrefix);
-    }
-
-    private sealed class S3Resolver(S3StorageOptions options) : IUserStorageResolver
-    {
-        public StorageSelection Resolve(User user) => new(S3StorageProvider.ProviderName, options);
     }
 }
 

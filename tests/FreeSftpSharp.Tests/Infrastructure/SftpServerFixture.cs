@@ -208,19 +208,21 @@ public class SftpServerFixture : IAsyncLifetime
         BanTracker = new LoginBanTracker(time);
         Connections = new ConnectionRegistry(time);
         _eventBus ??= CreateEventBus(); // one bus for all start attempts
-        return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(Connections, _eventBus), repository, BanTracker,
+        return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(Connections, _eventBus, repository), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
             Connections, _eventBus);
     }
 
     /// <summary>
     /// The storage of the users. The default is the storage of the hosts: the "local" provider at the user root
-    /// (AddSshServerStorage + AddLocalDiskStorage), with the connection registry and the event bus of the fixture.
-    /// Override it in a derived fixture.
+    /// (AddSshServerStorage + AddLocalDiskStorage), the per-user storage and the virtual folders of the repository,
+    /// with the connection registry and the event bus of the fixture. Override it in a derived fixture.
     /// </summary>
-    protected virtual IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events)
-        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(),
-            new EffectivePermissionsService(), connections, events);
+    protected virtual IFileSystemFactory CreateFileSystemFactory(IConnectionRegistry connections, IEventBus? events, ISettingsRepository repository)
+        => TestStorage.Factory(StorageProviders(), _ => new UserStorageResolver(new UserRootDefaultStorage(), repository), connections, events);
+
+    /// <summary>The storage providers of the default <see cref="CreateFileSystemFactory"/>. Override it in a derived fixture.</summary>
+    protected virtual IEnumerable<IStorageProvider> StorageProviders() => [new LocalDiskStorageProvider()];
 
     private static int GetFreeTcpPort()
     {

@@ -20,11 +20,13 @@ namespace SshServer.Settings.Sql
         /// (see <see cref="SettingsStorageOptions"/>): SQLite by default, LiteDB when <c>Settings:Provider</c> is <c>LiteDb</c>.
         /// With SQLite it registers the audit log too: <see cref="IAuditLog"/> in the same database, the
         /// <see cref="AuditSink"/> on the event bus and the nightly <see cref="AuditRetentionService"/> (<c>Audit:RetentionDays</c>).
+        /// Registers the data protection of the stored secrets too (<see cref="SecretProtection"/>).
         /// </summary>
         public static IServiceCollection AddSshServerSettings(this IServiceCollection services, IConfiguration configuration)
         {
             var options = SettingsStorageOptions.FromConfiguration(configuration);
             services.AddSingleton(options);
+            services.AddSshServerSecretProtection(configuration);
 
             switch (options.Provider)
             {

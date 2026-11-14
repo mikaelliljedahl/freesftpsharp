@@ -57,7 +57,7 @@ await new HostBuilder()
     services.AddSshServerStorage();
     services.AddLocalDiskStorage();
     services.AddS3Storage();
-    services.AddEncryptedLocalStorage(); // "local-encrypted", off until Storage:Encryption:Enabled
+    services.AddEncryptedLocalStorage(); // "local-encrypted"; the default of users without a storage configuration only with Storage:Encryption:Enabled
     services.AddHostedService<HostedServer>();
     services.AddSshServerSecurity();
     services.AddSshServerConnections();

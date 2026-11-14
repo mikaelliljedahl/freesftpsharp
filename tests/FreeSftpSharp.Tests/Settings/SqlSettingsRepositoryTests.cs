@@ -309,9 +309,11 @@ public sealed class SqlSettingsRepositoryTests : IDisposable
         Assert.True(repository.UpdateUser(user));
         Assert.Equal(SamplePermissions(), repository.GetUser("old").Permissions);
 
-        // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions.
+        // The upgrade also runs the later migrations in order: the audit table (#65) comes after the permissions, and
+        // the storage and virtual folders (#56) after it.
         using (var db = new SettingsDbContext(options))
-            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog"], db.Database.GetAppliedMigrations().TakeLast(2));
+            Assert.Equal(["20261114080103_AddUserPermissions", "20261114082326_AddAuditLog", "20261114105828_AddUserStorageAndVirtualFolders"],
+                db.Database.GetAppliedMigrations().TakeLast(3));
         var audit = new SshServer.Settings.Sql.Audit.SqlAuditLog(options);
         await audit.AppendAsync(new SshServer.Interfaces.Audit.AuditEntry { Category = "File", Type = "Upload", Status = "Ok", Username = "old" },
             TestContext.Current.CancellationToken);

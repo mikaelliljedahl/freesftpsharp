@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114082326_AddAuditLog";
+    public override string LastMigrationId => "20261114105828_AddUserStorageAndVirtualFolders";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -149,6 +149,33 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("ServerSettings");
             });
 
+        modelBuilder.Entity("SshServer.Interfaces.Storage.VirtualFolder", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Description")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT")
+                    .UseCollation("NOCASE");
+
+                b.Property<string>("Storage")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("VirtualFolders");
+            });
+
         modelBuilder.Entity("SshServer.Interfaces.User", b =>
             {
                 b.Property<int>("Id")
@@ -173,6 +200,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("RsaPublicKey")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("UserRootDirectory")
                     .HasColumnType("TEXT");
 
@@ -191,6 +221,47 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Users");
+            });
+
+        modelBuilder.Entity("SshServer.Interfaces.User", b =>
+            {
+                b.OwnsMany("SshServer.Interfaces.Storage.VirtualFolderMount", "VirtualFolders", b1 =>
+                    {
+                        b1.Property<int>("Id")
+                            .ValueGeneratedOnAdd()
+                            .HasColumnType("INTEGER");
+
+                        b1.Property<string>("MountPath")
+                            .IsRequired()
+                            .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<int>("UserId")
+                            .HasColumnType("INTEGER");
+
+                        b1.Property<int>("VirtualFolderId")
+                            .HasColumnType("INTEGER");
+
+                        b1.HasKey("Id");
+
+                        b1.HasIndex("VirtualFolderId");
+
+                        b1.HasIndex("UserId", "MountPath")
+                            .IsUnique();
+
+                        b1.ToTable("UserVirtualFolders");
+
+                        b1.WithOwner()
+                            .HasForeignKey("UserId");
+
+                        b1.HasOne("SshServer.Interfaces.Storage.VirtualFolder", null)
+                            .WithMany()
+                            .HasForeignKey("VirtualFolderId")
+                            .OnDelete(DeleteBehavior.Cascade)
+                            .IsRequired();
+                    });
+
+                b.Navigation("VirtualFolders");
             });
 #pragma warning restore 612, 618
     }
