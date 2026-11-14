@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Storage;
+using SshServer.Interfaces.Connections;
+using SshServer.Interfaces.Shares;
 using SshServer.Interfaces.Users;
 
 namespace FxSshSftpServer.WebClient
@@ -34,6 +36,9 @@ namespace FxSshSftpServer.WebClient
         public IFileSystem FileSystem { get; }
 
         public ClientPermissionMap Permissions { get; }
+
+        /// <summary>True when the storage compares paths without case (<see cref="StorageCapabilities.CaseInsensitivePaths"/>).</summary>
+        public bool CaseInsensitivePaths => (FileSystem.Capabilities & StorageCapabilities.CaseInsensitivePaths) != 0;
 
         /// <summary>The entries of a directory, directories first, then by name.</summary>
         public async Task<IReadOnlyList<FileSystemEntry>> ListAsync(string directory, CancellationToken ct)
@@ -158,6 +163,26 @@ namespace FxSshSftpServer.WebClient
             var fileSystem = await _fileSystems.CreateAsync(user, new ClientContext(ClientAuth.Protocol, remoteIp, session), ct);
             var permissions = new ClientPermissionMap(_settings.Resolve(user).Permissions, (fileSystem.Capabilities & StorageCapabilities.CaseInsensitivePaths) != 0);
             return new ClientStorage(user, session, fileSystem, permissions);
+        }
+
+        /// <summary>
+        /// The storage of the owner of a share link (#70) for a visitor: the same decorator chain for the protocol HTTPShare
+        /// and the connection of the visitor, with the permissions of the owner limited to the scope of the share
+        /// (<see cref="ShareRules.PermissionMask"/>) and the share id in the metadata of the file events. The caller checks
+        /// that a path is in the share (<see cref="SharePaths"/>).
+        /// </summary>
+        public async Task<ClientStorage> CreateForShareAsync(ShareVisit visit, Guid connection, CancellationToken ct)
+        {
+            var mask = ShareRules.PermissionMask(visit.Share.Scope, visit.Share.AllowOverwrite);
+            var context = new ClientContext(ConnectionProtocols.HttpShare, visit.RemoteIp, connection)
+            {
+                PermissionMask = mask,
+                Metadata = ShareAccess.EventMetadata(visit.Share),
+            };
+            var fileSystem = await _fileSystems.CreateAsync(visit.Owner, context, ct);
+            var permissions = new ClientPermissionMap(_settings.Resolve(visit.Owner).Permissions.Restrict(mask),
+                (fileSystem.Capabilities & StorageCapabilities.CaseInsensitivePaths) != 0);
+            return new ClientStorage(visit.Owner, connection, fileSystem, permissions);
         }
     }
 }

@@ -46,6 +46,11 @@ namespace FxSshSftpServer.WebClient
                 return new ClientLoginThrottle(new LoginThrottle(sp.GetRequiredService<TimeProvider>(), Math.Max(1, options.MaxFailedLogins),
                     TimeSpan.FromMinutes(Math.Max(1, options.LockoutMinutes))));
             });
+            // The share links (#70): off unless the web client is on and ServerSettings.Shares allows them.
+            services.AddSingleton<ShareAccess>();
+            services.AddSingleton<ShareSessions>();
+            services.AddSingleton<ShareService>();
+            services.AddSingleton<ShareRateLimiter>();
             services.AddHostedService<ClientSessionSweeper>();
 
             services.AddAuthentication().AddCookie(ClientAuth.Scheme, options =>
@@ -89,7 +94,9 @@ namespace FxSshSftpServer.WebClient
 
         /// <summary>
         /// Answers 404 for the web client when it is off, and sets the security headers of its pages: a strict CSP (no
-        /// inline script or style), no sniffing, no framing, no referrer and no caching. Put it before the admin gate.
+        /// inline script or style), no sniffing, no framing, no referrer and no caching. The same for the share links
+        /// (<c>/shares</c>, #70), which are 404 also while <see cref="ServerSettings.Shares"/> does not allow them, and have
+        /// a rate limit per client address. Put it before the admin gate.
         /// </summary>
         public static IApplicationBuilder UseWebClient(this IApplicationBuilder app)
         {
@@ -100,16 +107,25 @@ namespace FxSshSftpServer.WebClient
                 ? "The web client for SFTP users is on at /client."
                 : "The web client for SFTP users is off. Set WebClient:Enabled to true to offer it at /client.");
 
+            var shares = app.ApplicationServices.GetRequiredService<ShareAccess>();
+            var limiter = app.ApplicationServices.GetRequiredService<ShareRateLimiter>();
             return app.Use(async (HttpContext context, Func<Task> next) =>
             {
-                if (!IsClientPath(context.Request.Path))
+                var isShare = ShareAccess.IsSharePath(context.Request.Path);
+                if (!isShare && !IsClientPath(context.Request.Path))
                 {
                     await next();
                     return;
                 }
-                if (!enabled)
+                if (!enabled || (isShare && !shares.Enabled))
                 {
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                if (isShare && !limiter.TryAcquire(context.Connection.RemoteIpAddress?.ToString()))
+                {
+                    context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                    context.Response.Headers.RetryAfter = "60";
                     return;
                 }
                 if (!context.Request.IsHttps && !options.AllowInsecureHttp && !IsLocal(context.Connection.RemoteIpAddress))
@@ -135,6 +151,7 @@ namespace FxSshSftpServer.WebClient
         public static IEndpointRouteBuilder MapWebClient(this IEndpointRouteBuilder endpoints)
         {
             endpoints.MapClientApi();
+            endpoints.MapShareApi();
             return endpoints;
         }
 
@@ -185,19 +202,21 @@ namespace FxSshSftpServer.WebClient
         }
     }
 
-    /// <summary>Ends the idle web client sessions and aborts the idle uploads, once a minute.</summary>
+    /// <summary>Ends the idle web client and share sessions and aborts the idle uploads, once a minute.</summary>
     public sealed class ClientSessionSweeper : BackgroundService
     {
         private readonly ClientSessions _sessions;
         private readonly UploadSessions _uploads;
+        private readonly ShareSessions _shares;
         private readonly TimeProvider _time;
         private readonly bool _enabled;
         private readonly ILogger<ClientSessionSweeper> _logger;
 
-        public ClientSessionSweeper(ClientSessions sessions, UploadSessions uploads, TimeProvider time, IOptions<WebClientOptions> options,
-            ILogger<ClientSessionSweeper> logger)
+        public ClientSessionSweeper(ClientSessions sessions, UploadSessions uploads, ShareSessions shares, TimeProvider time,
+            IOptions<WebClientOptions> options, ILogger<ClientSessionSweeper> logger)
         {
             _sessions = sessions;
+            _shares = shares;
             _uploads = uploads;
             _time = time;
             _enabled = options.Value.Enabled;
@@ -216,6 +235,7 @@ namespace FxSshSftpServer.WebClient
                     try
                     {
                         _sessions.Sweep();
+                        _shares.Sweep();
                         await _uploads.SweepAsync();
                     }
                     catch (Exception ex)
