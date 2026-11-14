@@ -53,7 +53,9 @@ done
 
 # The user, through node A: the same settings database as both nodes.
 printf '%s\n' "$password" | "${compose[@]}" exec -T node-a freesftpsharp-user add alice --root /data/files/alice --password-stdin
-"${compose[@]}" exec -T node-b freesftpsharp-user list | grep -qw alice || { echo "node B does not list alice"; exit 1; }
+# Captured first: with pipefail, "cmd | grep -q" fails when grep exits early and cmd gets SIGPIPE.
+users="$("${compose[@]}" exec -T node-b freesftpsharp-user list)"
+grep -qw alice <<<"$users" || { echo "node B does not list alice: $users"; exit 1; }
 echo "user created on node A, seen by node B"
 
 # The password goes to ssh through SSH_ASKPASS, no sshpass needed.
@@ -76,15 +78,21 @@ cmp "$work/up.txt" "$work/down.txt"
 "${compose[@]}" exec -T node-b test -f /data/files/alice/up.txt
 echo "sftp upload and download through HAProxy ok"
 
-# Several logins: HAProxy (leastconn) gives them to both nodes.
-for i in $(seq 1 6); do
-    sftp -q -P 2222 "${ssh_options[@]}" alice@127.0.0.1 >/dev/null 2>&1 <<SFTP
+# Several logins: HAProxy (leastconn) gives them to both nodes, once its health checks have both nodes up.
+served=""
+for i in $(seq 1 40); do
+    sftp -q -P 2222 "${ssh_options[@]}" alice@127.0.0.1 >/dev/null 2>&1 <<SFTP || true
 get up.txt $work/again-$i.txt
 SFTP
+    served=""
+    for node in node-a node-b; do
+        log="$("${compose[@]}" logs --no-color "$node" 2>&1)"
+        grep -q "LoginOk user alice" <<<"$log" && served="$served $node"
+    done
+    [ "$served" = " node-a node-b" ] && break
+    sleep 1
 done
-for node in node-a node-b; do
-    "${compose[@]}" logs --no-color "$node" 2>&1 | grep -q "alice" || { echo "$node has no login of alice in its log"; exit 1; }
-done
+[ "$served" = " node-a node-b" ] || { echo "not both nodes served a login of alice (only:$served)"; exit 1; }
 echo "both nodes served logins"
 
 # An open session on one node is listed by the other nodes too (the Connections table), with the client address of the
@@ -107,5 +115,14 @@ wait "$session" || true
 [ "${listed:-0}" = 1 ] || { echo "the open session is not in GET /api/v1/connections: $connections"; exit 1; }
 if grep -q '172\.28\.0\.10:' <<<"$connections"; then echo "a node has the address of HAProxy instead of the client: $connections"; exit 1; fi
 echo "the open session is listed with the client address"
+
+# No node logged an error or a fatal error (for example a failed start that the restart policy hid).
+for node in node-a node-b; do
+    log="$("${compose[@]}" logs --no-color "$node" 2>&1)"
+    if grep -E "\[[0-9:]+ (ERR|FTL)\]|Unhandled exception" <<<"$log"; then echo "$node logged an error"; exit 1; fi
+    restarts="$(docker inspect -f '{{.RestartCount}}' "$("${compose[@]}" ps -q "$node")")"
+    [ "$restarts" = 0 ] || { echo "$node restarted $restarts time(s)"; exit 1; }
+done
+echo "no errors in the node logs"
 
 echo "cluster e2e ok"
