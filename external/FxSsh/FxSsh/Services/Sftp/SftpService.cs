@@ -112,6 +112,16 @@ namespace FxSsh.Services.Sftp
         private readonly ISftpFileSystem _fileSystem;
         private readonly Dictionary<string, HandleEntry> _mapOfHandle = [];
         private readonly CancellationTokenSource _cancellationTokenSource = new();
+        private readonly CancellationToken _cancellation;
+
+        // Request lanes (see Enqueue): the requests of one handle run in
+        // order, the other requests in one more lane; the lanes run
+        // concurrently once a request goes asynchronous.
+        private readonly object _laneLock = new();
+        private readonly Dictionary<string, Lane> _lanes = [];
+        private int _pendingRequests;
+        private long _pendingRequestBytes;
+        private TaskCompletionSource _idle = CompletedSource();
 
         private byte[] _pendingBytes;
         private int _handleCursor;
@@ -177,6 +187,7 @@ namespace FxSsh.Services.Sftp
             ArgumentNullException.ThrowIfNull(fileSystem);
             _fileSystem = fileSystem;
             IsReadOnly = readOnly;
+            _cancellation = _cancellationTokenSource.Token;
         }
 
         /// <summary>
@@ -218,7 +229,11 @@ namespace FxSsh.Services.Sftp
             // queued responses, then echoes EOF and closes our side carrying
             // exit-status 0 (RFC 4254 6.10) so clients such as scp observe a
             // successful subsystem exit instead of an unknown (-1) status.
-            channel.EofReceived += (_, _) => outbound.Writer.TryComplete();
+            // The requests before the EOF can still be running, so the queue
+            // is completed when they have answered.
+            channel.EofReceived += (_, _) => WhenIdle().ContinueWith(
+                _ => outbound.Writer.TryComplete(), CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             channel.CloseReceived += (_, _) => OnClose();
             // A lost connection force-closes the channel without a peer
             // CLOSE: release the open handles here, or the files stay open
@@ -226,7 +241,13 @@ namespace FxSsh.Services.Sftp
             channel.ForceClosed += (_, _) =>
             {
                 outbound.Writer.TryComplete();
-                CloseAllHandles();
+                // Cancel the waiting requests and release the handles when
+                // the running ones have stopped, so that no request uses a
+                // handle while it is aborted.
+                _cancellationTokenSource.Cancel();
+                WhenIdle().ContinueWith(
+                    _ => CloseAllHandles(), CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             };
 
             DataReceived += (_, packet) => outbound.Writer.TryWrite(packet);
@@ -311,7 +332,7 @@ namespace FxSsh.Services.Sftp
                     ? _pendingBytes[frameLength..]
                     : null;
 
-                ProcessRequest(new SshDataReader(payload));
+                Enqueue(payload);
             }
         }
 
@@ -324,6 +345,9 @@ namespace FxSsh.Services.Sftp
         public void OnClose()
         {
             _cancellationTokenSource.Cancel();
+            // The cancelled requests stop at once; a running storage call
+            // ends before its handle is closed.
+            WhenIdle().Wait();
             CloseAllHandles();
             CloseReceived?.Invoke(this, 0);
         }
@@ -337,6 +361,7 @@ namespace FxSsh.Services.Sftp
         /// <summary>Release every open handle (session teardown); a file that the client did not close is aborted.</summary>
         public void Dispose()
         {
+            _cancellationTokenSource.Cancel();
             CloseAllHandles();
             _cancellationTokenSource.Dispose();
         }
@@ -356,9 +381,155 @@ namespace FxSsh.Services.Sftp
             }
         }
 
+        #region Request lanes
+
+        /// <summary>
+        /// Upper bounds for the requests that are received but not answered.
+        /// Above them <see cref="OnData"/> waits, so the channel window is not
+        /// adjusted and the client stops sending (the flow control that the
+        /// serial engine had by blocking the receive loop).
+        /// </summary>
+        private const int MaxPendingRequests = 1024;
+        private const long MaxPendingRequestBytes = 16L * 1024 * 1024;
+
+        /// <summary>The key of the lane for the requests without a handle.</summary>
+        private const string PathLaneKey = "";
+
+        private sealed class Lane
+        {
+            public readonly Queue<ReadOnlyMemory<byte>> Requests = new();
+            public bool Running;
+        }
+
+        private static TaskCompletionSource CompletedSource()
+        {
+            var source = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            source.SetResult();
+            return source;
+        }
+
+        /// <summary>Completes when every received request has been answered.</summary>
+        private Task WhenIdle()
+        {
+            lock (_laneLock)
+                return _idle.Task;
+        }
+
+        /// <summary>
+        /// Queues a request in its lane. Draft section 6: the server may
+        /// answer requests in any order, but the requests of one file must be
+        /// handled in the order they were received. The requests on a handle
+        /// (READ, WRITE, FSTAT, FSETSTAT, READDIR, CLOSE, fsync) go to the lane
+        /// of that handle; every other request goes to one lane for paths,
+        /// in order. A lane runs on the caller's thread until a request does
+        /// not complete synchronously (for example a READ or WRITE of an
+        /// <see cref="ISftpAsyncFileHandle"/> that waits for a bandwidth
+        /// limit); it then continues on the thread pool and the next
+        /// requests of the other lanes are handled meanwhile. With a
+        /// synchronous file system the engine is as serial as before.
+        /// </summary>
+        private void Enqueue(ReadOnlyMemory<byte> payload)
+        {
+            var key = LaneKey(payload);
+            Lane lane;
+            lock (_laneLock)
+            {
+                while ((_pendingRequests >= MaxPendingRequests || _pendingRequestBytes >= MaxPendingRequestBytes) &&
+                       !_cancellation.IsCancellationRequested)
+                    Monitor.Wait(_laneLock);
+
+                if (_pendingRequests++ == 0)
+                    _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _pendingRequestBytes += payload.Length;
+
+                if (!_lanes.TryGetValue(key, out lane))
+                    _lanes.Add(key, lane = new Lane());
+                lane.Requests.Enqueue(payload);
+                if (lane.Running)
+                    return;
+                lane.Running = true;
+            }
+
+            _ = RunLaneAsync(key, lane);
+        }
+
+        private async Task RunLaneAsync(string key, Lane lane)
+        {
+            while (true)
+            {
+                ReadOnlyMemory<byte> payload;
+                lock (_laneLock)
+                {
+                    if (lane.Requests.Count == 0)
+                    {
+                        lane.Running = false;
+                        _lanes.Remove(key);
+                        return;
+                    }
+                    payload = lane.Requests.Dequeue();
+                }
+
+                try
+                {
+                    // After a close the handles are gone and a wait is
+                    // cancelled at once, so the rest of the lane ends fast.
+                    await ProcessRequestAsync(new SshDataReader(payload));
+                }
+                catch (Exception ex)
+                {
+                    Log.Fail("SFTP request handling failed.", ex);
+                }
+                finally
+                {
+                    lock (_laneLock)
+                    {
+                        _pendingRequestBytes -= payload.Length;
+                        if (--_pendingRequests == 0)
+                            _idle.TrySetResult();
+                        Monitor.PulseAll(_laneLock);
+                    }
+                }
+            }
+        }
+
+        /// <summary>The handle of a request on a handle, else <see cref="PathLaneKey"/>.</summary>
+        private static string LaneKey(ReadOnlyMemory<byte> payload)
+        {
+            try
+            {
+                var reader = new SshDataReader(payload);
+                var packetType = reader.ReadByte();
+                switch (packetType)
+                {
+                    case SSH_FXP_CLOSE:
+                    case SSH_FXP_READ:
+                    case SSH_FXP_WRITE:
+                    case SSH_FXP_FSTAT:
+                    case SSH_FXP_FSETSTAT:
+                    case SSH_FXP_READDIR:
+                        reader.ReadUInt32(); // request id
+                        return "h" + reader.ReadString(Encoding.ASCII);
+                    case SSH_FXP_EXTENDED:
+                        reader.ReadUInt32();
+                        return reader.ReadString(Encoding.ASCII) == FsyncExtension
+                            ? "h" + reader.ReadString(Encoding.ASCII)
+                            : PathLaneKey;
+                    default:
+                        return PathLaneKey;
+                }
+            }
+            catch (Exception)
+            {
+                // A malformed request: the path lane answers it with an error.
+                return PathLaneKey;
+            }
+        }
+
+        #endregion
+
         #region Request dispatch
 
-        private void ProcessRequest(SshDataReader reader)
+        private async Task ProcessRequestAsync(SshDataReader reader)
         {
             var packetType = reader.ReadByte();
             var requestId = 0u;
@@ -376,8 +547,8 @@ namespace FxSsh.Services.Sftp
                     case SSH_FXP_INIT: ProcessInit(reader); break;
                     case SSH_FXP_OPEN: ProcessOpen(reader, requestId); break;
                     case SSH_FXP_CLOSE: ProcessClose(reader, requestId); break;
-                    case SSH_FXP_READ: ProcessRead(reader, requestId); break;
-                    case SSH_FXP_WRITE: ProcessWrite(reader, requestId); break;
+                    case SSH_FXP_READ: await ProcessReadAsync(reader, requestId); break;
+                    case SSH_FXP_WRITE: await ProcessWriteAsync(reader, requestId); break;
                     case SSH_FXP_LSTAT: ProcessStat(reader, requestId, followLinks: false); break;
                     case SSH_FXP_STAT: ProcessStat(reader, requestId, followLinks: true); break;
                     case SSH_FXP_FSTAT: ProcessFStat(reader, requestId); break;
@@ -426,6 +597,10 @@ namespace FxSsh.Services.Sftp
         {
             switch (ex)
             {
+                case OperationCanceledException:
+                    // The session closed while the request waited.
+                    Log.Debug($"SFTP request cancelled by the session close (type 0x{packetType:X}, id {requestId}).");
+                    break;
                 case FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException or ArgumentException or NotSupportedException:
                     Log.Debug($"SFTP request failed (type 0x{packetType:X}, id {requestId}): {ex.GetType().Name}: {ex.Message}");
                     break;
@@ -516,7 +691,7 @@ namespace FxSsh.Services.Sftp
             }
         }
 
-        private void ProcessRead(SshDataReader reader, uint requestId)
+        private async Task ProcessReadAsync(SshDataReader reader, uint requestId)
         {
             var handle = reader.ReadString(Encoding.ASCII);
             var offset = reader.ReadUInt64();
@@ -533,14 +708,16 @@ namespace FxSsh.Services.Sftp
             }
 
             var buffer = new byte[Math.Min(length, (uint)MaxReadLength)];
-            var readLength = entry.FileHandle.Read((long)offset, buffer);
+            var readLength = entry.FileHandle is ISftpAsyncFileHandle asyncHandle
+                ? await asyncHandle.ReadAsync((long)offset, buffer, _cancellation)
+                : entry.FileHandle.Read((long)offset, buffer);
             if (readLength > 0)
                 SendData(requestId, buffer.AsMemory()[..readLength]);
             else
                 SendStatus(requestId, SSH_FX_EOF, "", "");
         }
 
-        private void ProcessWrite(SshDataReader reader, uint requestId)
+        private async Task ProcessWriteAsync(SshDataReader reader, uint requestId)
         {
             var handle = reader.ReadString(Encoding.ASCII);
             var offset = reader.ReadUInt64();
@@ -559,7 +736,10 @@ namespace FxSsh.Services.Sftp
                 return;
             }
 
-            entry.FileHandle.Write((long)offset, data);
+            if (entry.FileHandle is ISftpAsyncFileHandle asyncHandle)
+                await asyncHandle.WriteAsync((long)offset, data, _cancellation);
+            else
+                entry.FileHandle.Write((long)offset, data);
             SendStatus(requestId, SSH_FX_OK, "", "");
         }
 
