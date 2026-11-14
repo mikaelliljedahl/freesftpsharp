@@ -46,6 +46,9 @@ public enum TransferDirection
 public static class ConnectionProtocols
 {
     public const string Sftp = "SFTP";
+
+    /// <summary>A browser session of the web client (#69); one connection per login.</summary>
+    public const string Http = "HTTP";
 }
 
 public enum ConnectionEventKind

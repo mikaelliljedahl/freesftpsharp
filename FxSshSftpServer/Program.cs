@@ -25,6 +25,7 @@ using SshServer.EventRules;
 using SshServer.Observability;
 
 using FxSshSftpServer.Security;
+using FxSshSftpServer.WebClient;
 
 if (FxSsh.SshServerModule.Cli.VersionCommand.IsRequested(args))
 {
@@ -61,6 +62,7 @@ builder.Services.AddRazorPages();
 Log.Debug("AddAdminAuthentication...");
 builder.Services.AddAdminAuthentication(builder.Configuration);
 builder.Services.AddServerDataProtection(builder.Configuration); // also encrypts the webhook, storage and TOTP secrets
+builder.Services.AddWebClient(builder.Configuration); // the web client of the SFTP users (#69) at /client: off unless WebClient:Enabled
 
 Log.Debug("AddRazorComponents...");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -94,6 +96,9 @@ var app = builder.Build();
 
 app.UseSshServerObservability(); // before the login: probes and scrapers have no cookie
 
+// The web client: 404 when it is off, its security headers when it is on. Before the admin gate: it needs no administrator.
+app.UseWebClient();
+
 // Without an admin credential the whole UI answers 503 (the SSH server still runs).
 app.UseAdminUiRequiresCredential();
 
@@ -117,7 +122,8 @@ app.UseAntiforgery();
 
 // The CSS, fonts and scripts (wwwroot and _framework/blazor.web.js) are local files; the login page needs them before a login.
 app.MapStaticAssets().AllowAnonymous();
-app.MapRazorPages(); // Login, Logout, Error
+app.MapRazorPages(); // Login, Logout, Error, and the pages of the web client (Pages/Client)
+app.MapWebClient(); // the endpoints of the web client (/client/api)
 app.MapRazorComponents<FxSshSftpServer.Components.App>()
     .AddInteractiveServerRenderMode(); // also maps the Blazor hub (/_blazor); the fallback policy needs a login for it
 
