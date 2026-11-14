@@ -1,4 +1,11 @@
+using System.Net;
 using FreeSftpSharp.Tests.Infrastructure;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection;
+using SshServer.Interfaces.Cluster;
+using SshServer.Interfaces.Connections;
+using SshServer.Settings.Sql.Cluster;
+using SshServer.Settings.Sql.Database;
 using Microsoft.EntityFrameworkCore;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Admins;
@@ -264,5 +271,109 @@ public sealed class SettingsProviderTests
 
         Assert.Equal(1, await log.DeleteOlderThanAsync(Now.AddDays(-90), Ct));
         Assert.Equal(1, (await log.QueryAsync(new AuditQuery(), Ct)).TotalCount);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Shared_bans_are_stored_listed_lifted_and_expire(string provider)
+    {
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var repository = Repository(db);
+        var store = new SqlIpBanStore(db.Options);
+        var now = new DateTimeOffset(Now);
+        await store.AddAsync(new IpBan(IPAddress.Parse("203.0.113.7"), now, now.AddMinutes(10), 5), Ct);
+        await store.AddAsync(new IpBan(IPAddress.Parse("2001:db8::7"), now, now.AddMinutes(1), 3), Ct);
+        await store.AddAsync(new IpBan(IPAddress.Parse("203.0.113.7"), now, now.AddMinutes(20), 6), Ct); // replaces
+
+        var active = await new SqlIpBanStore(db.Options).ListActiveAsync(now.AddMinutes(5), Ct);
+        var ban = Assert.Single(active);
+        Assert.Equal(IPAddress.Parse("203.0.113.7"), ban.Address);
+        Assert.Equal(now.AddMinutes(20), ban.ExpiresAt);
+        Assert.Equal(6, ban.FailedAttempts);
+
+        Assert.Equal(1, await store.RemoveExpiredAsync(now.AddMinutes(5), Ct));
+        await store.RemoveAsync(IPAddress.Parse("203.0.113.7"), Ct);
+        Assert.Empty(await store.ListActiveAsync(now, Ct));
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Nodes_store_their_connections_take_their_disconnect_requests_and_stale_nodes_are_removed(string provider)
+    {
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var repository = Repository(db);
+        var store = new SqlClusterStore(db.Options);
+        var now = new DateTimeOffset(Now);
+        var connection = new ConnectionInfo(Guid.NewGuid(), ConnectionProtocols.Sftp, "203.0.113.7:50123", "SSH-2.0-Test", now.AddMinutes(-1),
+            now, "Grace", now.AddSeconds(-50), "password",
+            [new ActiveTransfer(Guid.NewGuid(), "/in/file.bin", TransferDirection.Upload, 4096, now.AddSeconds(-5))]);
+
+        await store.HeartbeatAsync(new NodeInfo("node-a", "host-a", "1.0", now.AddHours(-1), now), [connection], Ct);
+        await store.HeartbeatAsync(new NodeInfo("node-b", "host-b", "1.0", now.AddHours(-1), now.AddMinutes(-10)), [connection with { Id = Guid.NewGuid() }], Ct);
+
+        var listed = Assert.Single(await store.ListConnectionsAsync(now.AddMinutes(-1), Ct)); // node-b is not alive
+        Assert.Equal(connection.Id, listed.Id);
+        Assert.Equal("node-a", listed.Node);
+        Assert.Equal("Grace", listed.Username);
+        Assert.Equal(connection.AuthenticatedAt, listed.AuthenticatedAt);
+        Assert.Equal(4096, Assert.Single(listed.Transfers).Bytes);
+
+        // The next heartbeat replaces the connections of the node.
+        await store.HeartbeatAsync(new NodeInfo("node-a", "host-a", "1.0", now.AddHours(-1), now.AddSeconds(5)), [], Ct);
+        Assert.Empty(await store.ListConnectionsAsync(now.AddMinutes(-1), Ct));
+
+        await store.RequestDisconnectAsync("node-a", connection.Id, "Closed by node B.", now, Ct);
+        var request = Assert.Single(await store.TakeDisconnectRequestsAsync("node-a", Ct));
+        Assert.Equal(connection.Id, request.ConnectionId);
+        Assert.Equal("Closed by node B.", request.Reason);
+        Assert.Empty(await store.TakeDisconnectRequestsAsync("node-a", Ct));
+
+        Assert.Equal(1, await store.RemoveStaleNodesAsync(now.AddMinutes(-1), Ct));
+        Assert.Equal("node-a", Assert.Single(await store.ListNodesAsync(Ct)).NodeId);
+        await store.RemoveNodeAsync("node-a", Ct);
+        Assert.Empty(await store.ListNodesAsync(Ct));
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_settings_version_grows_with_every_change(string provider)
+    {
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var repository = Repository(db);
+        var nodeA = new SqlClusterStore(db.Options);
+        var nodeB = new SqlClusterStore(db.Options);
+
+        Assert.Equal(0, await nodeA.GetAsync(Ct));
+        await nodeA.BumpAsync(Ct);
+        await nodeB.BumpAsync(Ct);
+        await Task.WhenAll(nodeA.BumpAsync(Ct), nodeB.BumpAsync(Ct));
+
+        Assert.Equal(4, await nodeB.GetAsync(Ct));
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Data_protection_keys_in_the_database_are_shared_by_the_nodes(string provider)
+    {
+        await using var db = await TestDatabase.CreateAsync(provider);
+        using var repository = Repository(db);
+
+        string protectedText;
+        using (var nodeA = DataProtection(db))
+            protectedText = nodeA.GetRequiredService<IDataProtectionProvider>().CreateProtector("test").Protect("secret");
+        using var nodeB = DataProtection(db);
+
+        Assert.Equal("secret", nodeB.GetRequiredService<IDataProtectionProvider>().CreateProtector("test").Unprotect(protectedText));
+        await using var context = new SettingsDbContext(db.Options);
+        Assert.Equal(1, await context.DataProtectionKeys.CountAsync(Ct));
+    }
+
+    private static ServiceProvider DataProtection(TestDatabase db)
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton<ISettingsRepository>(_ => new SqlSettingsRepository(db.Options, createHostKey: () => TestCredentials.HostKey));
+        services.AddSingleton(new SettingsDatabase(db.ProviderName, db.Options));
+        services.AddDataProtection().SetApplicationName("FreeSftpSharp.Tests").PersistKeysToSettingsDatabase();
+        return services.BuildServiceProvider();
     }
 }

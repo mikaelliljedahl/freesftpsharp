@@ -15,11 +15,12 @@ namespace SshServer.Administration
     /// </summary>
     public sealed class ScopedConnections
     {
-        private readonly IConnectionRegistry _registry;
+        private readonly IClusterConnections _registry;
         private readonly CurrentAdmin _current;
         private readonly AdminScopedSettingsRepository _scope;
 
-        public ScopedConnections(IConnectionRegistry registry, CurrentAdmin current, AdminScopedSettingsRepository scope)
+        /// <param name="registry">The connections of every node (issue #75; on one node the registry).</param>
+        public ScopedConnections(IClusterConnections registry, CurrentAdmin current, AdminScopedSettingsRepository scope)
         {
             _registry = registry;
             _current = current;

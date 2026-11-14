@@ -5780,6 +5780,12 @@
             "items": {
               "$ref": "#/components/schemas/ActiveTransfer"
             }
+          },
+          "node": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

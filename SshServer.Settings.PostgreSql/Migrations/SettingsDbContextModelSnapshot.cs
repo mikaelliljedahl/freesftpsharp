@@ -17,7 +17,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114133916_InitialCreate";
+    public override string LastMigrationId => "20261114135343_InitialCreate";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -743,6 +743,172 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.HasKey("Id");
 
                 b.ToTable("ApiSigningKeys");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.BannedIpRow", b =>
+            {
+                b.Property<string>("Address")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<DateTime>("BannedUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTime>("ExpiresUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("FailedAttempts")
+                    .HasColumnType("integer");
+
+                b.HasKey("Address");
+
+                b.HasIndex("ExpiresUtc");
+
+                b.ToTable("BannedIps");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.ConnectionRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("AuthMethod")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<DateTime?>("AuthenticatedUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("ClientVersion")
+                    .HasMaxLength(256)
+                    .HasColumnType("character varying(256)");
+
+                b.Property<DateTime>("ConnectedUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTime>("LastActivityUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("NodeId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<string>("Protocol")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("RemoteEndPoint")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<string>("Transfers")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(256)
+                    .HasColumnType("character varying(256)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("NodeId");
+
+                b.ToTable("Connections");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.DataProtectionKeyRow", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("FriendlyName")
+                    .HasMaxLength(256)
+                    .HasColumnType("character varying(256)");
+
+                b.Property<string>("Xml")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.HasKey("Id");
+
+                b.ToTable("DataProtectionKeys");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.DisconnectRequestRow", b =>
+            {
+                var id = b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("bigint");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<Guid>("ConnectionId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTime>("CreatedUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("NodeId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<string>("Reason")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("NodeId");
+
+                b.ToTable("DisconnectRequests");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.NodeRow", b =>
+            {
+                b.Property<string>("NodeId")
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<string>("Hostname")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("character varying(256)");
+
+                b.Property<DateTime>("LastSeenUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTime>("StartedUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Version")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.HasKey("NodeId");
+
+                b.ToTable("Nodes");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.SettingsVersionRow", b =>
+            {
+                b.Property<int>("Id")
+                    .HasColumnType("integer");
+
+                b.Property<long>("Version")
+                    .HasColumnType("bigint");
+
+                b.HasKey("Id");
+
+                b.ToTable("SettingsVersions");
             });
 
         modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>

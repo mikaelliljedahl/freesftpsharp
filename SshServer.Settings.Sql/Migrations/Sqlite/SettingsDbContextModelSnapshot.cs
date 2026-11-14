@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114132148_AddApiKeys";
+    public override string LastMigrationId => "20261114135346_AddClusterState";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -62,7 +62,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(256)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.HasKey("Id");
 
@@ -88,7 +89,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.HasKey("Id");
 
@@ -125,7 +127,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.Property<string>("Prefix")
                     .IsRequired()
@@ -254,7 +257,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.Property<string>("TimeZone")
                     .HasMaxLength(128)
@@ -341,7 +345,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.Property<string>("PathFilters")
                     .HasColumnType("TEXT");
@@ -440,7 +445,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(256)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.Property<string>("Storage")
                     .IsRequired()
@@ -544,7 +550,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(256)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.PrimitiveCollection<string>("WhitelistedIps")
                     .HasColumnType("TEXT");
@@ -590,7 +597,8 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(100)
                     .HasColumnType("TEXT")
-                    .UseCollation("NOCASE");
+                    .UseCollation("NOCASE")
+                    .HasAnnotation("FreeSftpSharp:CaseInsensitive", true);
 
                 b.Property<bool>("OnlyForEventRules")
                     .HasColumnType("INTEGER");
@@ -712,6 +720,168 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.HasKey("Id");
 
                 b.ToTable("ApiSigningKeys");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.BannedIpRow", b =>
+            {
+                b.Property<string>("Address")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("BannedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("ExpiresUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("FailedAttempts")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Address");
+
+                b.HasIndex("ExpiresUtc");
+
+                b.ToTable("BannedIps");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.ConnectionRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AuthMethod")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime?>("AuthenticatedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("ClientVersion")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("ConnectedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("LastActivityUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("NodeId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Protocol")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("RemoteEndPoint")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Transfers")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("NodeId");
+
+                b.ToTable("Connections");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.DataProtectionKeyRow", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("FriendlyName")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Xml")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.ToTable("DataProtectionKeys");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.DisconnectRequestRow", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<Guid>("ConnectionId")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("CreatedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("NodeId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Reason")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("NodeId");
+
+                b.ToTable("DisconnectRequests");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.NodeRow", b =>
+            {
+                b.Property<string>("NodeId")
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Hostname")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("LastSeenUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("StartedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Version")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("NodeId");
+
+                b.ToTable("Nodes");
+            });
+
+        modelBuilder.Entity("SshServer.Settings.Sql.Cluster.SettingsVersionRow", b =>
+            {
+                b.Property<int>("Id")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("Version")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.ToTable("SettingsVersions");
             });
 
         modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>

@@ -19,6 +19,7 @@ using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServerModule.Cluster;
 using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
@@ -86,6 +87,7 @@ await new HostBuilder()
     services.AddSshServerSecurity();
     services.AddSshServerConnections();
     services.AddSshServerListenOptions();
+    services.AddSshServerCluster(hostContext.Configuration); // several nodes on one database (#75): off until Cluster:Enabled
 })
 .RunConsoleAsync();
 

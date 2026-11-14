@@ -17,6 +17,8 @@ namespace SshServerModule.Connections
         {
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IConnectionRegistry, ConnectionRegistry>();
+            // The connections of every node: on one node the registry (AddSshServerCluster replaces it with Cluster:Enabled).
+            services.TryAddSingleton<IClusterConnections, LocalClusterConnections>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, DisabledUserDisconnector>());
             return services;
         }

@@ -23,6 +23,8 @@ using SshServer.Interfaces.TwoFactor;
 using SshServer.Settings.Sql.TwoFactor;
 using Microsoft.Extensions.Options;
 using SshServer.Settings.Sql.Database;
+using SshServer.Settings.Sql.Cluster;
+using SshServer.Interfaces.Cluster;
 
 namespace SshServer.Settings.Sql
 {
@@ -117,6 +119,11 @@ namespace SshServer.Settings.Sql
                 sp.GetRequiredService<ISettingsRepository>(); // creates and migrates the database
                 return new SqlTwoFactorStore(Db(sp));
             });
+            // The shared state of several nodes (#75); used only with Cluster:Enabled (AddSshServerCluster).
+            services.TryAddSingleton(sp => new SqlClusterStore(Db(sp)));
+            services.TryAddSingleton<IClusterStore>(sp => sp.GetRequiredService<SqlClusterStore>());
+            services.TryAddSingleton<ISettingsVersionStore>(sp => sp.GetRequiredService<SqlClusterStore>());
+            services.TryAddSingleton<IIpBanStore>(sp => new SqlIpBanStore(Db(sp)));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IEventSink, AuditSink>());
             services.TryAddSingleton(TimeProvider.System);
             services.AddOptions<AuditOptions>().Configure(o => AuditOptions.Bind(o, configuration)).ValidateOnStart();

@@ -24,7 +24,11 @@ public sealed record ConnectionInfo(
     string? Username,
     DateTimeOffset? AuthenticatedAt,
     string? AuthMethod,
-    IReadOnlyList<ActiveTransfer> Transfers);
+    IReadOnlyList<ActiveTransfer> Transfers)
+{
+    /// <summary>The node that has the connection (<c>Cluster:NodeId</c>, issue #75); null on a single node.</summary>
+    public string? Node { get; init; }
+}
 
 /// <summary>A file that a connection reads or writes now.</summary>
 /// <param name="Id">The id of the transfer.</param>

@@ -17,6 +17,7 @@ using SshServer.Interfaces.Storage;
 using SshServer.Interfaces.Webhooks;
 using SshServer.Settings.Sql.Quotas;
 using SshServer.Settings.Sql.TwoFactor;
+using SshServer.Settings.Sql.Cluster;
 
 namespace SshServer.Settings.Sql;
 
@@ -32,7 +33,9 @@ namespace SshServer.Settings.Sql;
 /// the administrators (<see cref="Admin"/>), the scope roles (<see cref="Role"/>, referenced by
 /// <see cref="User.RoleId"/> and <see cref="Admin.ScopeRoleId"/>), the event rules with their runs
 /// (<see cref="EventRule"/>, <see cref="EventRuleRun"/>; conditions and actions as JSON text columns), the REST API keys
-/// (<see cref="ApiKey"/>, removed with their administrator) and the signing key of the API tokens (#67) are in the same database.
+/// (<see cref="ApiKey"/>, removed with their administrator) and the signing key of the API tokens (#67) are in the same database,
+/// and so is the shared state of several nodes (#75): the bans, the nodes with their connections and disconnect requests,
+/// the settings version and the data protection keys.
 /// <para>
 /// A <see cref="StorageConfig"/> (the storage of a user or of a <see cref="VirtualFolder"/>) is a JSON text column
 /// (<c>{"Provider":"s3","Options":"{...}"}</c>); its secrets are already encrypted. The mounts of a user
@@ -78,6 +81,12 @@ public class SettingsDbContext : DbContext
     public DbSet<EventRule> EventRules => Set<EventRule>();
     public DbSet<EventRuleRun> EventRuleRuns => Set<EventRuleRun>();
     public DbSet<QuotaUsageRow> QuotaUsages => Set<QuotaUsageRow>();
+    public DbSet<BannedIpRow> BannedIps => Set<BannedIpRow>();
+    public DbSet<NodeRow> Nodes => Set<NodeRow>();
+    public DbSet<ConnectionRow> Connections => Set<ConnectionRow>();
+    public DbSet<DisconnectRequestRow> DisconnectRequests => Set<DisconnectRequestRow>();
+    public DbSet<SettingsVersionRow> SettingsVersions => Set<SettingsVersionRow>();
+    public DbSet<DataProtectionKeyRow> DataProtectionKeys => Set<DataProtectionKeyRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -202,6 +211,64 @@ public class SettingsDbContext : DbContext
             b.ToTable("QuotaUsages");
             b.HasKey(q => q.Scope);
             b.Property(q => q.Scope).HasMaxLength(300);
+        });
+
+        // The shared state of several nodes (issue #75). No foreign keys: each node writes only its own rows, and the
+        // rows of a node are removed together (at its stop, or when its heartbeat is too old).
+        modelBuilder.Entity<BannedIpRow>(b =>
+        {
+            b.ToTable("BannedIps");
+            b.HasKey(r => r.Address);
+            b.Property(r => r.Address).HasMaxLength(64);
+            b.HasIndex(r => r.ExpiresUtc);
+        });
+
+        modelBuilder.Entity<NodeRow>(b =>
+        {
+            b.ToTable("Nodes");
+            b.HasKey(r => r.NodeId);
+            b.Property(r => r.NodeId).HasMaxLength(128);
+            b.Property(r => r.Hostname).IsRequired().HasMaxLength(256);
+            b.Property(r => r.Version).IsRequired().HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<ConnectionRow>(b =>
+        {
+            b.ToTable("Connections");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Id).ValueGeneratedNever();
+            b.Property(r => r.NodeId).IsRequired().HasMaxLength(128);
+            b.Property(r => r.Protocol).IsRequired().HasMaxLength(32);
+            b.Property(r => r.RemoteEndPoint).IsRequired().HasMaxLength(128);
+            b.Property(r => r.ClientVersion).HasMaxLength(256);
+            b.Property(r => r.Username).HasMaxLength(256);
+            b.Property(r => r.AuthMethod).HasMaxLength(64);
+            b.Property(r => r.Transfers).IsRequired();
+            b.HasIndex(r => r.NodeId);
+        });
+
+        modelBuilder.Entity<DisconnectRequestRow>(b =>
+        {
+            b.ToTable("DisconnectRequests");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.NodeId).IsRequired().HasMaxLength(128);
+            b.Property(r => r.Reason).IsRequired().HasMaxLength(512);
+            b.HasIndex(r => r.NodeId);
+        });
+
+        modelBuilder.Entity<SettingsVersionRow>(b =>
+        {
+            b.ToTable("SettingsVersions");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Id).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<DataProtectionKeyRow>(b =>
+        {
+            b.ToTable("DataProtectionKeys");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.FriendlyName).HasMaxLength(256);
+            b.Property(r => r.Xml).IsRequired();
         });
 
         modelBuilder.Entity<Role>(b =>

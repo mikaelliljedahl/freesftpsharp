@@ -14,15 +14,18 @@ namespace SshServerModule.Connections
     /// Closes the open sessions of a user that an administrator disables or removes (issue #61), in every protocol through
     /// the <see cref="IConnectionRegistry"/>. It reads the provider events of the settings store, so the admin UI, the
     /// command line and later the REST API need no code of their own. A user that expires keeps its open sessions.
+    /// With several nodes (issue #75) it closes the sessions on the other nodes too, through <see cref="IClusterConnections"/>.
     /// </summary>
     public sealed class DisabledUserDisconnector : IEventSink
     {
-        private readonly IConnectionRegistry _connections;
+        private readonly IClusterConnections _connections;
         private readonly ILogger _logger;
 
-        public DisabledUserDisconnector(IConnectionRegistry connections, ILogger<DisabledUserDisconnector>? logger = null)
+        public DisabledUserDisconnector(IConnectionRegistry connections, ILogger<DisabledUserDisconnector>? logger = null,
+            IClusterConnections? cluster = null)
         {
-            _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+            ArgumentNullException.ThrowIfNull(connections);
+            _connections = cluster ?? new LocalClusterConnections(connections);
             _logger = (ILogger?)logger ?? NullLogger.Instance;
         }
 

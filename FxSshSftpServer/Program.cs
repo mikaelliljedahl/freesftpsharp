@@ -21,6 +21,7 @@ using SshServer.Filesystem.Encrypted;
 using SshServerModule.Storage;
 using SshServerModule.Events;
 using SshServerModule.Connections;
+using SshServerModule.Cluster;
 using SshServer.Webhooks;
 using SshServer.TwoFactor;
 using SshServer.EventRules;
@@ -76,6 +77,7 @@ builder.Services.AddHostedService<HostedServer>();
 builder.Services.AddSshServerSecurity(); // auto-ban state, IIpBanService for the admin UI
 builder.Services.AddSshServerConnections(); // the open connections, shared with the admin UI
 builder.Services.AddSshServerListenOptions(); // SshServer:Port / SshServer:BindToAddress override the stored settings
+builder.Services.AddSshServerCluster(builder.Configuration); // several nodes on one database (#75): off until Cluster:Enabled
 
 Log.Debug("AddSshServerSettings...");
 builder.Services.AddSshServerSettings(builder.Configuration);

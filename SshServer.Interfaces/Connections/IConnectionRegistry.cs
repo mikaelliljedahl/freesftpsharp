@@ -64,3 +64,39 @@ public interface ITransferProgress : IDisposable
     /// <summary>Adds <paramref name="count"/> bytes to the transfer and records activity of the connection.</summary>
     void AddBytes(long count);
 }
+
+/// <summary>
+/// The open connections of every node (issue #75): the <see cref="IConnectionRegistry"/> of this node and, with
+/// <c>Cluster:Enabled</c>, the connections that the other nodes stored in the settings database. The admin UI and the
+/// REST API list and close connections through it. On a single node it is the registry.
+/// </summary>
+public interface IClusterConnections
+{
+    /// <summary>The connections of all nodes now, oldest first. It reads no database (the other nodes are cached).</summary>
+    IReadOnlyList<ConnectionInfo> GetAll();
+
+    ConnectionInfo? Get(Guid id);
+
+    /// <summary>
+    /// Closes a connection: at once on this node; on another node through a request that the node reads within its poll
+    /// interval. False when the connection is not known.
+    /// </summary>
+    Task<bool> DisconnectAsync(Guid id, string reason);
+}
+
+/// <summary>The <see cref="IClusterConnections"/> of a single node: the registry.</summary>
+public sealed class LocalClusterConnections : IClusterConnections
+{
+    private readonly IConnectionRegistry _registry;
+
+    public LocalClusterConnections(IConnectionRegistry registry)
+    {
+        _registry = registry;
+    }
+
+    public IReadOnlyList<ConnectionInfo> GetAll() => _registry.GetAll();
+
+    public ConnectionInfo? Get(Guid id) => _registry.Get(id);
+
+    public Task<bool> DisconnectAsync(Guid id, string reason) => _registry.DisconnectAsync(id, reason);
+}

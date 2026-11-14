@@ -1,9 +1,13 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Net;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FxSsh.SshServerModule.Security
 {
@@ -29,6 +33,11 @@ namespace FxSsh.SshServerModule.Security
     /// The state is in memory only. IPv4-mapped IPv6 addresses count as the IPv4 address. A successful login does
     /// not reset any counter (otherwise one valid account would let an attacker guess the passwords of others).
     /// Thread-safe.
+    /// <para>
+    /// With an <see cref="IIpBanStore"/> (several nodes, <c>Cluster:Enabled</c>, issue #75) a new ban and a lifted ban are
+    /// also written to the store, and <see cref="SyncAsync"/> (every poll interval) takes the bans of the other nodes. The
+    /// check of an address stays in memory. The failed logins are counted per node.
+    /// </para>
     /// </summary>
     public sealed class LoginBanTracker : IIpBanService
     {
@@ -39,11 +48,18 @@ namespace FxSsh.SshServerModule.Security
         private readonly Dictionary<IPAddress, Queue<DateTimeOffset>> _failures = new();
         private readonly Dictionary<IPAddress, IpBan> _bans = new();
         private DateTimeOffset _nextCleanup;
+        private readonly IIpBanStore _store;
+        private readonly ILogger _logger;
 
-        public LoginBanTracker(TimeProvider time)
+        /// <summary>How long a write to the shared store may take before the ban stays on this node only.</summary>
+        private static readonly TimeSpan StoreTimeout = TimeSpan.FromSeconds(5);
+
+        public LoginBanTracker(TimeProvider time, IIpBanStore store = null, ILogger<LoginBanTracker> logger = null)
         {
             Time = time ?? throw new ArgumentNullException(nameof(time));
             _nextCleanup = time.GetUtcNow() + CleanupInterval;
+            _store = store;
+            _logger = (ILogger)logger ?? NullLogger.Instance;
         }
 
         /// <summary>The clock of the tracker. The server also uses it for <c>User.LastLoginAt</c>.</summary>
@@ -70,6 +86,7 @@ namespace FxSsh.SshServerModule.Security
                 return false;
 
             var now = Time.GetUtcNow();
+            IpBan ban;
             lock (_lock)
             {
                 CleanupIfDue(now, policy.Window);
@@ -85,10 +102,12 @@ namespace FxSsh.SshServerModule.Security
                 if (times.Count < policy.MaxFailures)
                     return false;
 
-                _bans[address] = new IpBan(address, now, now + policy.Duration, times.Count);
+                ban = new IpBan(address, now, now + policy.Duration, times.Count);
+                _bans[address] = ban;
                 _failures.Remove(address); // counted from zero after the ban
-                return true;
             }
+            WriteToStore(ct => _store.AddAsync(ban, ct), "store the ban of", address);
+            return true;
         }
 
         public bool IsBanned(IPAddress address)
@@ -112,12 +131,55 @@ namespace FxSsh.SshServerModule.Security
             ArgumentNullException.ThrowIfNull(address);
             address = CidrNotation.Normalize(address);
             var now = Time.GetUtcNow();
+            bool wasBanned;
             lock (_lock)
             {
-                var wasBanned = IsBannedCore(address, now);
+                wasBanned = IsBannedCore(address, now);
                 _bans.Remove(address);
                 _failures.Remove(address);
-                return wasBanned;
+            }
+            WriteToStore(ct => _store.RemoveAsync(address, ct), "lift the stored ban of", address);
+            return wasBanned;
+        }
+
+        /// <summary>
+        /// Takes the bans of the shared store (the bans of every node) in place of the bans in memory, and removes the
+        /// expired bans from the store. A ban of this node that is newer than the read is kept. Nothing without a store.
+        /// </summary>
+        public async Task SyncAsync(CancellationToken ct)
+        {
+            if (_store == null)
+                return;
+            var start = Time.GetUtcNow();
+            await _store.RemoveExpiredAsync(start, ct);
+            var active = await _store.ListActiveAsync(start, ct);
+            lock (_lock)
+            {
+                var recent = _bans.Values.Where(b => b.BannedAt >= start - StoreTimeout).ToList();
+                _bans.Clear();
+                foreach (var ban in active)
+                    _bans[CidrNotation.Normalize(ban.Address)] = ban with { Address = CidrNotation.Normalize(ban.Address) };
+                foreach (var ban in recent)
+                    _bans.TryAdd(ban.Address, ban);
+            }
+        }
+
+        /// <summary>
+        /// Writes a change to the shared store and waits for it (bans are rare; the other nodes see it at their next sync).
+        /// A failure is logged: the ban then holds on this node only.
+        /// </summary>
+        private void WriteToStore(Func<CancellationToken, Task> write, string what, IPAddress address)
+        {
+            if (_store == null)
+                return;
+            try
+            {
+                using var timeout = new CancellationTokenSource(StoreTimeout);
+                Task.Run(() => write(timeout.Token), timeout.Token).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not {What} {Address} in the settings database; it holds on this node only.", what, address);
             }
         }
 

@@ -8,7 +8,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace SshServer.Settings.PostgreSql.Migrations;
 
 /// <inheritdoc />
-public partial class _20261114133916_InitialCreate : Migration
+public partial class _20261114135343_InitialCreate : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -57,6 +57,71 @@ public partial class _20261114133916_InitialCreate : Migration
             });
 
         migrationBuilder.CreateTable(
+            name: "BannedIps",
+            columns: table => new
+            {
+                Address = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                BannedUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                ExpiresUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                FailedAttempts = table.Column<int>(type: "integer", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_BannedIps", x => x.Address);
+            });
+
+        migrationBuilder.CreateTable(
+            name: "Connections",
+            columns: table => new
+            {
+                Id = table.Column<Guid>(type: "uuid", nullable: false),
+                NodeId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                Protocol = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                RemoteEndPoint = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                ClientVersion = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                ConnectedUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                LastActivityUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                Username = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                AuthenticatedUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                AuthMethod = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                Transfers = table.Column<string>(type: "text", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Connections", x => x.Id);
+            });
+
+        migrationBuilder.CreateTable(
+            name: "DataProtectionKeys",
+            columns: table => new
+            {
+                Id = table.Column<int>(type: "integer", nullable: false)
+                    .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                FriendlyName = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                Xml = table.Column<string>(type: "text", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_DataProtectionKeys", x => x.Id);
+            });
+
+        migrationBuilder.CreateTable(
+            name: "DisconnectRequests",
+            columns: table => new
+            {
+                Id = table.Column<long>(type: "bigint", nullable: false)
+                    .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                NodeId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                ConnectionId = table.Column<Guid>(type: "uuid", nullable: false),
+                Reason = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
+                CreatedUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_DisconnectRequests", x => x.Id);
+            });
+
+        migrationBuilder.CreateTable(
             name: "EventRules",
             columns: table => new
             {
@@ -76,6 +141,21 @@ public partial class _20261114133916_InitialCreate : Migration
             constraints: table =>
             {
                 table.PrimaryKey("PK_EventRules", x => x.Id);
+            });
+
+        migrationBuilder.CreateTable(
+            name: "Nodes",
+            columns: table => new
+            {
+                NodeId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                Hostname = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                Version = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                StartedUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                LastSeenUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Nodes", x => x.NodeId);
             });
 
         migrationBuilder.CreateTable(
@@ -135,6 +215,18 @@ public partial class _20261114133916_InitialCreate : Migration
             constraints: table =>
             {
                 table.PrimaryKey("PK_ServerSettings", x => x.Id);
+            });
+
+        migrationBuilder.CreateTable(
+            name: "SettingsVersions",
+            columns: table => new
+            {
+                Id = table.Column<int>(type: "integer", nullable: false),
+                Version = table.Column<long>(type: "bigint", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_SettingsVersions", x => x.Id);
             });
 
         migrationBuilder.CreateTable(
@@ -492,6 +584,21 @@ public partial class _20261114133916_InitialCreate : Migration
             column: "Username");
 
         migrationBuilder.CreateIndex(
+            name: "IX_BannedIps_ExpiresUtc",
+            table: "BannedIps",
+            column: "ExpiresUtc");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_Connections_NodeId",
+            table: "Connections",
+            column: "NodeId");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_DisconnectRequests_NodeId",
+            table: "DisconnectRequests",
+            column: "NodeId");
+
+        migrationBuilder.CreateIndex(
             name: "IX_EventRuleRuns_RuleId_StartedUtc",
             table: "EventRuleRuns",
             columns: new[] { "RuleId", "StartedUtc" });
@@ -611,16 +718,34 @@ public partial class _20261114133916_InitialCreate : Migration
             name: "AuditEntries");
 
         migrationBuilder.DropTable(
+            name: "BannedIps");
+
+        migrationBuilder.DropTable(
+            name: "Connections");
+
+        migrationBuilder.DropTable(
+            name: "DataProtectionKeys");
+
+        migrationBuilder.DropTable(
+            name: "DisconnectRequests");
+
+        migrationBuilder.DropTable(
             name: "EventRuleRuns");
 
         migrationBuilder.DropTable(
             name: "GroupVirtualFolders");
 
         migrationBuilder.DropTable(
+            name: "Nodes");
+
+        migrationBuilder.DropTable(
             name: "QuotaUsages");
 
         migrationBuilder.DropTable(
             name: "ServerSettings");
+
+        migrationBuilder.DropTable(
+            name: "SettingsVersions");
 
         migrationBuilder.DropTable(
             name: "TwoFactorEnrolments");
