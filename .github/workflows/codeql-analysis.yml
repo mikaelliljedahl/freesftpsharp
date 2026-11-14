@@ -53,7 +53,7 @@ jobs:
       - name: Build
         if: matrix.build-mode == 'manual'
         run: |
-          dotnet restore FreeSftpSharp.sln
+          dotnet restore FreeSftpSharp.sln --locked-mode
           dotnet build FreeSftpSharp.sln --no-restore -c Release
 
       - name: Perform CodeQL Analysis
