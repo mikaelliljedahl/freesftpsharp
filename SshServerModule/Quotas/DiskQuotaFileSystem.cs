@@ -191,6 +191,7 @@ namespace SshServerModule.Quotas
             public async ValueTask WriteAsync(long offset, ReadOnlyMemory<byte> data, CancellationToken ct)
             {
                 long growth = 0;
+                var drop = false;
                 lock (_lock)
                 {
                     if (_exceeded)
@@ -200,12 +201,12 @@ namespace SshServerModule.Quotas
                         var end = (_append ? _size : offset) + data.Length;
                         growth = Math.Max(0, end - _size);
                         if (growth > 0 && !Tracker.TryReserveDisk(_owner._scope, _owner._limit, growth, 0))
-                            _exceeded = _closed = true;
+                            _exceeded = _closed = drop = true;
                         else
                             _size += growth;
                     }
                 }
-                if (_exceeded)
+                if (drop)
                 {
                     await DropAsync();
                     throw Exceeded(_path);

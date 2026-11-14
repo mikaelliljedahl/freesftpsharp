@@ -26,7 +26,8 @@ namespace SshServerModule.Storage
     /// <item><see cref="MountedFileSystem"/>: routes the paths of the virtual folders to their storage (#56); left out
     /// for a user without virtual folders. Every rule below sees the virtual paths of the user.</item>
     /// <item><see cref="TransferQuotaFileSystem"/> and <see cref="BandwidthFileSystem"/>: the transfer quota and the
-    /// bandwidth of the session (#62), over every storage of the user; each left out without its limit. Inside the
+    /// bandwidth of the session (#62), over every storage of the user; each left out without its limit, and both for an
+    /// operation of the server itself (<see cref="ClientContext.SkipPermissions"/>). Inside the
     /// permissions, so a refused operation is not counted.</item>
     /// <item><see cref="PermissionFileSystem"/>: per-path permissions and path filters (#59); left out for a user who
     /// may do everything, and for an operation of the server itself (<see cref="ClientContext.SkipPermissions"/>, the

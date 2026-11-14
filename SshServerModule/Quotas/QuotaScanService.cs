@@ -29,7 +29,7 @@ namespace SshServerModule.Quotas
     /// </summary>
     public sealed class QuotaScanService : BackgroundService
     {
-        private readonly ISettingsRepository _repository;
+        private readonly ISettingsRepository? _repository;
         private readonly IUserStorageResolver _resolver;
         private readonly IStorageProviderRegistry _registry;
         private readonly StorageOptionsCodec _codec;
@@ -40,9 +40,9 @@ namespace SshServerModule.Quotas
         private readonly ILogger _logger;
         private readonly QuotaScanQueue _queue;
 
-        public QuotaScanService(ISettingsRepository repository, IUserStorageResolver resolver, IStorageProviderRegistry registry, StorageOptionsCodec codec,
-            IEffectiveQuotaService quotas, QuotaUsageTracker tracker, QuotaScanQueue queue, IOptions<QuotaOptions>? options = null,
-            TimeProvider? time = null, ILogger<QuotaScanService>? logger = null)
+        public QuotaScanService(IUserStorageResolver resolver, IStorageProviderRegistry registry, StorageOptionsCodec codec,
+            IEffectiveQuotaService quotas, QuotaUsageTracker tracker, QuotaScanQueue queue, ISettingsRepository? repository = null,
+            IOptions<QuotaOptions>? options = null, TimeProvider? time = null, ILogger<QuotaScanService>? logger = null)
         {
             _queue = queue;
             _repository = repository;
@@ -60,7 +60,7 @@ namespace SshServerModule.Quotas
         public int RequestAllWithQuota()
         {
             var count = 0;
-            foreach (var scope in _repository.GetAllUsers().SelectMany(ScopesWithQuota).Distinct())
+            foreach (var scope in (_repository?.GetAllUsers() ?? []).SelectMany(ScopesWithQuota).Distinct())
             {
                 if (_queue.Request(scope))
                     count++;
@@ -90,7 +90,7 @@ namespace SshServerModule.Quotas
             var skip = new HashSet<string>(StringComparer.Ordinal);
             if (scope.Kind == QuotaScopeKind.User)
             {
-                var user = _repository.GetUser(scope.Key);
+                var user = _repository?.GetUser(scope.Key);
                 if (user is null)
                     return null;
                 var storage = _resolver.Resolve(user);
@@ -102,7 +102,7 @@ namespace SshServerModule.Quotas
             }
             else
             {
-                var folder = int.TryParse(scope.Key, out var id) ? _repository.GetVirtualFolder(id) : null;
+                var folder = int.TryParse(scope.Key, out var id) ? _repository?.GetVirtualFolder(id) : null;
                 if (folder is null)
                     return null;
                 fileSystem = await CreateAsync(folder.Storage, ct);
@@ -159,7 +159,7 @@ namespace SshServerModule.Quotas
                 await ScanAsync(scope, ct);
                 return;
             }
-            if (request.Username is { } username && _repository.GetUser(username) is { } user)
+            if (request.Username is { } username && _repository?.GetUser(username) is { } user)
             {
                 foreach (var userScope in ScopesWithQuota(user))
                     await ScanAsync(userScope, ct);

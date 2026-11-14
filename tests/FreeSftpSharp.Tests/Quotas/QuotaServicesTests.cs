@@ -201,8 +201,8 @@ public sealed class QuotaServicesTests : IDisposable
     {
         var providers = new SshServerModule.Storage.StorageProviderRegistry([new LocalDiskStorageProvider()]);
         var codec = TestStorage.Codec(new LocalDiskStorageProvider());
-        return new QuotaScanService(repository, new UserStorageResolver(new UserRootDefaultStorage(), repository), providers, codec,
-            new EffectiveQuotaService(), _tracker, queue, time: _clock);
+        return new QuotaScanService(new UserStorageResolver(new UserRootDefaultStorage(), repository), providers, codec,
+            new EffectiveQuotaService(), _tracker, queue, repository, time: _clock);
     }
 
     private static StorageConfig Local(string root)

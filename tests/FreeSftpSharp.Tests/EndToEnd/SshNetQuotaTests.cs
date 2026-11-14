@@ -27,9 +27,9 @@ public sealed class QuotaSftpServerFixture : SftpServerFixture
             new QuotaDecorators(new EffectiveQuotaService(), Tracker, Scans));
 
     /// <summary>The scan of the hosts over the repository of the running server.</summary>
-    public QuotaScanService Scanner => new(Repository, new UserStorageResolver(new UserRootDefaultStorage(), Repository),
+    public QuotaScanService Scanner => new(new UserStorageResolver(new UserRootDefaultStorage(), Repository),
         new StorageProviderRegistry([new LocalDiskStorageProvider()]), TestStorage.Codec(new LocalDiskStorageProvider()),
-        new EffectiveQuotaService(), Tracker, Scans);
+        new EffectiveQuotaService(), Tracker, Scans, Repository);
 
     /// <summary>Adds a user (password of the test user) with an empty root directory of its own; returns the root.</summary>
     public string AddQuotaUser(string username, Action<User> configure)
