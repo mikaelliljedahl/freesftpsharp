@@ -7,15 +7,17 @@ using Microsoft.Extensions.DependencyInjection;
 namespace FxSshSftpServer.Security;
 
 /// <summary>
-/// Stores the ASP.NET Core data protection keys (they protect the admin login cookie and the antiforgery tokens)
-/// in a known directory, so that a login survives a restart of the app.
+/// Stores the ASP.NET Core data protection keys (they protect the admin login cookie, the antiforgery tokens and the
+/// webhook secrets in the settings database) in a known directory, so that a login survives a restart of the app and
+/// a stored webhook secret stays readable. Both hosts (admin UI and console) use this, with the same application name,
+/// so they read the same secrets when they share the directory.
 /// </summary>
 public static class DataProtectionSetup
 {
     public const string KeysPathKey = "DataProtection:KeysPath";
     public const string DefaultKeysDirectory = "keys";
 
-    public static IServiceCollection AddAdminDataProtection(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddServerDataProtection(this IServiceCollection services, IConfiguration configuration)
     {
         var configured = configuration[KeysPathKey];
         var keysPath = Path.GetFullPath(string.IsNullOrWhiteSpace(configured) ? DefaultKeysDirectory : configured,

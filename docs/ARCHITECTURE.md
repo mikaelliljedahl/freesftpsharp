@@ -62,6 +62,13 @@ every consumer reads from it, so a new protocol gives the same events as SFTP wi
 - **Audit log.** The `AuditSink` writes every event to the `AuditEntries` table of the settings database; the
   `AuditRetentionService` removes entries older than `Audit:RetentionDays` (default 90, 0 keeps all) once a day. The
   admin UI page "Audit" and later the REST API read it through `IAuditLog`.
+- **Webhooks** (#66) are the plug-in `SshServer.Webhooks` (`AddWebhooks()`), with the store `IWebhookStore` of the
+  settings database. The `WebhookSink` writes one outbox row (`WebhookDeliveries`) per matching asynchronous webhook,
+  and the `WebhookDispatcher` (a hosted service) sends the rows with retries; it claims a row with a lease column, so
+  several nodes can share the outbox. The `WebhookEventHook` is an `IEventHook`: it asks the synchronous webhooks of a
+  `Pre*` event inline, with their timeout and fail-open setting. A `HookDecision.Deny` can carry a `ClientMessage`; the
+  `EventingFileSystem` puts it in the `FileSystemException`, and the protocol adds it to its "permission denied". The
+  enabled webhooks are cached in memory (`WebhookCatalog`), so with no webhook an event costs no database read.
 
 ## Storage backends
 

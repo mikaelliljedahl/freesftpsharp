@@ -1,0 +1,467 @@
+@page "/webhooks"
+@using System.Globalization
+@using System.Threading
+@using SshServer.Interfaces.Webhooks
+@using SshServer.Webhooks
+@inject WebhookAdministrationService WebhookService
+@inject ToastService Toasts
+
+<PageTitle>Webhooks - FreeSftpSharp admin</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Webhooks</h1>
+        <p class="text-body-secondary mb-0">
+            HTTP calls to other systems when files arrive, users log in or settings change. Each request is signed with the
+            secret of the webhook. A synchronous webhook can refuse an upload, download or delete. Times are UTC.
+        </p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="StartNew" id="add-webhook" disabled="@(!WebhookService.IsEnabled)"><i class="bi bi-plus-lg"></i> Add webhook</button>
+</div>
+
+@if (!WebhookService.IsEnabled)
+{
+    <div class="alert alert-info" id="webhooks-disabled">
+        Webhooks need the SQLite settings database. They are off with <code>Settings:Provider=LiteDb</code>.
+    </div>
+}
+else if (!WebhookService.AllowInsecureWebhooks)
+{
+    <div class="small text-body-secondary mb-3" id="webhooks-https-only">
+        Every URL must be <code>https://</code>. For a receiver on this machine or in a private network, set
+        <code>Webhooks:AllowInsecureWebhooks=true</code> to allow <code>http://</code> to loopback and private addresses.
+    </div>
+}
+
+<div class="row g-4">
+    <div class="@(form is null ? "col-12" : "col-xl-5")">
+        <div class="card">
+            <div class="card-header fw-semibold"><i class="bi bi-broadcast"></i> Webhooks <span class="badge text-bg-secondary">@webhooks.Count</span></div>
+            @if (webhooks.Count == 0)
+            {
+                <div class="card-body text-body-secondary" id="no-webhooks">No webhooks. Nothing is sent until you add one.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="webhook-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                @if (form is null)
+                                {
+                                    <th class="d-none d-md-table-cell">URL</th>
+                                    <th class="d-none d-lg-table-cell">Events</th>
+                                }
+                                <th>Mode</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var webhook in webhooks)
+                            {
+                                <tr class="@(selected?.Id == webhook.Id ? "table-active" : "")">
+                                    <td>
+                                        @webhook.Name
+                                        @if (!webhook.Enabled)
+                                        {
+                                            <span class="badge text-bg-secondary ms-1">disabled</span>
+                                        }
+                                    </td>
+                                    @if (form is null)
+                                    {
+                                        <td class="d-none d-md-table-cell"><span class="font-monospace-sm">@webhook.Method @webhook.Url</span></td>
+                                        <td class="d-none d-lg-table-cell small">
+                                            @(webhook.EventTypes.Count == 0 ? "all events (not Pre*)" : string.Join(", ", webhook.EventTypes))
+                                            @if (webhook.Users.Count > 0)
+                                            {
+                                                <span class="text-body-secondary"> · users @string.Join(", ", webhook.Users)</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(webhook.PathGlob))
+                                            {
+                                                <span class="text-body-secondary"> · <span class="font-monospace-sm">@webhook.PathGlob</span></span>
+                                            }
+                                        </td>
+                                    }
+                                    <td>
+                                        @if (webhook.Sync)
+                                        {
+                                            <span class="badge text-bg-warning" title="Decides before the operation runs">sync</span>
+                                            <span class="badge text-bg-light border">@(webhook.FailOpen ? "fail open" : "fail closed")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-info">async</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-secondary show-deliveries" title="Deliveries" aria-label="Deliveries of @webhook.Name" @onclick="() => ShowDeliveriesAsync(webhook)"><i class="bi bi-list-check"></i></button>
+                                            <button type="button" class="btn btn-outline-secondary send-test" title="Send test event" aria-label="Send a test event to @webhook.Name" @onclick="() => SendTestAsync(webhook)"><i class="bi bi-send"></i></button>
+                                            <button type="button" class="btn btn-outline-primary edit-webhook" title="Edit" aria-label="Edit @webhook.Name" @onclick="() => Edit(webhook)"><i class="bi bi-pencil"></i></button>
+                                            <button type="button" class="btn btn-outline-danger delete-webhook" title="Delete" aria-label="Delete @webhook.Name" @onclick="() => AskDelete(webhook)"><i class="bi bi-trash"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (form is not null)
+    {
+        <div class="col-xl-7">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>@(form.IsNew ? "New webhook" : $"Edit {form.Name}")</span>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseForm"></button>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="form" OnSubmit="SaveAsync" FormName="webhook-form" id="webhook-form">
+                        @if (errors.Count > 0)
+                        {
+                            <div class="alert alert-danger" id="webhook-errors">
+                                <ul class="mb-0">
+                                    @foreach (var error in errors)
+                                    {
+                                        <li>@error</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" for="webhook-name">Name</label>
+                                <InputText id="webhook-name" class="form-control" @bind-Value="form.Name" autocomplete="off" />
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" for="webhook-method">Method</label>
+                                <InputSelect id="webhook-method" class="form-select" @bind-Value="form.Method">
+                                    <option value="@Webhook.MethodPost">POST</option>
+                                    <option value="@Webhook.MethodPut">PUT</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" for="webhook-timeout">Timeout (s)</label>
+                                <InputNumber id="webhook-timeout" class="form-control" @bind-Value="form.TimeoutSeconds" min="1" max="@Webhook.MaxTimeoutSeconds" />
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="webhook-url">URL</label>
+                            <InputText id="webhook-url" class="form-control font-monospace" @bind-Value="form.Url" placeholder="https://hooks.example.com/sftp" />
+                            <div class="form-text">The server never follows a redirect.</div>
+                        </div>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Secret</legend>
+                            <div class="small text-body-secondary mb-2">
+                                The receiver checks the header <code>X-FreeSftpSharp-Signature</code> with this secret (HMAC-SHA256).
+                                The secret is stored encrypted and is not shown again: copy it to the receiver now.
+                                @if (form.HasSecret)
+                                {
+                                    <span>A secret is set. Enter or generate a new one to change it.</span>
+                                }
+                            </div>
+                            <div class="input-group">
+                                <InputText id="webhook-secret" class="form-control font-monospace" @bind-Value="form.NewSecret" autocomplete="off" placeholder="@(form.HasSecret ? "keep the secret" : "no signature")" />
+                                <button type="button" class="btn btn-outline-secondary" @onclick="GenerateSecret" id="generate-secret"><i class="bi bi-shuffle"></i> Generate</button>
+                            </div>
+                            @if (form.HasSecret)
+                            {
+                                <div class="form-check mt-2">
+                                    <InputCheckbox id="webhook-remove-secret" class="form-check-input" @bind-Value="form.RemoveSecret" />
+                                    <label class="form-check-label" for="webhook-remove-secret">Remove the secret (the requests are then not signed)</label>
+                                </div>
+                            }
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Events</legend>
+                            <div class="form-check form-switch mb-2">
+                                <InputCheckbox id="webhook-sync" class="form-check-input" @bind-Value="form.Sync" />
+                                <label class="form-check-label" for="webhook-sync">Synchronous: the operation waits for the answer (2xx allows, 403 refuses)</label>
+                            </div>
+                            @if (form.Sync)
+                            {
+                                <div class="form-check form-switch mb-2 ms-3">
+                                    <InputCheckbox id="webhook-fail-open" class="form-check-input" @bind-Value="form.FailOpen" />
+                                    <label class="form-check-label" for="webhook-fail-open">Fail open: allow the operation when the webhook fails or does not answer in time</label>
+                                </div>
+                            }
+                            <div class="small text-body-secondary mb-2">
+                                @(form.Sync
+                                    ? "A synchronous webhook decides only the Pre* file events."
+                                    : "No event selected: every event except the Pre* events.")
+                            </div>
+                            <div class="row g-2">
+                                @foreach (var group in WebhookEventNames.Groups)
+                                {
+                                    <div class="col-sm-6 col-lg-3">
+                                        <div class="fw-semibold small mb-1">@group.Category</div>
+                                        @foreach (var name in group.Names)
+                                        {
+                                            var id = "event-" + name.Replace('.', '-');
+                                            var disabled = form.Sync && !WebhookEventNames.PreEvents.Contains(name);
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="@id" checked="@form.EventTypes.Contains(name)" disabled="@disabled"
+                                                       @onchange="e => ToggleEvent(name, (bool)e.Value)" />
+                                                <label class="form-check-label small" for="@id">@name[(name.IndexOf('.') + 1)..]</label>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </fieldset>
+
+                        <fieldset class="border rounded p-3 mb-3">
+                            <legend class="float-none w-auto px-2 fs-6 mb-0">Filters</legend>
+                            <div class="row g-3">
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="webhook-users">Users</label>
+                                    <InputTextArea id="webhook-users" class="form-control" rows="2" @bind-Value="form.Users" placeholder="every user" />
+                                    <div class="form-text">One per line. Empty: every user, and the events without a user.</div>
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label" for="webhook-path">Path</label>
+                                    <InputText id="webhook-path" class="form-control font-monospace" @bind-Value="form.PathGlob" placeholder="/incoming/**/*.csv" />
+                                    <div class="form-text"><code>*</code> within a directory, <code>**</code> over directories. Set: only file events.</div>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="webhook-headers">Headers</label>
+                            <InputTextArea id="webhook-headers" class="form-control font-monospace" rows="2" @bind-Value="form.Headers" placeholder="Authorization: Bearer ..." />
+                            <div class="form-text">Static headers of every request, one <code>Name: value</code> per line.</div>
+                        </div>
+
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox id="webhook-enabled" class="form-check-input" @bind-Value="form.Enabled" />
+                            <label class="form-check-label" for="webhook-enabled">Enabled</label>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                @if (!form.IsNew)
+                                {
+                                    <button type="button" class="btn btn-outline-danger" @onclick="() => AskDelete(webhooks.First(w => w.Id == form.Id))"><i class="bi bi-trash"></i> Delete</button>
+                                }
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="save-webhook"><i class="bi bi-floppy"></i> @(form.IsNew ? "Create webhook" : "Save webhook")</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (selected is not null)
+    {
+        <div class="col-12">
+            <div class="card" id="deliveries">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-list-check"></i> Deliveries of @selected.Name <span class="small text-body-secondary fw-normal">(newest @WebhookAdministrationService.DeliveriesPageSize)</span></span>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ShowDeliveriesAsync(selected)" id="refresh-deliveries"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="() => selected = null"></button>
+                    </div>
+                </div>
+                @if (deliveries.Count == 0)
+                {
+                    <div class="card-body text-body-secondary" id="no-deliveries">No deliveries yet.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0" id="delivery-table">
+                            <thead>
+                                <tr>
+                                    <th>Created (UTC)</th>
+                                    <th>Event</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Attempts</th>
+                                    <th class="d-none d-md-table-cell">Answer</th>
+                                    <th class="d-none d-md-table-cell">Next attempt (UTC)</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var delivery in deliveries)
+                                {
+                                    <tr>
+                                        <td class="text-nowrap">@delivery.CreatedUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                                        <td>@delivery.EventType</td>
+                                        <td><span class="badge @StatusClass(delivery.Status)">@delivery.Status</span></td>
+                                        <td class="text-end">@delivery.Attempts</td>
+                                        <td class="d-none d-md-table-cell small">
+                                            @(delivery.LastStatusCode is { } code ? $"HTTP {code}" : delivery.LastError)
+                                            @if (delivery.LastError is not null && delivery.LastStatusCode is not null)
+                                            {
+                                                <span class="text-body-secondary"> · @delivery.LastError</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(delivery.ResponseExcerpt))
+                                            {
+                                                <details>
+                                                    <summary class="text-body-secondary">Response</summary>
+                                                    <pre class="small mb-0 text-wrap">@delivery.ResponseExcerpt</pre>
+                                                </details>
+                                            }
+                                        </td>
+                                        <td class="d-none d-md-table-cell text-nowrap">@delivery.NextAttemptUtc?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                                        <td class="text-end">
+                                            @if (!delivery.Sync)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-primary redeliver" title="Send it again now" @onclick="() => RedeliverAsync(delivery)"><i class="bi bi-arrow-repeat"></i> Redeliver</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="deleteDialog" Title="Delete webhook" ConfirmText="Delete" OnConfirm="DeleteAsync">
+    Delete the webhook <strong>@pendingDelete?.Name</strong> and its deliveries? Its pending deliveries are not sent.
+</ConfirmDialog>
+
+@code {
+    private List<Webhook> webhooks = new();
+    private WebhookForm form;
+    private List<string> errors = new();
+    private Webhook selected;
+    private List<WebhookDelivery> deliveries = new();
+    private Webhook pendingDelete;
+    private ConfirmDialog deleteDialog;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => webhooks = (await WebhookService.ListAsync(CancellationToken.None)).ToList();
+
+    private void StartNew()
+    {
+        form = WebhookForm.New();
+        errors.Clear();
+    }
+
+    private void Edit(Webhook webhook)
+    {
+        form = WebhookForm.From(webhook);
+        errors.Clear();
+    }
+
+    private void CloseForm()
+    {
+        form = null;
+        errors.Clear();
+    }
+
+    private void GenerateSecret()
+    {
+        form.NewSecret = WebhookSecretProtector.GenerateSecret();
+        form.RemoveSecret = false;
+    }
+
+    private void ToggleEvent(string name, bool on)
+    {
+        if (on)
+            form.EventTypes.Add(name);
+        else
+            form.EventTypes.Remove(name);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form.Sync)
+            form.EventTypes.RemoveWhere(e => !WebhookEventNames.PreEvents.Contains(e));
+        var (input, formErrors) = form.ToInput();
+        if (formErrors.Count > 0)
+        {
+            errors = formErrors.ToList();
+            return;
+        }
+        var result = await WebhookService.SaveAsync(input, CancellationToken.None);
+        if (!result.Succeeded)
+        {
+            errors = result.Errors.ToList();
+            return;
+        }
+        Toasts.ShowSuccess($"The webhook {input.Name.Trim()} was saved.");
+        await LoadAsync();
+        var saved = webhooks.FirstOrDefault(w => w.Id == result.Id);
+        form = saved is null ? null : WebhookForm.From(saved);
+        errors.Clear();
+    }
+
+    private void AskDelete(Webhook webhook)
+    {
+        pendingDelete = webhook;
+        deleteDialog.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await WebhookService.RemoveAsync(pendingDelete.Id, CancellationToken.None))
+        {
+            Toasts.ShowSuccess($"The webhook {pendingDelete.Name} was deleted.");
+            if (form?.Id == pendingDelete.Id)
+                form = null;
+            if (selected?.Id == pendingDelete.Id)
+                selected = null;
+        }
+        else
+        {
+            Toasts.ShowError($"The webhook {pendingDelete.Name} could not be deleted.");
+        }
+        await LoadAsync();
+    }
+
+    private async Task SendTestAsync(Webhook webhook)
+    {
+        if (!await WebhookService.SendTestAsync(webhook.Id, CancellationToken.None))
+        {
+            Toasts.ShowError($"The webhook {webhook.Name} does not exist any more.");
+            await LoadAsync();
+            return;
+        }
+        Toasts.ShowSuccess(webhook.Enabled
+            ? $"A test event for {webhook.Name} is queued. See its deliveries."
+            : $"The webhook {webhook.Name} is disabled: the test event is not sent.");
+        await ShowDeliveriesAsync(webhook);
+    }
+
+    private async Task ShowDeliveriesAsync(Webhook webhook)
+    {
+        selected = webhook;
+        deliveries = (await WebhookService.ListDeliveriesAsync(webhook.Id, CancellationToken.None)).ToList();
+    }
+
+    private async Task RedeliverAsync(WebhookDelivery delivery)
+    {
+        if (await WebhookService.RedeliverAsync(delivery.Id, CancellationToken.None))
+            Toasts.ShowSuccess("The delivery is sent again.");
+        else
+            Toasts.ShowError("The delivery cannot be sent again now (it is being sent).");
+        await ShowDeliveriesAsync(selected);
+    }
+
+    private static string StatusClass(WebhookDeliveryStatus status) => status switch
+    {
+        WebhookDeliveryStatus.Delivered => "text-bg-success",
+        WebhookDeliveryStatus.Pending => "text-bg-info",
+        WebhookDeliveryStatus.Failed => "text-bg-warning",
+        _ => "text-bg-danger",
+    };
+}
