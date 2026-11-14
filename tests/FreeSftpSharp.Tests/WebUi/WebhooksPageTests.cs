@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using Bunit;
 using FreeSftpSharp.Tests.Webhooks;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,10 +11,13 @@ namespace FreeSftpSharp.Tests.WebUi;
 /// <summary>The Webhooks page on the real application service and a SQLite store: add, the rules, test event, deliveries.</summary>
 public sealed class WebhooksPageTests : AdminUiComponentContext, IAsyncLifetime
 {
-    private readonly WebhookTestHost _host = new();
+    // SQLite in every run: the page test expects the store calls to complete at once (the data in the first render).
+    private readonly TestDatabase _database = TestDatabase.CreateSqlite();
+    private readonly WebhookTestHost _host;
 
     public WebhooksPageTests()
     {
+        _host = new WebhookTestHost(_database);
         Services.AddSingleton(_host.Admin);
     }
 
@@ -23,6 +27,7 @@ public sealed class WebhooksPageTests : AdminUiComponentContext, IAsyncLifetime
     {
         await base.DisposeAsync();
         await _host.DisposeAsync();
+        await _database.DisposeAsync();
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using SshServer.Interfaces.Admins;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
@@ -17,31 +18,29 @@ using SshServerModule.Events;
 namespace FreeSftpSharp.Tests.Webhooks;
 
 /// <summary>
-/// The webhooks plug-in as a host builds it (AddSshServerEvents + AddWebhooks) on a SQLite settings database: a new
-/// temporary file, or a given file to start a second host on the same database (a restart).
+/// The webhooks plug-in as a host builds it (AddSshServerEvents + AddWebhooks) on a settings database: a new database of
+/// the provider of the run (<see cref="TestDatabase.CreateDefault"/>), or a given one to start a second host on the same
+/// database (a restart).
 /// </summary>
 public sealed class WebhookTestHost : IAsyncDisposable
 {
-    private readonly TempDirectory? _directory;
+    private readonly TestDatabase? _ownDatabase;
     private readonly ServiceProvider _provider;
     private bool _started;
 
-    /// <param name="connectionString">A SQLite file; null: a new temporary file.</param>
+    /// <param name="database">The database of another host; null: a new database, removed with this host.</param>
     /// <param name="time">The clock; null: the system clock.</param>
     /// <param name="dataProtection">The keys of the secrets; give the same instance to a second host on the same database.</param>
     /// <param name="allowInsecure">Webhooks:AllowInsecureWebhooks (the receiver of the tests is http on loopback).</param>
-    public WebhookTestHost(string? connectionString = null, TimeProvider? time = null, IDataProtectionProvider? dataProtection = null,
+    public WebhookTestHost(TestDatabase? database = null, TimeProvider? time = null, IDataProtectionProvider? dataProtection = null,
         Action<IServiceCollection>? configure = null, bool allowInsecure = true)
     {
-        // A file, not one shared in-memory connection: the sink, the dispatcher and the test use the store at the same time.
-        if (connectionString == null)
-        {
-            _directory = new TempDirectory();
-            connectionString = _directory.SqliteConnectionString();
-        }
-        ConnectionString = connectionString;
+        // A database, not one shared in-memory connection: the sink, the dispatcher and the test use the store at the same time.
+        if (database == null)
+            database = _ownDatabase = TestDatabase.CreateDefault();
+        Database = database;
         DataProtection = dataProtection ?? new EphemeralDataProtectionProvider();
-        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connectionString).Options;
+        var options = database.Options;
         // The repository creates and migrates the database, as at the start of the server.
         Repository = new SqlSettingsRepository(options, createHostKey: () => TestCredentials.HostKey);
 
@@ -62,7 +61,7 @@ public sealed class WebhookTestHost : IAsyncDisposable
     public SqlSettingsRepository Repository { get; }
 
     /// <summary>The database, for a second host on it.</summary>
-    public string ConnectionString { get; }
+    public TestDatabase Database { get; }
 
     /// <summary>The keys of the secrets, for a second host on the same database.</summary>
     public IDataProtectionProvider DataProtection { get; }
@@ -128,6 +127,7 @@ public sealed class WebhookTestHost : IAsyncDisposable
         await StopAsync();
         await _provider.DisposeAsync();
         Repository.Dispose();
-        _directory?.Dispose();
+        if (_ownDatabase != null)
+            await _ownDatabase.DisposeAsync();
     }
 }

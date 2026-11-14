@@ -27,6 +27,23 @@ export FREESFTPSHARP_TEST_SQLSERVER="Server=127.0.0.1,1433;User Id=sa;Password=F
 dotnet test FreeSftpSharp.sln --filter "FullyQualifiedName~SettingsProviderTests|FullyQualifiedName~MultiNodeTests"
 ```
 
+The whole suite runs on one of the server providers with `FREESFTPSHARP_TEST_DB` (`Sqlite`, the default, `PostgreSQL` or
+`SqlServer`) and the connection string of that server; CI has a Linux leg for each. The switch selects the database of
+every test class that builds its settings database with `TestDatabase.CreateDefault()`: the repository and store tests
+(`Settings/SqlSettingsRepositoryTests`, `GroupSettingsRepositoryTests`, `StorageSettingsRepositoryTests`,
+`QuotaSettingsTests`, `SqlAdminStoreTests`, `SqlTwoFactorStoreTests`, `AuditLogTests`) and the hosts on a settings
+database (`Api/ApiFactory`, `Shares/ShareFactory`, `Webhooks/WebhookTestHost`, `EventRules/EventRuleTestHost`).
+
+```sh
+FREESFTPSHARP_TEST_DB=PostgreSQL dotnet test FreeSftpSharp.sln
+```
+
+These stay on SQLite on purpose, because they test SQLite or the default start: the upgrades of old SQLite schemas in
+the repository tests (they migrate to an old SQLite migration and insert rows with SQL), `Settings/LiteDbImportTests`
+(the import of `config.db` into SQLite), `Settings/SettingsConfigurationTests`, `EndToEnd/ZeroConfigStartTests` and the
+SFTP server fixtures (`Infrastructure/SftpServerFixture`, an in-memory repository). `SettingsProviderTests` and
+`MultiNodeTests` run on every configured provider in every leg.
+
 The suite takes about 10 seconds. It needs no network, no admin rights and no `config.db`. Each test class
 gets its own server on a free port and its own temporary directory, so the classes run in parallel.
 
@@ -80,7 +97,7 @@ The project uses `xunit.v3.mtp-off` with `xunit.runner.visualstudio` (VSTest). T
 | `Settings/LiteDbImportTests` | unit (temp files) | a `config.db` made with the LiteDB repository is imported into a new SQLite database (settings, host key, users), the file is not changed, no second import, no `config.db` gives new defaults, the LiteDB repository stores permissions and path filters and the import copies them, the old key of a user (CSP blob) becomes a key entry in the import and in the LiteDB repository |
 | `Settings/SettingsConfigurationTests` | unit | `Settings:Provider`, `ConnectionStrings:Settings` and `Settings:LiteDbPath`: defaults, paths relative to the app directory, LiteDb selection, unknown provider, PostgreSQL and SQL Server selected by name, a server provider without a connection string, `AddSshServerSettings` registrations |
 | `Settings/Providers/SettingsProviderTests` | integration (SQLite file; PostgreSQL and SQL Server when `FREESFTPSHARP_TEST_POSTGRES` / `FREESFTPSHARP_TEST_SQLSERVER` is set, CI: service containers on Linux) | every test on every provider (#75), each on a new database: the migrations and no pending model change, a user with every field and names without case, groups and mounted folders, administrators, roles and API keys, the token signing key shared by nodes, quota increments of two nodes, the webhook lease, the claim of a scheduled rule, the two-factor version check, the audit query and retention, the shared bans, the node heartbeat with connections, disconnect requests and stale nodes, the settings version, the data protection keys shared by two nodes |
-| `Cluster/MultiNodeTests` | end-to-end (two in-process nodes with SSH.NET, on every provider like `SettingsProviderTests`) | `Cluster:Enabled` (#75): a user created on node A logs in on node B, an address banned on A is refused on B and lifting it on B lifts it on A, A lists a connection of B (with its node) and closes it, a change on A reaches the caches of B |
+| `Cluster/MultiNodeTests` | end-to-end (two in-process nodes with SSH.NET, on every provider like `SettingsProviderTests`) | `Cluster:Enabled` (#75): a user created on node A logs in on node B, an address banned on A is refused on B and lifting it on B lifts it on A, A lists a connection of B (with its node) and closes it, a change on A reaches the caches of B, the session limit of a user counts its session on the other node (#149) |
 | `Proxy/ProxyProtocolReaderTests`, `Proxy/ProxyProtocolOptionsTests` | unit | the PROXY protocol header (#75): v1 TCP4/TCP6/UNKNOWN, v2 IPv4/IPv6/LOCAL with TLVs, the bytes after the header stay; malformed v1 lines (fields, spaces, addresses, ports, length, case), unknown v2 versions, commands, families and protocols, short or huge address blocks, a broken signature, no header; the `Proxy` section |
 | `Proxy/ProxyProtocolEndToEndTests` | end-to-end (SSH.NET through a PROXY v2 forwarder) | behind the balancer the connection and the login event have the real client address; a connection without a header, with a malformed header, or from a source that is not allowed is refused before the SSH identification |
 | `Settings/ListenConfigurationTests` | unit | `SshServer:Port` / `SshServer:BindToAddress`: options binding (array, comma separated, `--port`/`--bind` switch mappings), precedence configuration over the stored settings (stored settings unchanged), port validation 1-65535 |
@@ -185,7 +202,8 @@ Skipped tests with `Skip = "Product bug: ..."` document a known bug. Remove the 
 - `Settings/Providers/TestDatabase` is a new, empty settings database of one provider for one test: a SQLite file, or a
   new database on the PostgreSQL or SQL Server of `FREESFTPSHARP_TEST_POSTGRES` / `FREESFTPSHARP_TEST_SQLSERVER` (a
   connection string of a user that may create databases; the test is skipped without it), removed afterwards.
-  `TestDatabase.Providers` is the `MemberData` of a test for every provider. `Cluster/TestNode` starts one node with the
+  `TestDatabase.CreateDefault()` is one of the provider of `FREESFTPSHARP_TEST_DB` (SQLite without it; a missing connection
+  string is an error). `TestDatabase.Providers` is the `MemberData` of a test for every provider. `Cluster/TestNode` starts one node with the
   registrations of ServerConsoleApp on such a database (`Cluster:Enabled`, a poll interval of one second).
 - `Storage/InMemoryFileSystem` is an `IFileSystem` in memory with configurable capabilities. It is only in the test
   project. Use it as the backend of SFTP tests (`new SftpEngineClient(new InMemoryFileSystem())`) and to test a storage

@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -14,10 +15,13 @@ namespace FreeSftpSharp.Tests.Settings.Providers;
 /// <see cref="SqlServerVariable"/> (a connection string with a user that may create databases). Without the variable the
 /// test is skipped. CI sets both on Linux (service containers).
 /// </summary>
-public abstract class TestDatabase : IAsyncDisposable
+public abstract class TestDatabase : IAsyncDisposable, IDisposable
 {
     public const string PostgreSqlVariable = "FREESFTPSHARP_TEST_POSTGRES";
     public const string SqlServerVariable = "FREESFTPSHARP_TEST_SQLSERVER";
+
+    /// <summary>The provider of the store tests (<see cref="CreateDefault"/>); empty: SQLite.</summary>
+    public const string DatabaseVariable = "FREESFTPSHARP_TEST_DB";
 
     public static readonly TheoryData<string> Providers = new(
         SqliteSettingsDatabaseProvider.ProviderName, PostgreSqlSettingsDatabaseProvider.ProviderName, SqlServerSettingsDatabaseProvider.ProviderName);
@@ -63,6 +67,56 @@ public abstract class TestDatabase : IAsyncDisposable
                 throw new ArgumentOutOfRangeException(nameof(provider), provider, null);
         }
     }
+
+    /// <summary>
+    /// The provider of the store tests that run on one provider (<see cref="CreateDefault"/>): <see cref="DatabaseVariable"/>
+    /// (<c>Sqlite</c>, <c>PostgreSQL</c> or <c>SqlServer</c>), SQLite when it is not set.
+    /// </summary>
+    public static string DefaultProvider
+    {
+        get
+        {
+            var value = Environment.GetEnvironmentVariable(DatabaseVariable);
+            if (string.IsNullOrWhiteSpace(value))
+                return SqliteSettingsDatabaseProvider.ProviderName;
+            foreach (var name in new[] { SqliteSettingsDatabaseProvider.ProviderName, PostgreSqlSettingsDatabaseProvider.ProviderName, SqlServerSettingsDatabaseProvider.ProviderName })
+            {
+                if (string.Equals(value.Trim(), name, StringComparison.OrdinalIgnoreCase))
+                    return name;
+            }
+            throw new InvalidOperationException($"{DatabaseVariable} must be Sqlite, PostgreSQL or SqlServer, not '{value}'.");
+        }
+    }
+
+    /// <summary>
+    /// A new database of <see cref="DefaultProvider"/>, for the tests of the repository and the stores: the whole suite runs
+    /// on PostgreSQL or SQL Server with <c>FREESFTPSHARP_TEST_DB</c> and the connection string of that server. A missing
+    /// connection string is an error here, not a skip (the run asked for that provider). Synchronous, for a test constructor.
+    /// </summary>
+    public static TestDatabase CreateDefault()
+    {
+        var provider = DefaultProvider;
+        if (provider == SqliteSettingsDatabaseProvider.ProviderName)
+            return new SqliteTestDatabase();
+        var variable = provider == PostgreSqlSettingsDatabaseProvider.ProviderName ? PostgreSqlVariable : SqlServerVariable;
+        var server = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(server))
+            throw new InvalidOperationException($"{DatabaseVariable}={provider} needs the connection string of the server in {variable}.");
+        return Task.Run(() => CreateAsync(provider)).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// A new SQLite database in any run, for a test that needs SQLite (for example a bUnit page test: its store calls complete
+    /// at once, so the page renders its data in the first render).
+    /// </summary>
+    public static TestDatabase CreateSqlite() => new SqliteTestDatabase();
+
+    /// <summary>The <see cref="SqlSettingsRepository"/> on this database (it creates and migrates the schema).</summary>
+    public SqlSettingsRepository Repository(Func<string>? createHostKey = null, SshServer.Interfaces.Events.IEventBus? events = null, TimeProvider? time = null)
+        => new(Options, createHostKey: createHostKey ?? (() => FreeSftpSharp.Tests.Infrastructure.TestCredentials.HostKey), events: events, time: time);
+
+    /// <summary>Disposes the database synchronously, for <see cref="IDisposable"/> test classes.</summary>
+    public void Dispose() => Task.Run(() => DisposeAsync().AsTask()).GetAwaiter().GetResult();
 
     private static string Server(string variable)
     {

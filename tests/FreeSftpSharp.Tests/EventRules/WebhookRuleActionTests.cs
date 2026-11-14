@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using System.Text.Json.Nodes;
 using FreeSftpSharp.Tests.Settings;
 using Microsoft.AspNetCore.DataProtection;
@@ -18,15 +19,14 @@ namespace FreeSftpSharp.Tests.EventRules;
 /// <summary>The "Webhook" action (from AddWebhooks) puts the event of the rule in the outbox of a webhook.</summary>
 public sealed class WebhookRuleActionTests : IAsyncDisposable
 {
-    private readonly TempDirectory _directory = new();
+    private readonly TestDatabase _database = TestDatabase.CreateDefault();
     private readonly EventRuleTestHost _host;
 
     public WebhookRuleActionTests()
     {
-        var connection = _directory.SqliteConnectionString();
-        var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(connection).Options;
+        var options = _database.Options;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
-        _host = new EventRuleTestHost(connectionString: connection, configure: services =>
+        _host = new EventRuleTestHost(database: _database, configure: services =>
         {
             services.AddSingleton<IWebhookStore>(new SqlWebhookStore(options));
             services.AddWebhooks(configuration);
@@ -43,7 +43,7 @@ public sealed class WebhookRuleActionTests : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _host.DisposeAsync();
-        _directory.Dispose();
+        await _database.DisposeAsync();
     }
 
     [Fact]

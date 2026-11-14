@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -10,19 +11,18 @@ using SshServer.Settings.Sql.TwoFactor;
 
 namespace FreeSftpSharp.Tests.Settings;
 
-/// <summary>The TOTP enrolments in the SQLite settings database (#63): the version check, and the removal with the owner.</summary>
+/// <summary>The TOTP enrolments in the settings database of the run (#63, <see cref="TestDatabase.CreateDefault"/>): the version check, and the removal with the owner.</summary>
 public sealed class SqlTwoFactorStoreTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly DbContextOptions<SettingsDbContext> _options;
     private readonly SqlSettingsRepository _repository;
     private readonly SqlTwoFactorStore _store;
 
     public SqlTwoFactorStoreTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        _options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_connection).Options;
+        _database = TestDatabase.CreateDefault();
+        _options = _database.Options;
         _repository = new SqlSettingsRepository(_options, createHostKey: () => TestCredentials.HostKey);
         _store = new SqlTwoFactorStore(_options);
     }
@@ -30,7 +30,7 @@ public sealed class SqlTwoFactorStoreTests : IDisposable
     public void Dispose()
     {
         _repository.Dispose();
-        _connection.Dispose();
+        _database.Dispose();
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

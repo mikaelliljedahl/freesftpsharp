@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using FreeSftpSharp.Tests.Events;
 using FreeSftpSharp.Tests.Infrastructure;
 using Microsoft.Data.Sqlite;
@@ -14,7 +15,7 @@ using SshServer.Settings.Sql.Audit;
 namespace FreeSftpSharp.Tests.Settings;
 
 /// <summary>
-/// The audit log in the SQLite settings database: the sink, the filters of the query, the retention job (with a fake
+/// The audit log in the settings database of the run (<see cref="TestDatabase.CreateDefault"/>): the sink, the filters of the query, the retention job (with a fake
 /// clock) and the provider events of the settings repository.
 /// </summary>
 public sealed class AuditLogTests : IDisposable
@@ -22,7 +23,7 @@ public sealed class AuditLogTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
     private static readonly DateTimeOffset Now = new(2026, 11, 14, 3, 0, 0, TimeSpan.Zero);
 
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly DbContextOptions<SettingsDbContext> _options;
     private readonly RecordingEventBus _bus = new();
     private readonly FakeTimeProvider _time = new(Now);
@@ -31,15 +32,14 @@ public sealed class AuditLogTests : IDisposable
 
     public AuditLogTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        _options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlite(_connection).Options;
+        _database = TestDatabase.CreateDefault();
+        _options = _database.Options;
         // The repository creates and migrates the database, as at the start of the server.
         _repository = new SqlSettingsRepository(_options, createHostKey: () => TestCredentials.HostKey, events: _bus, time: _time);
         _log = new SqlAuditLog(_options);
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _database.Dispose();
 
     private static FileEvent Upload(string user, DateTimeOffset at, FileEventStatus status = FileEventStatus.Ok) => new(FileEventType.Upload)
     {

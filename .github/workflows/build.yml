@@ -19,12 +19,20 @@ env:
 
 jobs:
   build:
-    name: Build and test (${{ matrix.os }})
+    name: Build and test (${{ matrix.os }}${{ matrix.db && format(', {0}', matrix.db) || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
+        # The settings database of the store and repository tests (FREESFTPSHARP_TEST_DB): SQLite in the main legs, and
+        # the whole suite once more on Linux with PostgreSQL and with SQL Server (the service containers below).
+        db: [ '' ]
+        include:
+          - os: ubuntu-latest
+            db: PostgreSQL
+          - os: ubuntu-latest
+            db: SqlServer
 
     services:
       # The S3 tests (conformance suite and end-to-end) run against this MinIO on Linux and are skipped elsewhere.
@@ -146,16 +154,17 @@ jobs:
           FREESFTPSHARP_TEST_S3_SECRET_KEY: freesftpsharp-ci-only
           FREESFTPSHARP_TEST_POSTGRES: ${{ runner.os == 'Linux' && 'Host=127.0.0.1;Port=5432;Username=freesftpsharp;Password=freesftpsharp-ci-only;Database=freesftpsharp' || '' }}
           FREESFTPSHARP_TEST_SQLSERVER: ${{ runner.os == 'Linux' && 'Server=127.0.0.1,1433;User Id=sa;Password=Freesftpsharp-ci-only1;TrustServerCertificate=True;Encrypt=False' || '' }}
+          FREESFTPSHARP_TEST_DB: ${{ matrix.db }}
         run: >-
           dotnet test FreeSftpSharp.sln --no-build -c Release
-          --logger "trx;LogFilePrefix=${{ matrix.os }}"
+          --logger "trx;LogFilePrefix=${{ matrix.os }}${{ matrix.db }}"
           --results-directory TestResults
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-${{ matrix.os }}${{ matrix.db && format('-{0}', matrix.db) || '' }}
           path: TestResults/**/*.trx
           if-no-files-found: warn
 
@@ -163,7 +172,7 @@ jobs:
       # `dotnet list package --vulnerable` exits 0 even when it finds
       # vulnerable packages, so the output is parsed instead.
       - name: Check for vulnerable packages
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.db == ''
         shell: bash
         run: |
           set -euo pipefail

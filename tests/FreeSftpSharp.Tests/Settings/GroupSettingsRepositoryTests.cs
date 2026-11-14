@@ -1,5 +1,6 @@
 using FreeSftpSharp.Tests.Events;
 using FreeSftpSharp.Tests.Infrastructure;
+using FreeSftpSharp.Tests.Settings.Providers;
 using FxSsh.SshServerModule;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -17,29 +18,28 @@ using SshServerModule.Events;
 namespace FreeSftpSharp.Tests.Settings;
 
 /// <summary>
-/// The groups and the lifecycle fields of the users (issue #61) in the SQLite and LiteDB settings stores, and the upgrade
-/// of a database from before #61.
+/// The groups and the lifecycle fields of the users (issue #61) in the SQL settings store (on the provider of the run,
+/// <see cref="TestDatabase.CreateDefault"/>) and in LiteDB, and the upgrade of a SQLite database from before #61.
 /// </summary>
 public sealed class GroupSettingsRepositoryTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly TestDatabase _database;
     private readonly RecordingEventSink _sink = new();
     private readonly ChannelEventBus _bus;
     private readonly SqlSettingsRepository _repository;
 
     public GroupSettingsRepositoryTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
+        _database = TestDatabase.CreateDefault();
         _bus = new ChannelEventBus([_sink], [], NullLogger<ChannelEventBus>.Instance);
-        _repository = new SqlSettingsRepository(Options(_connection), createHostKey: () => TestCredentials.HostKey, events: _bus);
+        _repository = _database.Repository(events: _bus);
     }
 
     public void Dispose()
     {
         _repository.Dispose();
         _bus.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        _connection.Dispose();
+        _database.Dispose();
     }
 
     private static DbContextOptions<SettingsDbContext> Options(SqliteConnection connection) =>

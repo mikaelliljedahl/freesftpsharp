@@ -1,3 +1,4 @@
+using FreeSftpSharp.Tests.Settings.Providers;
 using Bunit;
 using FreeSftpSharp.Tests.EventRules;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,10 +12,13 @@ namespace FreeSftpSharp.Tests.WebUi;
 /// <summary>The Event rules page on the real application service and a SQLite store: add a rule, run it, the history.</summary>
 public sealed class EventRulesPageTests : AdminUiComponentContext, IAsyncLifetime
 {
-    private readonly EventRuleTestHost _host = new();
+    // SQLite in every run: the page test expects the store calls to complete at once (the data in the first render).
+    private readonly TestDatabase _database = TestDatabase.CreateSqlite();
+    private readonly EventRuleTestHost _host;
 
     public EventRulesPageTests()
     {
+        _host = new EventRuleTestHost(database: _database);
         Services.AddSingleton(_host.Admin);
     }
 
@@ -26,6 +30,7 @@ public sealed class EventRulesPageTests : AdminUiComponentContext, IAsyncLifetim
     {
         await base.DisposeAsync();
         await _host.DisposeAsync();
+        await _database.DisposeAsync();
     }
 
     [Fact]
