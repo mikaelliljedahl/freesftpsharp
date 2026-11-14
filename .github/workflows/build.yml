@@ -59,8 +59,20 @@ jobs:
       - name: Build
         run: dotnet build FreeSftpSharp.sln --no-restore -c Release
 
+      # Azurite (the Azure Blob emulator) for the Azure tests on Linux. It is a step and not a service container because
+      # it needs a command line: --skipApiVersionCheck, as the Azure SDK is newer than every Azurite release.
+      - name: Start Azurite
+        if: runner.os == 'Linux'
+        run: |
+          docker run -d --name azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.37.0 \
+            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:10000/ && exit 0; sleep 1; done
+          docker logs azurite
+          exit 1
+
       - name: Test
         env:
+          FREESFTPSHARP_TEST_AZURITE: ${{ runner.os == 'Linux' && 'http://127.0.0.1:10000' || '' }}
           FREESFTPSHARP_TEST_S3_ENDPOINT: ${{ runner.os == 'Linux' && 'http://127.0.0.1:9000' || '' }}
           FREESFTPSHARP_TEST_S3_ACCESS_KEY: freesftpsharp
           FREESFTPSHARP_TEST_S3_SECRET_KEY: freesftpsharp-ci-only
