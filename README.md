@@ -447,6 +447,78 @@ docker stop fakegcs
 Verification against a real bucket with a service account is a manual step: set `Bucket` and `CredentialsFile`, run the
 same suite by pointing a test at it, and check that the role above is enough.
 
+
+## Azure Blob storage backend
+
+`SshServer.Filesystem.AzureBlob` stores the files of a user in an Azure Blob Storage container, or below a name prefix
+in it. Both hosts register it with `services.AddAzureBlobStorage()` under the provider name `azure-blob`. Nothing
+changes for a server that does not use it: no client is created and no setting is needed.
+
+> **Not selectable yet.** Until the per-user storage configuration (#56) exists, every user has the local disk.
+> #56 adds the choice of the provider and these options per user (and the admin UI fields).
+
+### Options (`AzureBlobStorageOptions`)
+
+Set exactly one of `ConnectionString`, `SasUrl` and `AccountName`. The provider checks the options itself.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `Container` | (required) | The container. It must exist; the server never creates or removes a container. Empty only with a `SasUrl` of the container. |
+| `KeyPrefix` | empty | The blob name prefix that is `/` for the user, for example `users/alice`. Empty: the whole container. |
+| `ConnectionString` | empty | A connection string of the account (also Azurite). A secret, never shown by `ToString()`. |
+| `SasUrl` | empty | A SAS URL of the container (or of the account, with `Container`). A secret, never shown by `ToString()`. |
+| `AccountName` | empty | The account; the server signs in with `DefaultAzureCredential` (managed identity, environment variables, Azure CLI). |
+| `Endpoint` | `https://ACCOUNT.blob.core.windows.net` | The blob service address for `AccountName`, for a sovereign cloud or Azurite. |
+| `AccessTier` | account default | `Hot`, `Cool` or `Cold` for new blobs. |
+| `UploadBlockSize` | 4 MiB | The size of one block of an upload (64 KiB to 256 MiB), held in memory. The largest file is 50,000 blocks (195 GiB with 4 MiB). |
+| `UploadConcurrency` | 2 | The blocks of one upload that are sent while the next block fills (1 to 64). |
+| `ReadAheadSize` | 4 MiB | The bytes that one ranged download reads ahead (64 KiB to 512 MiB). |
+
+### Behaviour
+
+- **Directories are virtual.** A directory exists when a blob name starts with its prefix (`dir/`). `mkdir` writes a
+  zero-length marker blob `dir` with the metadata `hdi_isfolder=true` (the convention of Storage Explorer and Data
+  Lake), so an empty directory stays. A listing is the hierarchy listing with the delimiter `/`, page by page.
+  Directories have the time of their marker, or 1970-01-01 in a listing without one. A file name cannot end with a dot
+  (Azure removes it), and a name has at most 1,024 characters and 254 segments.
+- **Reads** are ranged downloads through a read-ahead buffer: a sequential download is one request per `ReadAheadSize`.
+  A file that another writer replaces while it is open gives a failure (If-Match on the ETag), never mixed content.
+- **Writes** are sequential (no `RandomAccessWrite`). A file smaller than one block is one Put Blob; a larger file is a
+  block blob (Put Block per block, Put Block List when the file is closed), so the blob appears when the file is
+  closed. A write at the end of an existing file (a resumed upload, `reput`, or `Append`) keeps the blocks that the
+  server wrote and adds new ones; a blob that another tool wrote is read through the server into new blocks.
+- **Rename** is Copy Blob (inside one account, done by the service) and Delete Blob; a directory rename copies every
+  blob below it, then removes the sources. It is not atomic, and its cost grows with the size. The capabilities are
+  `Append`, `Rename` and `ServerSideCopy`.
+- **No permissions, no times, no links.** SETSTAT of permissions or times and size changes give `SSH_FX_OP_UNSUPPORTED`
+  (the last modified time of a blob cannot be set); an update that changes nothing works. statvfs (`df`) fails.
+- **Errors**: 404 is `NoSuchFile` (a missing container is a failure), 403 is `PermissionDenied`, 409 `BlobAlreadyExists`
+  is `AlreadyExists`, every other error is `Failure`; the log has the status, the Azure error code and the request id,
+  never the account or the container.
+- **Lost connection**: a session that ends without an SSH_FXP_CLOSE for an open file drops the upload: the block list
+  is never committed, so no blob appears and the old blob stays. The staged blocks are invisible, and Azure removes
+  them after seven days.
+
+### Permissions
+
+With `AccountName` the identity needs the role **Storage Blob Data Contributor** on the container (or the account).
+Reading needs only Storage Blob Data Reader. A SAS URL needs the permissions read, add, create, write, delete and
+list (`racwdl`). `DefaultAzureCredential` is checked by hand against a real account, as there is no emulator for it:
+run the server with a managed identity (or `az login`), set `AccountName` and `Container`, and upload, download, list,
+rename and delete through `sftp`.
+
+### Tests
+
+The conformance suite and the end-to-end tests run against Azurite when `FREESFTPSHARP_TEST_AZURITE` is set to the
+address of its blob service (CI: Azurite on the Ubuntu job); without it they are skipped. The Azure SDK is newer than
+Azurite, so start Azurite with `--skipApiVersionCheck`. Locally:
+
+```sh
+docker run -d --rm --name azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.37.0 azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+FREESFTPSHARP_TEST_AZURITE=http://127.0.0.1:10000 dotnet test FreeSftpSharp.sln --filter "Category=Azure"
+docker stop azurite
+```
+
 ## Encrypted storage
 
 The user roots can be stored encrypted at rest (AES-256-GCM, a key per file, key rotation). It is off by default.
