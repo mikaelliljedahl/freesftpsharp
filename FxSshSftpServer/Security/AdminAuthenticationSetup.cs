@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Threading.Tasks;
+using FxSsh.SshServerModule.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -129,6 +130,16 @@ namespace FxSshSftpServer.Security
             if (hasAdmins)
             {
                 logger.LogInformation("Admin UI login is enabled.");
+                return app;
+            }
+
+            // The first administrator from the OpenID Connect sign-in (#145): the login page stays open for its sign-in.
+            var oidc = services.GetService<IOptions<Oidc.AdminOidcOptions>>()?.Value;
+            if (oidc is { IsEnabled: true } && !string.IsNullOrWhiteSpace(oidc.BootstrapAdmin))
+            {
+                logger.LogWarning(
+                    "No administrator is stored: the first OpenID Connect sign-in of {UserName} ({Setting}) creates it as a super admin. " +
+                    "Remove the setting after that sign-in.", LogText.Clean(oidc.BootstrapAdmin.Trim()), Oidc.AdminOidcOptions.SectionName + ":BootstrapAdmin");
                 return app;
             }
 

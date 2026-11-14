@@ -295,6 +295,37 @@ public sealed class AdminOidcAccountsTests
     }
 
     [Fact]
+    public async Task The_bootstrap_admin_is_created_as_super_admin_only_while_no_administrator_exists()
+    {
+        var accounts = Create(o => o.BootstrapAdmin = "First");
+
+        Assert.Equal(OidcRefusal.UnknownAccount, (await accounts.ResolveAsync(OidcPrincipal.Of("other"), IPAddress.Loopback, Ct)).Refusal);
+        var first = await accounts.ResolveAsync(OidcPrincipal.Of("first"), IPAddress.Loopback, Ct);
+
+        var admin = Assert.IsType<Admin>(first.Account);
+        Assert.Equal(AdminPermissions.SuperAdmin, admin.Permissions);
+        Assert.Equal(OidcClaims.ProviderName, admin.AuthenticationProvider);
+
+        // Once an administrator exists the setting does nothing: a removed bootstrap admin is not created again.
+        await _store.RemoveAdminAsync(admin.Id, Ct);
+        await _store.AddAdminAsync(new Admin { Username = "local", PasswordHash = "x", Permissions = AdminPermissions.SuperAdmin }, Ct);
+        Assert.Equal(OidcRefusal.UnknownAccount, (await accounts.ResolveAsync(OidcPrincipal.Of("first"), IPAddress.Loopback, Ct)).Refusal);
+    }
+
+    [Fact]
+    public async Task The_bootstrap_admin_needs_the_required_role()
+    {
+        var accounts = Create(o =>
+        {
+            o.BootstrapAdmin = "first";
+            o.RequiredRoleValue = "sftp-admin";
+        });
+
+        Assert.Equal(OidcRefusal.MissingRole, (await accounts.ResolveAsync(OidcPrincipal.Of("first"), IPAddress.Loopback, Ct)).Refusal);
+        Assert.False(await _store.AnyAdminAsync(Ct));
+    }
+
+    [Fact]
     public void SyncRolesOnSignIn_needs_the_role_permissions()
     {
         var options = new AdminOidcOptions { Authority = "https://idp.test", ClientId = "admin", SyncRolesOnSignIn = true };

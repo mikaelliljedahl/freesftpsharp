@@ -63,8 +63,40 @@ By default the permissions are set once, at the creation; change them later on t
 `SyncRolesOnSignIn`, the permissions and the scope role of an `oidc` administrator follow its role values at every
 sign-in (mapped with `RolePermissions` as at the creation); a sign-in without a mapped role value is then refused and the
 administrator is not changed. A local administrator is never changed by the sign-in.
-The first administrator of an installation still comes from `--create-admin` or `AdminAuth`: without one, the admin
-UI stays closed.
+#### The first administrator
+
+The sign-in never opens an installation without administrators by itself: `AutoProvision` creates administrators only
+with the permissions of `RolePermissions`, and while no administrator exists the admin UI answers 503 (the SSH server
+and the web client still run). There are three ways to the first administrator:
+
+1. **`--create-admin <name>`** on the command line (or `AdminAuth:UserName` and `AdminAuth:PasswordHash`): a local
+   super admin with a password. It can then also sign in with the provider, if the provider has the same name.
+2. **A role mapped to `SuperAdmin`** with `AutoProvision`, for example `"RolePermissions": { "sftp-admins": "SuperAdmin" }`
+   - but only after the first administrator exists, because the admin UI is closed before.
+3. **`BootstrapAdmin`** (#145): the user name (the claim `UsernameClaim`) of the first administrator. While no
+   administrator is stored, the admin UI stays open for the sign-in, and the first sign-in of exactly this name (with
+   `RequiredRoleValue`, when it is set) creates it as a super admin of the provider `oidc`, also without
+   `AutoProvision`. The log says so at the start. Once any administrator exists, the setting is not used any more:
+   remove it after the first sign-in. Use a name that only the right person has at the provider.
+
+```json
+{
+  "Auth": {
+    "Oidc": {
+      "Admin": {
+        "Authority": "https://keycloak.example.org/realms/sftp",
+        "ClientId": "freesftpsharp-admin",
+        "RoleClaim": "realm_access.roles",
+        "RequiredRoleValue": "sftp-admin",
+        "BootstrapAdmin": "alice"
+      }
+    }
+  }
+}
+```
+
+With `SyncRolesOnSignIn` the role values rule for the bootstrap admin too: map one of its roles to `SuperAdmin`, or it
+loses the permissions at its next sign-in.
 
 ### Web client users
 
@@ -99,6 +131,7 @@ A user of the sign-in has no password for SFTP or WebDAV. An administrator can g
 | `DisableLocalLogin` | `false` | Remove the password form of the area; `POST /Login` (or `POST /client/login`) answers 404. For the admin UI also `POST /api/v1/token` of the REST API answers 403. Turn it on when the sign-in works. The command line (`--create-admin`) still works. |
 | `RequireHttpsMetadata` | `true` | The discovery document over HTTPS only. Turn it off only for a test provider on the same host. |
 | `RolePermissions` (admin) | empty | For `AutoProvision`: role value -> comma separated `AdminPermissions`, for example `{ "sftp-admins": "SuperAdmin", "sftp-helpdesk": "ViewConnections, ViewAudit" }`. Required with `AutoProvision` and `SyncRolesOnSignIn`. |
+| `BootstrapAdmin` (admin) | empty | While no administrator exists: the user name whose first sign-in creates the first super admin (provider `oidc`). Not used once an administrator exists. |
 | `SyncRolesOnSignIn` (admin) | `false` | The permissions and the scope of an `oidc` administrator follow its role values at every sign-in. Off: they are set once, at the creation. |
 | `TemplateGroup` (client) | empty | The primary group of a new user. |
 | `GroupsClaim` (client) | `groups` | The claim with the groups. Empty: the groups are not mapped. |

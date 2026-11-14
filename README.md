@@ -89,7 +89,7 @@ The UI has a dark mode (the half-circle button in the top bar; it follows the OS
 
 ### The first administrator
 
-The administrators are stored in the settings database. There are two ways to create the first one:
+The administrators are stored in the settings database. There are three ways to create the first one:
 
 - **On the command line** (new installations): `FxSshSftpServer --create-admin <name>` creates a super admin in the
   same database as the server (same configuration) and exits. It asks for the password twice, or reads one line from
@@ -99,6 +99,8 @@ The administrators are stored in the settings database. There are two ways to cr
   start, and the log says so. An existing installation therefore keeps its login after the upgrade.
   After the import the stored administrators are used; a later change of `AdminAuth:UserName` or
   `AdminAuth:PasswordHash` is ignored (the log says so). Change the password on the "Change password" page instead.
+- **With single sign-on** (`Auth:Oidc:Admin:BootstrapAdmin`, #145): while no administrator exists, the first OpenID
+  Connect sign-in of this user name creates it as a super admin. See [docs/OIDC.md](docs/OIDC.md#the-first-administrator).
 
 To set the configured account:
 

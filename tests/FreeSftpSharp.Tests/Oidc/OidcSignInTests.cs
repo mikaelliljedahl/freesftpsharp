@@ -32,6 +32,9 @@ public class OidcHostFactory : WebClientFactory
 
     protected virtual bool DisableLocalLogin => false;
 
+    /// <summary>Auth:Oidc:Admin:BootstrapAdmin (#145), or null.</summary>
+    protected virtual string? BootstrapAdmin => null;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -44,6 +47,8 @@ public class OidcHostFactory : WebClientFactory
         builder.UseSetting("Auth:Oidc:Admin:AutoProvision", "true");
         builder.UseSetting("Auth:Oidc:Admin:RolePermissions:sftp-helpdesk", "ViewConnections, ViewAudit");
         builder.UseSetting("Auth:Oidc:Admin:DisableLocalLogin", DisableLocalLogin ? "true" : "false");
+        if (BootstrapAdmin != null)
+            builder.UseSetting("Auth:Oidc:Admin:BootstrapAdmin", BootstrapAdmin);
         builder.UseSetting("Auth:Oidc:Client:Authority", FakeOidcProvider.Issuer);
         builder.UseSetting("Auth:Oidc:Client:ClientId", WebClientId);
         builder.UseSetting("Auth:Oidc:Client:DisplayName", "Test IdP");
@@ -68,6 +73,16 @@ public class OidcHostFactory : WebClientFactory
 public sealed class OidcLocalLoginDisabledFactory : OidcHostFactory
 {
     protected override bool DisableLocalLogin => true;
+}
+
+/// <summary>A new installation without an administrator, with <c>Auth:Oidc:Admin:BootstrapAdmin</c> (#145).</summary>
+public sealed class OidcBootstrapFactory : OidcHostFactory
+{
+    public const string FirstAdmin = "first-admin";
+
+    protected override bool ConfigureAdminCredential => false;
+
+    protected override string? BootstrapAdmin => FirstAdmin;
 }
 
 /// <summary>A browser for the code flow: the app, and the provider for the authorize step.</summary>
@@ -445,6 +460,45 @@ public sealed class OidcLocalLoginDisabledTests : IClassFixture<OidcLocalLoginDi
         await browser.FollowDonePageAsync(await browser.SignInAsync("/Login?handler=Oidc"));
 
         Assert.Equal(HttpStatusCode.OK, (await browser.Http.GetAsync("/", Ct)).StatusCode);
+    }
+}
+
+/// <summary>The first administrator of an installation from the sign-in (#145, <c>Auth:Oidc:Admin:BootstrapAdmin</c>).</summary>
+[Collection(AdminUiCollection.Name)]
+public sealed class OidcBootstrapAdminTests : IClassFixture<OidcBootstrapFactory>
+{
+    private readonly OidcBootstrapFactory _factory;
+
+    public OidcBootstrapAdminTests(OidcBootstrapFactory factory)
+    {
+        _factory = factory;
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Without_an_administrator_only_the_bootstrap_name_becomes_the_first_super_admin()
+    {
+        using var browser = _factory.CreateOidcBrowser();
+        // The admin UI is not closed with 503: its login page offers the sign-in.
+        var login = await browser.Http.GetAsync("/Login", Ct);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        Assert.Contains("id=\"oidc-login\"", await login.Content.ReadAsStringAsync(Ct));
+
+        // Another name with the right role and no mapped permission: refused, nothing created.
+        _factory.Provider.SignIn("someone-else", roles: ["sftp-admin"]);
+        var other = await browser.SignInAsync("/Login?handler=Oidc");
+        Assert.Equal("/Login?oidc_error=missingrole", other.Headers.Location!.OriginalString);
+        Assert.False(await _factory.AdminStore.AnyAdminAsync(Ct));
+
+        _factory.Provider.SignIn(OidcBootstrapFactory.FirstAdmin, roles: ["sftp-admin"]);
+        await browser.FollowDonePageAsync(await browser.SignInAsync("/Login?handler=Oidc"));
+
+        var admin = await _factory.AdminStore.GetAdminAsync(OidcBootstrapFactory.FirstAdmin, Ct);
+        Assert.NotNull(admin);
+        Assert.Equal(AdminPermissions.SuperAdmin, admin.Permissions);
+        Assert.Equal(OidcClaims.ProviderName, admin.AuthenticationProvider);
+        Assert.Equal(HttpStatusCode.OK, (await browser.Http.GetAsync("/admins", Ct)).StatusCode);
     }
 }
 

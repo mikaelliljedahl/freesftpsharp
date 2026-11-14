@@ -20,8 +20,9 @@ namespace FxSshSftpServer.Security
     /// the permissions of its role values (<see cref="AdminOidcOptions.RolePermissions"/>) and the scope role whose name
     /// is one of its role values. The administrators that it creates belong to the provider <c>oidc</c>
     /// (<see cref="Admin.AuthenticationProvider"/>, #145): they have no local password, and with
-    /// <see cref="AdminOidcOptions.SyncRolesOnSignIn"/> their permissions follow the role values at each sign-in. Then the
-    /// same rules as for a password login: enabled, and from an allowed network.
+    /// <see cref="AdminOidcOptions.SyncRolesOnSignIn"/> their permissions follow the role values at each sign-in. While no
+    /// administrator exists, <see cref="AdminOidcOptions.BootstrapAdmin"/> is created as a super admin. Then the same rules
+    /// as for a password login: enabled, and from an allowed network.
     /// </summary>
     public sealed class AdminOidcAccounts
     {
@@ -55,9 +56,13 @@ namespace FxSshSftpServer.Security
             var admin = await _store.GetAdminAsync(username, ct);
             if (admin == null)
             {
-                if (!_options.AutoProvision)
+                OidcAccountResult<Admin> created;
+                if (_options.IsBootstrapAdmin(username) && !await _store.AnyAdminAsync(ct))
+                    created = await CreateBootstrapAsync(username, ct);
+                else if (!_options.AutoProvision)
                     return Refused(OidcRefusal.UnknownAccount, username, "no administrator has the name and AutoProvision is off");
-                var created = await CreateAsync(external, username, ct);
+                else
+                    created = await CreateAsync(external, username, ct);
                 if (created.Account == null)
                     return created;
                 admin = created.Account;
@@ -97,6 +102,19 @@ namespace FxSshSftpServer.Security
             if (created.Account != null && created.Account.AuthenticationProvider == OidcClaims.ProviderName)
                 _logger.LogInformation("Created administrator {Username} from the OpenID Connect sign-in with {Permissions}{Scope}.",
                     LogText.Clean(username), permissions, scope == null ? "" : " in the scope role " + LogText.Clean(scope.Name));
+            return created;
+        }
+
+        /// <summary>
+        /// The first administrator of an installation (<see cref="AdminOidcOptions.BootstrapAdmin"/>, #145): a super admin,
+        /// only while no administrator exists.
+        /// </summary>
+        private async Task<OidcAccountResult<Admin>> CreateBootstrapAsync(string username, CancellationToken ct)
+        {
+            var created = await AddAsync(new AdminInput(username) { Permissions = AdminPermissions.SuperAdmin }, ct);
+            if (created.Account != null)
+                _logger.LogWarning("Created the first administrator {Username} as a super admin from the OpenID Connect sign-in ({Setting}). " +
+                    "Remove the setting now: it is not used while an administrator exists.", LogText.Clean(username), AdminOidcOptions.SectionName + ":BootstrapAdmin");
             return created;
         }
 
