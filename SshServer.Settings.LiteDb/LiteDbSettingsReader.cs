@@ -1,5 +1,6 @@
 using LiteDB;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 
 namespace SshServer.Settings.LiteDb;
 
@@ -67,7 +68,9 @@ public static class LiteDbSettingsReader
                     Username = stored.Username,
                     UserRootDirectory = stored.UserRootDirectory,
                     HashedPassword = stored.HashedPassword,
-                    RsaPublicKey = stored.RsaPublicKey,
+                    PublicKeys = PublicKeysOf(stored),
+                    AllowedAuthMethods = stored.AllowedAuthMethods,
+                    RequireAllOf = stored.RequireAllOf,
                     OnlyWhitelistedIps = stored.OnlyWhitelistedIps,
                     WhitelistedIps = stored.WhitelistedIps,
                     LastSuccessfulLogin = stored.LastSuccessfulLogin,
@@ -82,5 +85,28 @@ public static class LiteDbSettingsReader
         }
 
         return new LiteDbSettingsSnapshot(settings, users);
+    }
+
+    /// <summary>
+    /// The keys of a stored user: the old single key (a base64 CSP blob) becomes an entry. A key that cannot be read did
+    /// not work before either and is left out.
+    /// </summary>
+    internal static List<PublicKeyEntry>? PublicKeysOf(FxSsh.SshServerModule.UserWithObjectId stored)
+    {
+        var keys = stored.PublicKeys?.ToList();
+        if (string.IsNullOrWhiteSpace(stored.RsaPublicKey))
+            return keys;
+        try
+        {
+            var entry = SshPublicKey.FromLegacyCspBlob(stored.RsaPublicKey, DateTime.UtcNow);
+            keys ??= new List<PublicKeyEntry>();
+            if (!keys.Any(k => k.KeyBase64 == entry.KeyBase64))
+                keys.Add(entry);
+        }
+        catch (PublicKeyFormatException)
+        {
+            // Not a key; nothing to import.
+        }
+        return keys;
     }
 }

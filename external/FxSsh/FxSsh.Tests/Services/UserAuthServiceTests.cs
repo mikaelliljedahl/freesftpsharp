@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net;
+using System.Reflection;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -26,6 +28,8 @@ namespace FxSsh.Tests.Services
         private Socket _clientSocket = null!;
         private Socket _serverSocket = null!;
         private Session _session = null!;
+        private readonly System.Threading.CancellationTokenSource _sendPumpCancellation = new();
+        private Task? _sendPump;
 
         [TestInitialize]
         public void CreateSessionOverSocketPair()
@@ -44,6 +48,7 @@ namespace FxSsh.Tests.Services
         [TestCleanup]
         public void DisposeSockets()
         {
+            _sendPumpCancellation.Cancel();
             _clientSocket.Dispose();
             _serverSocket.Dispose();
         }
@@ -220,6 +225,140 @@ namespace FxSsh.Tests.Services
 
             await Task.Delay(300);
             Assert.IsFalse(registered.Task.IsCompleted);
+        }
+
+        /// <summary>
+        /// Reads one SSH binary packet that the session sent to the peer
+        /// (no key exchange yet, so it is not encrypted) and returns its payload.
+        /// </summary>
+        private byte[] ReceivePayload()
+        {
+            if (_sendPump == null)
+            {
+                // The session is not started, so its send pump does not run: start only the pump.
+                var pump = typeof(Session).GetMethod("ProcessSendChannelAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                _sendPump = (Task)pump.Invoke(_session, new object[] { _sendPumpCancellation.Token })!;
+            }
+            _clientSocket.ReceiveTimeout = 5000;
+            var header = ReceiveExactly(5);
+            var length = (int)BinaryPrimitives.ReadUInt32BigEndian(header);
+            var padding = header[4];
+            var rest = ReceiveExactly(length - 1);
+            return rest[..(rest.Length - padding)];
+        }
+
+        private byte[] ReceiveExactly(int count)
+        {
+            var buffer = new byte[count];
+            var read = 0;
+            while (read < count)
+            {
+                var n = _clientSocket.Receive(buffer, read, count - read, SocketFlags.None);
+                if (n == 0)
+                    throw new InvalidOperationException("The session closed the socket.");
+                read += n;
+            }
+            return buffer;
+        }
+
+        private static (string Methods, bool PartialSuccess) ReadFailure(byte[] payload)
+        {
+            var reader = new SshDataReader(payload);
+            Assert.AreEqual(FailureMessage.MessageNumber, reader.ReadByte());
+            return (reader.ReadString(Encoding.ASCII), reader.ReadBoolean());
+        }
+
+        [TestMethod]
+        public void A_failure_offers_the_methods_of_AuthenticationsThatCanContinue()
+        {
+            var service = new UserAuthService(_session);
+            CollectionAssert.AreEqual(new[] { "password", "publickey" }, (System.Collections.ICollection)service.AuthenticationsThatCanContinue);
+            service.AuthenticationsThatCanContinue = new[] { "publickey" };
+            service.UserAuth += (_, e) => e.Result = false;
+
+            service.HandleMessageCore(PasswordRequest("wrong-password"));
+
+            Assert.AreEqual(("publickey", false), ReadFailure(ReceivePayload()));
+        }
+
+        [TestMethod]
+        public async Task Password_partial_success_answers_failure_with_partial_success_and_starts_no_service()
+        {
+            var service = new UserAuthService(_session);
+            service.UserAuth += (_, e) =>
+            {
+                e.Result = true;
+                e.PartialSuccess = true;
+            };
+            var partial = new List<UserAuthArgs>();
+            service.PartialSucceed += (_, e) =>
+            {
+                partial.Add(e);
+                service.AuthenticationsThatCanContinue = new[] { "publickey" };
+            };
+            var succeeded = false;
+            service.Succeed += (_, _) => succeeded = true;
+            var registered = new TaskCompletionSource<SshService>();
+            _session.ServiceRegistered += (_, s) => registered.TrySetResult(s);
+
+            service.HandleMessageCore(PasswordRequest("right-password"));
+
+            Assert.AreEqual(("publickey", true), ReadFailure(ReceivePayload()));
+            Assert.AreEqual(1, partial.Count);
+            Assert.AreEqual("password", partial[0].AuthMethod);
+            Assert.IsFalse(succeeded);
+            await Assert.ThrowsExactlyAsync<TimeoutException>(
+                () => registered.Task.WaitAsync(TimeSpan.FromMilliseconds(400)));
+        }
+
+        [TestMethod]
+        public async Task PublicKey_partial_success_is_raised_only_after_a_valid_signature()
+        {
+            var sessionId = RandomNumberGenerator.GetBytes(32);
+            typeof(Session).GetProperty(nameof(Session.SessionId))!.SetValue(_session, sessionId);
+
+            var service = new UserAuthService(_session);
+            service.UserAuth += (_, e) =>
+            {
+                e.Result = true;
+                e.PartialSuccess = true;
+            };
+            var partial = 0;
+            service.PartialSucceed += (_, _) => partial++;
+            var registered = new TaskCompletionSource<SshService>();
+            _session.ServiceRegistered += (_, s) => registered.TrySetResult(s);
+
+            var key = new EcdsaKey("nistp256", KeyGenerator.GenerateECDsaKeyPem("nistp256"));
+            var blob = key.CreateKeyAndCertificatesData();
+
+            // The query without a signature gets PK_OK, no partial success.
+            service.HandleMessageCore(PublicKeyRequest("ecdsa-sha2-nistp256", blob, hasSignature: false, signature: null));
+            Assert.AreEqual(PublicKeyOkMessage.MessageNumber, ReceivePayload()[0]);
+            Assert.AreEqual(0, partial);
+
+            // A wrong signature is a plain failure.
+            service.HandleMessageCore(PublicKeyRequest("ecdsa-sha2-nistp256", blob, hasSignature: true,
+                signature: key.CreateSignatureData("other payload"u8.ToArray())));
+            Assert.AreEqual(("password,publickey", false), ReadFailure(ReceivePayload()));
+            Assert.AreEqual(0, partial);
+
+            // The signature covers the session id and the request without the signature (RFC 4252 section 7).
+            var unsigned = TestMessages.Payload(RequestMessage.MessageNumber)
+                .Write(Username, Encoding.UTF8)
+                .Write("ssh-connection", Encoding.ASCII)
+                .Write("publickey", Encoding.ASCII)
+                .Write(true)
+                .Write("ecdsa-sha2-nistp256", Encoding.ASCII)
+                .WriteBinary(blob)
+                .ToByteArray();
+            var signed = new SshDataWriter().WriteBinary(sessionId).WriteBytes(unsigned).ToByteArray();
+            service.HandleMessageCore(PublicKeyRequest("ecdsa-sha2-nistp256", blob, hasSignature: true,
+                signature: key.CreateSignatureData(signed)));
+
+            Assert.AreEqual(("password,publickey", true), ReadFailure(ReceivePayload()));
+            Assert.AreEqual(1, partial);
+            await Assert.ThrowsExactlyAsync<TimeoutException>(
+                () => registered.Task.WaitAsync(TimeSpan.FromMilliseconds(400)));
         }
 
         [TestMethod]

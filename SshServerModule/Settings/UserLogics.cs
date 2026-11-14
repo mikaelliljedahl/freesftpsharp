@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using SshServer.Interfaces.Security;
 using SshServer.Interfaces.Net;
@@ -29,40 +28,26 @@ namespace FxSsh.SshServerModule
         }
 
         /// <summary>
-        /// Public key authentication by fingerprint. <see cref="User.RsaPublicKey"/> is a base64 CSP blob
-        /// (made by the admin UI). The fingerprint is the base64 SHA-256 of the SSH public key blob, as FxSsh
-        /// gives it in <c>UserAuthArgs.Fingerprint</c> (OpenSSH shows it as "SHA256:...", without padding).
+        /// Public key authentication (issue #58): true when <paramref name="keyBlob"/>, the SSH public key blob of the
+        /// login request (<c>UserAuthArgs.Key</c>), is the whole blob of one of the user's keys that is not expired at
+        /// <paramref name="utcNow"/>. The fingerprint is never compared: a key with the same fingerprint prefix but
+        /// another blob is refused.
         /// </summary>
-        internal static bool VerifyUserKey(User user, string fingerprint)
+        internal static bool VerifyUserKey(User user, byte[] keyBlob, DateTime utcNow)
         {
-            if (string.IsNullOrWhiteSpace(user.RsaPublicKey) || string.IsNullOrEmpty(fingerprint))
+            if (user?.PublicKeys == null || keyBlob == null || keyBlob.Length == 0)
                 return false;
 
-            string savedFingerprint;
-            try
+            var match = false;
+            foreach (var entry in user.PublicKeys)
             {
-                savedFingerprint = GetRsaPublicKeyFingerprint(user.RsaPublicKey);
+                if (entry == null)
+                    continue;
+                // Every entry is compared (no early exit), so the time does not tell which entry matched.
+                if (entry.Matches(keyBlob) && !entry.IsExpired(utcNow))
+                    match = true;
             }
-            catch (Exception ex) when (ex is FormatException or CryptographicException)
-            {
-                return false;
-            }
-
-            return string.Equals(fingerprint, savedFingerprint, StringComparison.Ordinal);
-        }
-
-        /// <summary>The base64 SHA-256 fingerprint of an RSA public key that is stored as a base64 CSP blob.</summary>
-        internal static string GetRsaPublicKeyFingerprint(string base64CspBlob)
-        {
-            using var csp = new RSACryptoServiceProvider();
-            csp.ImportCspBlob(Convert.FromBase64String(base64CspBlob));
-            var key = new FxSsh.Algorithms.RsaKey(256, csp.ExportSubjectPublicKeyInfoPem());
-            return key.GetFingerprint();
-        }
-
-        internal static byte[] ConvertFingerprintToByteArray(string fingerprint)
-        {
-            return fingerprint.Split(':').Select(s => Convert.ToByte(s, 16)).ToArray();
+            return match;
         }
 
         /// <summary>

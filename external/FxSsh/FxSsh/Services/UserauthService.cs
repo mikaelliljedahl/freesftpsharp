@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using FxSsh.Logging;
 using FxSsh.Messages;
 using FxSsh.Messages.UserAuth;
@@ -46,6 +47,24 @@ namespace FxSsh.Services
         public event EventHandler<string> Succeed;
 
         /// <summary>
+        /// Occurs when an attempt that the <see cref="UserAuth"/> handler
+        /// accepted with <see cref="UserAuthArgs.PartialSuccess"/> = true is
+        /// verified (for "publickey": after the signature check). The service
+        /// then answers SSH_MSG_USERAUTH_FAILURE with partial success = true
+        /// and the current <see cref="AuthenticationsThatCanContinue"/>, which
+        /// the handler may change here.
+        /// </summary>
+        public event EventHandler<UserAuthArgs> PartialSucceed;
+
+        /// <summary>
+        /// Gets or sets the methods that SSH_MSG_USERAUTH_FAILURE offers
+        /// (RFC 4252 section 5.1). Defaults to "password,publickey"; a host
+        /// with multi-step authentication sets the remaining methods after a
+        /// partial success.
+        /// </summary>
+        public IReadOnlyList<string> AuthenticationsThatCanContinue { get; set; } = FailureMessage.DefaultAuthenticationsThatCanContinue;
+
+        /// <summary>
         /// Implements the base teardown hook; the user authentication service
         /// holds no resources, so this is a no-op.
         /// </summary>
@@ -91,7 +110,7 @@ namespace FxSsh.Services
                 case "hostbased":
                 default:
                     Log.Debug($"Unsupported auth method: {message.MethodName}.");
-                    _session.SendMessage(new FailureMessage());
+                    SendFailure();
                     break;
             }
         }
@@ -105,6 +124,11 @@ namespace FxSsh.Services
                 UserAuth(this, args);
                 verifed = args.Result;
             }
+            if (verifed && args.PartialSuccess)
+            {
+                SendPartialSuccess("none", message.Username, args);
+                return;
+            }
             if (verifed)
             {
                 Log.Info($"Auth succeeded: none, user {message.Username}.");
@@ -116,7 +140,7 @@ namespace FxSsh.Services
             else
             {
                 Log.Warn($"Auth failed: none, user {message.Username}.");
-                _session.SendMessage(new FailureMessage());
+                SendFailure();
             }
         }
 
@@ -129,6 +153,12 @@ namespace FxSsh.Services
             {
                 UserAuth(this, args);
                 verifed = args.Result;
+            }
+
+            if (verifed && args.PartialSuccess)
+            {
+                SendPartialSuccess("password", message.Username, args);
+                return;
             }
 
             if (verifed)
@@ -144,7 +174,7 @@ namespace FxSsh.Services
             else
             {
                 Log.Warn($"Auth failed: password, user {message.Username}.");
-                _session.SendMessage(new FailureMessage());
+                SendFailure();
             }
         }
 
@@ -166,7 +196,7 @@ namespace FxSsh.Services
                 if (!verifed)
                 {
                     Log.Warn($"Public key auth rejected by host policy: user {message.Username}.");
-                    _session.SendMessage(new FailureMessage());
+                    SendFailure();
                     return;
                 }
 
@@ -185,7 +215,7 @@ namespace FxSsh.Services
                 if (_session.SessionId == null)
                 {
                     Log.Warn($"Public key signature received before key exchange: user {message.Username}.");
-                    _session.SendMessage(new FailureMessage());
+                    SendFailure();
                     return;
                 }
 
@@ -199,7 +229,13 @@ namespace FxSsh.Services
                 if (!verifed)
                 {
                     Log.Warn($"Public key signature verification failed: user {message.Username}.");
-                    _session.SendMessage(new FailureMessage());
+                    SendFailure();
+                    return;
+                }
+
+                if (args.PartialSuccess)
+                {
+                    SendPartialSuccess("publickey", message.Username, args);
                     return;
                 }
 
@@ -211,8 +247,20 @@ namespace FxSsh.Services
             else
             {
                 Log.Warn($"Unsupported key algorithm: {message.KeyAlgorithmName}.");
-                _session.SendMessage(new FailureMessage());
+                SendFailure();
             }
+        }
+
+        private void SendFailure()
+        {
+            _session.SendMessage(new FailureMessage(AuthenticationsThatCanContinue, false));
+        }
+
+        private void SendPartialSuccess(string method, string username, UserAuthArgs args)
+        {
+            Log.Info($"Auth partially succeeded: {method}, user {username}; more methods are needed.");
+            PartialSucceed?.Invoke(this, args);
+            _session.SendMessage(new FailureMessage(AuthenticationsThatCanContinue, true));
         }
     }
 }

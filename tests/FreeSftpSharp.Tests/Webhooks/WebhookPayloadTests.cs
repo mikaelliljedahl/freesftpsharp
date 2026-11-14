@@ -50,7 +50,8 @@ public sealed class WebhookPayloadTests
     [Fact]
     public void A_user_change_has_the_snapshot_without_the_password_hash_or_key()
     {
-        var user = new User { Username = "bob", HashedPassword = "PBKDF2-HASH-VALUE", RsaPublicKey = "ssh-rsa KEY", UserRootDirectory = "/srv/bob" };
+        var key = FreeSftpSharp.Tests.Infrastructure.TestUserKeys.Rsa();
+        var user = new User { Username = "bob", HashedPassword = "PBKDF2-HASH-VALUE", PublicKeys = [key.Entry], UserRootDirectory = "/srv/bob" };
         var e = new ProviderEvent(ProviderAction.Update, ProviderObjectType.User, "bob")
         {
             Timestamp = At, Object = UserSnapshot.From(user), ChangedFields = ["HashedPassword"],
@@ -64,6 +65,7 @@ public sealed class WebhookPayloadTests
         Assert.True(json.GetProperty("object").GetProperty("has_password").GetBoolean());
         Assert.DoesNotContain("PBKDF2-HASH-VALUE", body);
         Assert.DoesNotContain("ssh-rsa", body);
+        Assert.DoesNotContain(key.Entry.KeyBase64, body);
     }
 
     [Fact]

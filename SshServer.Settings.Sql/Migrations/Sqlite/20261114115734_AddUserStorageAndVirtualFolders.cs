@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 /// <inheritdoc />
-public partial class _20261114114842_AddUserStorageAndVirtualFolders : Migration
+public partial class _20261114115734_AddUserStorageAndVirtualFolders : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

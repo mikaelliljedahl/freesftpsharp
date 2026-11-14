@@ -3,6 +3,7 @@ using FreeSftpSharp.Tests.Infrastructure;
 using FreeSftpSharp.Tests.Settings;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces;
+using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Security;
 
 namespace FreeSftpSharp.Tests.Unit;
@@ -30,7 +31,7 @@ public sealed class UserAdministrationServiceTests : IDisposable
         Assert.Equal(root, stored.UserRootDirectory);
         Assert.True(PasswordHasher.IsWellFormed(stored.HashedPassword));
         Assert.True(PasswordHasher.Verify("correct horse", stored.HashedPassword));
-        Assert.Null(stored.RsaPublicKey);
+        Assert.Null(stored.PublicKeys);
         Assert.Equal("alice", user.Username);
     }
 
@@ -119,7 +120,7 @@ public sealed class UserAdministrationServiceTests : IDisposable
     }
 
     [Fact]
-    public void An_OpenSsh_public_key_is_stored_as_the_csp_blob_of_the_same_key()
+    public void An_OpenSsh_rsa_public_key_is_stored_as_an_entry_of_the_same_key()
     {
         using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(false);
@@ -127,13 +128,11 @@ public sealed class UserAdministrationServiceTests : IDisposable
         var user = _service.Create("keyuser", _temp.File("r"), null, ToOpenSshLine(parameters, "me@laptop"));
 
         Assert.Null(user.HashedPassword);
-        using var csp = new RSACryptoServiceProvider();
-        var storedKey = _repository.GetUser("keyuser").RsaPublicKey;
-        Assert.NotNull(storedKey);
-        csp.ImportCspBlob(Convert.FromBase64String(storedKey));
-        var imported = csp.ExportParameters(false);
-        Assert.Equal(parameters.Modulus, imported.Modulus);
-        Assert.Equal(parameters.Exponent, imported.Exponent);
+        var entry = Assert.Single(_repository.GetUser("keyuser").PublicKeys!);
+        Assert.Equal("ssh-rsa", entry.KeyType);
+        Assert.Equal(Convert.ToBase64String(SshPublicKey.RsaBlob(parameters)), entry.KeyBase64);
+        Assert.Equal("me@laptop", entry.Comment);
+        Assert.Equal(PublicKeySource.Admin, entry.Source);
     }
 
     [Fact]
@@ -143,18 +142,84 @@ public sealed class UserAdministrationServiceTests : IDisposable
 
         _service.Create("pemuser", _temp.File("r"), null, rsa.ExportSubjectPublicKeyInfoPem());
 
-        Assert.False(string.IsNullOrEmpty(_repository.GetUser("pemuser").RsaPublicKey));
+        Assert.Single(_repository.GetUser("pemuser").PublicKeys!);
+    }
+
+    [Fact]
+    public void An_authorized_keys_file_with_ed25519_ecdsa_and_rsa_keys_gives_one_entry_per_key()
+    {
+        var text = string.Join("\n", "# keys", TestUserKeys.Ed25519().AuthorizedKeysLine, TestUserKeys.EcdsaNistP256().AuthorizedKeysLine,
+            TestUserKeys.Rsa().AuthorizedKeysLine);
+
+        _service.Create("multi", _temp.File("r"), null, text);
+
+        Assert.Equal(new[] { "ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa" }, _repository.GetUser("multi").PublicKeys!.Select(k => k.KeyType));
     }
 
     [Theory]
     [InlineData("not a key")]
-    [InlineData("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl me")]
+    [InlineData("ssh-dss AAAAB3NzaC1kc3M= old")]
     [InlineData("ssh-rsa !!!notbase64")]
     [InlineData("ssh-rsa AAAA")]
+    [InlineData("from=\"10.0.0.0/8\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl me")]
     public void A_bad_public_key_is_rejected(string key)
     {
         Assert.Throws<UserAdministrationException>(() => _service.Create("keyuser", _temp.File("r"), null, key));
         Assert.Empty(_repository.GetAllUsers());
+    }
+
+    [Fact]
+    public void Keys_are_added_with_an_expiry_and_a_key_the_user_has_is_skipped()
+    {
+        var first = TestUserKeys.Ed25519();
+        _service.Create("bob", _temp.File("r"), null, first.AuthorizedKeysLine);
+        var expires = new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var (added, skipped) = _service.AddPublicKeys("bob", first.AuthorizedKeysLine + "\n" + TestUserKeys.Rsa().AuthorizedKeysLine, expires);
+
+        Assert.Equal((1, 1), (added, skipped));
+        var keys = _repository.GetUser("bob").PublicKeys!;
+        Assert.Equal(2, keys.Count);
+        Assert.Null(keys[0].ExpiresAt);
+        Assert.Equal(expires, keys[1].ExpiresAt);
+    }
+
+    [Fact]
+    public void Nothing_is_added_when_one_line_is_refused()
+    {
+        _service.Create("bob", _temp.File("r"), "correct horse", null);
+
+        var ex = Assert.Throws<UserAdministrationException>(() =>
+            _service.AddPublicKeys("bob", TestUserKeys.Ed25519().AuthorizedKeysLine + "\nrestrict " + TestUserKeys.Ed25519().AuthorizedKeysLine, null));
+
+        Assert.Contains("Line 2", ex.Message);
+        Assert.Null(_repository.GetUser("bob").PublicKeys);
+    }
+
+    [Fact]
+    public void A_key_is_removed_by_its_blob_and_an_unknown_key_or_user_is_reported()
+    {
+        var keep = TestUserKeys.Ed25519();
+        var remove = TestUserKeys.Ed25519();
+        _service.Create("bob", _temp.File("r"), null, keep.AuthorizedKeysLine + "\n" + remove.AuthorizedKeysLine);
+
+        Assert.True(_service.RemovePublicKey("bob", remove.Entry.KeyBase64));
+        Assert.False(_service.RemovePublicKey("bob", remove.Entry.KeyBase64));
+
+        Assert.Equal(keep.Entry.KeyBase64, Assert.Single(_repository.GetUser("bob").PublicKeys!).KeyBase64);
+        Assert.Throws<UserAdministrationException>(() => _service.RemovePublicKey("nobody", keep.Entry.KeyBase64));
+    }
+
+    [Fact]
+    public void A_generated_key_entry_is_added_once()
+    {
+        _service.Create("bob", _temp.File("r"), "correct horse", null);
+        var key = TestUserKeys.Ed25519();
+
+        Assert.True(_service.AddPublicKey("bob", key.Entry));
+        Assert.False(_service.AddPublicKey("bob", key.Entry));
+
+        Assert.Single(_repository.GetUser("bob").PublicKeys!);
     }
 
     internal static string ToOpenSshLine(RSAParameters p, string comment)

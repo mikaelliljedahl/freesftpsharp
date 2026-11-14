@@ -11,8 +11,8 @@ using SshServer.Settings.Sql;
 namespace SshServer.Settings.Sql.Migrations.Sqlite;
 
 [DbContext(typeof(SettingsDbContext))]
-[Migration("20261114114842_AddUserStorageAndVirtualFolders")]
-partial class _20261114114842_AddUserStorageAndVirtualFolders
+[Migration("20261114115734_AddUserStorageAndVirtualFolders")]
+partial class _20261114115734_AddUserStorageAndVirtualFolders
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -256,6 +256,11 @@ partial class _20261114114842_AddUserStorageAndVirtualFolders
                     .ValueGeneratedOnAdd()
                     .HasColumnType("INTEGER");
 
+                b.Property<string>("AllowedAuthMethods")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("HashedPassword")
                     .HasColumnType("TEXT");
 
@@ -269,6 +274,12 @@ partial class _20261114114842_AddUserStorageAndVirtualFolders
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Permissions")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("PublicKeys")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("RequireAllOf")
                     .HasColumnType("TEXT");
 
                 b.Property<int?>("RoleId")

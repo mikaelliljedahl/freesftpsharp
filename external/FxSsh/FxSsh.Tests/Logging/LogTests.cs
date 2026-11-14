@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using FxSsh.Algorithms;
 using FxSsh.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -25,6 +28,25 @@ namespace FxSsh.Tests.Logging
         public void RestoreDefaults()
         {
             Log.Configure(new LogOptions());
+        }
+
+        [TestMethod]
+        public async Task Custom_algorithms_are_logged_at_info_not_warn()
+        {
+            var sink = new CapturingSink();
+            Log.Configure(new LogOptions { MinLevel = LogLevel.Trace, Sink = sink });
+            using var server = new SshServer(new StartingInfo(System.Net.IPAddress.Loopback, 0, "SSH-2.0-FxSsh-Test"));
+            server.AddHostKey("ecdsa-sha2-nistp256", KeyGenerator.GenerateECDsaKeyPem("nistp256"));
+            server.Algorithms.ConfigureHazmat(c => c.HostKeyCollection.Add("custom-test-key", x => new EcdsaKey("nistp256", x)));
+
+            await server.StartAsync();
+            await server.StopAsync();
+
+            List<(LogLevel Level, string Message, Exception? Exception)> entries;
+            lock (sink.Entries)
+                entries = sink.Entries.ToList();
+            Assert.IsTrue(entries.Any(e => e.Level == LogLevel.Info && e.Message.Contains("Imported custom algorithms: hostkey=[custom-test-key]")));
+            Assert.IsFalse(entries.Any(e => e.Level >= LogLevel.Warn && e.Message.Contains("custom algorithms")));
         }
 
         [TestMethod]

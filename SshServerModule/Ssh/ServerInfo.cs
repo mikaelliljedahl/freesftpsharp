@@ -66,21 +66,6 @@ namespace FxSsh.SshServerModule
                 catalog.CompressionCollection.NegotiableNames.ToList());
         }
 
-        /// <summary>"SHA256:..." of a user public key (<see cref="User.RsaPublicKey"/>, a base64 CSP blob). Null when it is empty or invalid.</summary>
-        public static string GetUserKeyFingerprint(string base64CspBlob)
-        {
-            if (string.IsNullOrWhiteSpace(base64CspBlob))
-                return null;
-            try
-            {
-                return "SHA256:" + UserLogics.GetRsaPublicKeyFingerprint(base64CspBlob).TrimEnd('=');
-            }
-            catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException)
-            {
-                return null;
-            }
-        }
-
         private static HostKeyFingerprint Describe(string keyType, IReadOnlyList<string> algorithms, string stored, string missing,
             Func<string, (int KeySize, string Fingerprint)> read)
         {
