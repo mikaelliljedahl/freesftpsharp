@@ -10,6 +10,7 @@ using SshServerModule.Storage;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
 
 namespace FreeSftpSharp.Tests.Infrastructure;
@@ -199,14 +200,17 @@ public class SftpServerFixture : IAsyncLifetime
         var time = CreateTimeProvider();
         BanTracker = new LoginBanTracker(time);
         Connections = new ConnectionRegistry(time);
-        return new HostedServer(NullLogger<HostedServer>.Instance, LocalDiskFileSystemFactory(), repository, BanTracker,
+        return new HostedServer(NullLogger<HostedServer>.Instance, CreateFileSystemFactory(), repository, BanTracker,
             CreateListenOptions(port) is { } listenOptions ? Microsoft.Extensions.Options.Options.Create(listenOptions) : null,
             Connections);
     }
 
-    /// <summary>The storage of the hosts: the "local" provider at the user root (AddSshServerStorage + AddLocalDiskStorage).</summary>
-    private static StorageFileSystemFactory LocalDiskFileSystemFactory()
-        => new(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), new EffectivePermissionsService());
+    /// <summary>
+    /// The storage of the users. The default is the storage of the hosts: the "local" provider at the user root
+    /// (AddSshServerStorage + AddLocalDiskStorage). Override it in a derived fixture.
+    /// </summary>
+    protected virtual IFileSystemFactory CreateFileSystemFactory()
+        => new StorageFileSystemFactory(new StorageProviderRegistry([new LocalDiskStorageProvider()]), new UserRootStorageResolver(), new EffectivePermissionsService());
 
     private static int GetFreeTcpPort()
     {

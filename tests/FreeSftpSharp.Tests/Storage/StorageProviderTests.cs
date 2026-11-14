@@ -1,4 +1,7 @@
+using FreeSftpSharp.Tests.Storage.Encrypted;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using SshServer.Filesystem.Encrypted;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Permissions;
@@ -108,6 +111,31 @@ public sealed class StorageProviderTests : IDisposable
         var factory = new StorageFileSystemFactory(new StorageProviderRegistry([]), new FixedResolver(new StorageSelection("s3", new object())), new EffectivePermissionsService());
 
         await Assert.ThrowsAsync<KeyNotFoundException>(async () => await factory.CreateAsync(new User(), Ct));
+    }
+
+    [Fact]
+    public async Task The_factory_wraps_every_provider_in_the_permission_decorator_also_the_encrypted_one()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        var factory = new StorageFileSystemFactory(
+            new StorageProviderRegistry([new LocalDiskStorageProvider(), new EncryptedLocalStorageProvider(TestKeys.Provider("a", ("a", TestKeys.KeyA)))]),
+            new EncryptedUserRootStorageResolver(Options.Create(new EncryptedStorageOptions { Enabled = true })),
+            new EffectivePermissionsService());
+
+        var unrestricted = await factory.CreateAsync(new User { Username = "u", UserRootDirectory = _tempDirectory }, Ct);
+        var readOnly = await factory.CreateAsync(new User
+        {
+            Username = "r",
+            UserRootDirectory = _tempDirectory,
+            Permissions = new() { ["/"] = FilePermissions.List | FilePermissions.Download },
+        }, Ct);
+
+        Assert.IsType<EncryptedFileSystem>(unrestricted);
+        Assert.IsType<PermissionFileSystem>(readOnly);
+        var ex = await Assert.ThrowsAsync<FileSystemException>(() =>
+            readOnly.OpenAsync("/new.txt", FileOpenFlags.Write | FileOpenFlags.Create, null, Ct).AsTask());
+        Assert.Equal(FileSystemError.PermissionDenied, ex.Error);
+        Assert.Empty(Directory.GetFiles(_tempDirectory));
     }
 
     private sealed class FixedResolver(StorageSelection selection) : IUserStorageResolver

@@ -397,6 +397,13 @@
       "fxssh": {
         "type": "Project"
       },
+      "sshserver.filesystem.encrypted": {
+        "type": "Project",
+        "dependencies": {
+          "SshServer.Filesystem.LocalDisk": "[1.0.0, )",
+          "SshServer.Interfaces": "[1.0.0, )"
+        }
+      },
       "sshserver.filesystem.localdisk": {
         "type": "Project",
         "dependencies": {
