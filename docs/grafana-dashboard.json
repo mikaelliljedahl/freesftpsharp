@@ -1,0 +1,23 @@
+{
+  "title": "FreeSftpSharp",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "stat", "title": "Active connections", "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [ { "expr": "sum(freesftpsharp_connections_active)" } ] },
+    { "id": 2, "type": "timeseries", "title": "Connections per minute", "gridPos": { "x": 6, "y": 0, "w": 9, "h": 8 },
+      "targets": [ { "expr": "sum by (protocol) (rate(freesftpsharp_connections_total[5m])) * 60", "legendFormat": "{{protocol}}" } ] },
+    { "id": 3, "type": "timeseries", "title": "Logins by result", "gridPos": { "x": 15, "y": 0, "w": 9, "h": 8 },
+      "targets": [ { "expr": "sum by (method, result) (rate(freesftpsharp_auth_attempts_total[5m]))", "legendFormat": "{{method}} {{result}}" } ] },
+    { "id": 4, "type": "timeseries", "title": "Transfers per minute", "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [ { "expr": "sum by (direction, status) (rate(freesftpsharp_transfers_total[5m])) * 60", "legendFormat": "{{direction}} {{status}}" } ] },
+    { "id": 5, "type": "timeseries", "title": "Transfer throughput", "fieldConfig": { "defaults": { "unit": "Bps" } }, "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [ { "expr": "sum by (direction) (rate(freesftpsharp_transfer_bytes_total[5m]))", "legendFormat": "{{direction}}" } ] },
+    { "id": 6, "type": "timeseries", "title": "Storage operation p95", "fieldConfig": { "defaults": { "unit": "s" } }, "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [ { "expr": "histogram_quantile(0.95, sum by (le, provider, operation) (rate(freesftpsharp_storage_operation_duration_seconds_bucket[5m])))", "legendFormat": "{{provider}} {{operation}}" } ] },
+    { "id": 7, "type": "timeseries", "title": "Storage errors", "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [ { "expr": "sum by (provider, error) (rate(freesftpsharp_storage_errors_total[5m]))", "legendFormat": "{{provider}} {{error}}" } ] }
+  ]
+}
