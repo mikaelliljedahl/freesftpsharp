@@ -20,6 +20,8 @@ using SshServer.Interfaces.Events;
 using SshServer.TwoFactor;
 using FreeSftpSharp.Tests.Events;
 using SshServerModule.Storage;
+using SshServerModule.Quotas;
+using SshServer.Interfaces.Quotas;
 using SshServer.Filesystem.LocalDisk;
 using SshServer.Filesystem.S3;
 using SshServer.Interfaces.Storage;
@@ -46,6 +48,8 @@ public class AdminUiComponentContext : BunitContext
     public StorageOptionsCodec Codec { get; }
     public InMemoryAdminStore AdminStore { get; } = new();
     public AdminAdministrationService Administration { get; }
+    public QuotaUsageTracker Quotas { get; }
+    public QuotaScanQueue QuotaScans { get; } = new();
     public InMemoryTwoFactorStore TwoFactorStore { get; } = new();
     public TwoFactorService TwoFactor { get; }
     public RecordingEventBus Events { get; } = new();
@@ -94,6 +98,8 @@ public class AdminUiComponentContext : BunitContext
         Services.AddScoped(sp => new VirtualFolderService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
         Services.AddScoped(sp => new GroupService(sp.GetRequiredService<AdminScopedSettingsRepository>()));
         Services.AddSingleton<IEffectiveUserSettingsService>(new EffectiveUserSettingsService(Repository));
+        Quotas = new QuotaUsageTracker(new InMemoryQuotaUsageStore(), Clock);
+        Services.AddScoped(sp => new QuotaAdministrationService(sp.GetRequiredService<AdminScopedSettingsRepository>(), new EffectiveQuotaService(new EffectiveUserSettingsService(Repository)), Quotas, QuotaScans));
         JSInterop.Mode = JSRuntimeMode.Loose;
 
         _authorization = AddAuthorization();

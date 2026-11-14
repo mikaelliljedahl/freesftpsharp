@@ -15,7 +15,7 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261114125755_AddUserProtocolsAndAppPasswords";
+    public override string LastMigrationId => "20261114131126_AddUserProtocolsAndAppPasswords";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -278,8 +278,14 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.PrimitiveCollection<string>("AllowedIps")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Bandwidth")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("Description")
                     .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiskQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Name")
@@ -298,6 +304,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.HasKey("Id");
@@ -415,8 +424,14 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("AppPasswords")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("Bandwidth")
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("Description")
                     .HasMaxLength(1000)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiskQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<DateTime?>("ExpiresAt")
@@ -468,6 +483,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Storage")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TransferQuota")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("UserRootDirectory")
@@ -630,6 +648,35 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("WebhookDeliveries");
             });
 
+        modelBuilder.Entity("SshServer.Settings.Sql.Quotas.QuotaUsageRow", b =>
+            {
+                b.Property<string>("Scope")
+                    .HasMaxLength(300)
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("DownloadedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("ScannedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("UpdatedUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("UploadedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("UsedBytes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("UsedFiles")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Scope");
+
+                b.ToTable("QuotaUsages");
+            });
+
         modelBuilder.Entity("SshServer.Settings.Sql.TwoFactor.TwoFactorRecord", b =>
             {
                 b.Property<int>("Id")
@@ -719,6 +766,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                             .HasMaxLength(1024)
                             .HasColumnType("TEXT");
 
+                        b1.Property<string>("Quota")
+                            .HasColumnType("TEXT");
+
                         b1.Property<int>("VirtualFolderId")
                             .HasColumnType("INTEGER");
 
@@ -765,6 +815,9 @@ partial class SettingsDbContextModelSnapshot : ModelSnapshot
                         b1.Property<string>("MountPath")
                             .IsRequired()
                             .HasMaxLength(1024)
+                            .HasColumnType("TEXT");
+
+                        b1.Property<string>("Quota")
                             .HasColumnType("TEXT");
 
                         b1.Property<int>("UserId")

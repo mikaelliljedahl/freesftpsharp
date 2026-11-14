@@ -128,6 +128,9 @@ namespace FxSshSftpServer.Models
         /// <summary>The path filters per directory (issue #59).</summary>
         public List<PathFilterRow> PathFilters { get; set; } = new();
 
+        /// <summary>The quotas and the bandwidth of the user (issue #62); not set: unlimited, or the values of its groups.</summary>
+        public QuotaForm Quotas { get; set; } = new();
+
         public static UserForm New() => new() { IsNew = true };
 
         public static UserForm From(User user, StorageConfigService storage) => new()
@@ -135,8 +138,9 @@ namespace FxSshSftpServer.Models
             Storage = storage.Edit(user.Storage),
             Mounts = (user.VirtualFolders ?? new List<VirtualFolderMount>())
                 .OrderBy(m => m.MountPath, StringComparer.Ordinal)
-                .Select(m => new MountRow { VirtualFolderId = m.VirtualFolderId, MountPath = m.MountPath })
+                .Select(MountRow.From)
                 .ToList(),
+            Quotas = QuotaForm.From(user.DiskQuota, user.TransferQuota, user.Bandwidth),
             IsNew = false,
             Username = user.Username ?? "",
             UserRootDirectory = user.UserRootDirectory ?? "",
@@ -231,12 +235,13 @@ namespace FxSshSftpServer.Models
             user.MaxSessions = MaxSessions;
             user.PrimaryGroupId = PrimaryGroupId == 0 ? null : PrimaryGroupId;
             user.SecondaryGroupIds = SecondaryGroupIds.Where(id => id != PrimaryGroupId).Distinct().ToList();
+            user.DiskQuota = Quotas.Disk;
+            user.TransferQuota = Quotas.Transfer;
+            user.Bandwidth = Quotas.Bandwidth;
         }
 
         /// <summary>The mounts of the form, with normalized paths.</summary>
-        public List<VirtualFolderMount> MountList() => Mounts
-            .Select(m => new VirtualFolderMount { VirtualFolderId = m.VirtualFolderId, MountPath = PermissionTables.NormalizedOrRaw(m.MountPath) })
-            .ToList();
+        public List<VirtualFolderMount> MountList() => Mounts.Select(m => m.ToMount()).ToList();
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
@@ -260,6 +265,9 @@ namespace FxSshSftpServer.Models
             if (!AllowSftp && !AllowWebDav)
                 yield return new ValidationResult("Allow at least one protocol.", new[] { nameof(AllowSftp) });
 
+            foreach (var problem in Quotas.Problems(Mounts))
+                yield return new ValidationResult(problem, new[] { nameof(Quotas) });
+
             if (!UsesOwnPermissions)
                 yield break;
             var (permissionProblems, filterProblems) = PermissionTables.Problems(Permissions, PathFilters);
@@ -268,12 +276,5 @@ namespace FxSshSftpServer.Models
             foreach (var problem in filterProblems)
                 yield return new ValidationResult(problem, new[] { nameof(PathFilters) });
         }
-    }
-
-    /// <summary>One virtual folder mounted for a user, in the form.</summary>
-    public sealed class MountRow
-    {
-        public int VirtualFolderId { get; set; }
-        public string MountPath { get; set; } = "";
     }
 }

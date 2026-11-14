@@ -1,5 +1,6 @@
 using SshServer.Interfaces.Authentication;
 using SshServer.Interfaces.Permissions;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Storage;
 
 namespace SshServer.Interfaces;
@@ -99,6 +100,18 @@ public class User
 
     /// <summary>The virtual folders mounted into the file system of the user (issue #56); the groups can add more.</summary>
     public List<VirtualFolderMount> VirtualFolders { get; set; } = new();
+
+    /// <summary>
+    /// The disk quota of the own storage of the user (issue #62): "/" without the virtual folders, which have their own
+    /// quota (<see cref="VirtualFolderMount.Quota"/>). Null: unlimited. Resolve it with <see cref="IEffectiveQuotaService"/>.
+    /// </summary>
+    public DiskQuota? DiskQuota { get; set; }
+
+    /// <summary>The transfer quota of the user (issue #62), until an administrator resets the counters. Null: unlimited.</summary>
+    public TransferQuota? TransferQuota { get; set; }
+
+    /// <summary>The bandwidth of each session of the user (issue #62). Null: unlimited.</summary>
+    public BandwidthLimit? Bandwidth { get; set; }
 
     /// <summary>
     /// The scope role (issue #60, <see cref="Admins.Role"/>): an administrator with this role as its scope manages the

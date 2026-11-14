@@ -12,6 +12,7 @@
 @inject SshServer.Interfaces.Users.UserAdministrationService UserService
 @inject SshServerModule.Storage.StorageConfigService StorageService
 @inject SshServerModule.Storage.VirtualFolderService FolderService
+@inject SshServerModule.Quotas.QuotaAdministrationService QuotaService
 @inject SshServer.Interfaces.Groups.GroupService GroupService
 @inject SshServer.Interfaces.Users.IEffectiveUserSettingsService UserSettings
 @inject IJSRuntime JS
@@ -102,6 +103,10 @@
                                 @if (context.VirtualFolders is { Count: > 0 } mounts)
                                 {
                                     <span class="badge text-bg-secondary ms-1" title="Virtual folders">+@mounts.Count @(mounts.Count == 1 ? "folder" : "folders")</span>
+                                }
+                                @if (context.DiskQuota is { IsUnlimited: false } || context.TransferQuota is { IsUnlimited: false } || context.Bandwidth is { IsUnlimited: false })
+                                {
+                                    <span class="badge text-bg-light border ms-1" title="Quotas or bandwidth limits">limits</span>
                                 }
                             </TemplateColumn>
                             <TemplateColumn Title="Last login (UTC)" SortBy="@(GridSort<User>.ByAscending(u => u.LastLoginAt))" Class="d-none d-md-table-cell">
@@ -245,6 +250,46 @@
                         </fieldset>
 
                         <MountEditor Mounts="form.Mounts" Folders="folders" Problems="mountProblems" />
+
+                        <QuotaEditor Model="form.Quotas">
+                            @if (quotaView is { IsEmpty: false } view)
+                            {
+                                <div class="border-top mt-3 pt-3" id="quota-usage">
+                                    <div class="fw-semibold small mb-1">Usage</div>
+                                    <ul class="list-unstyled small mb-2">
+                                        @foreach (var scope in view.Disk)
+                                        {
+                                            <li class="quota-usage-row">
+                                                <span class="font-monospace-sm">@scope.Label</span>:
+                                                @Size(scope.Usage.UsedBytes)@(scope.Limit.MaxSizeBytes > 0 ? $" of {Size(scope.Limit.MaxSizeBytes)}" : ""),
+                                                @Math.Max(0, scope.Usage.UsedFiles) @(scope.Limit.MaxFiles > 0 ? $"of {scope.Limit.MaxFiles} files" : "files")
+                                                <span class="text-body-secondary">
+                                                    (@(scope.Usage.ScannedAt is { } scanned ? "scanned " + scanned.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC" : "never scanned")@(scope.ScanQueued ? ", scan queued" : ""))
+                                                </span>
+                                            </li>
+                                        }
+                                        @if (view.Transfer is { } transfer)
+                                        {
+                                            <li id="transfer-usage">
+                                                Transferred: uploaded @Size(view.TransferUsage.UploadedBytes)@(transfer.MaxUploadBytes > 0 ? $" of {Size(transfer.MaxUploadBytes)}" : ""),
+                                                downloaded @Size(view.TransferUsage.DownloadedBytes)@(transfer.MaxDownloadBytes > 0 ? $" of {Size(transfer.MaxDownloadBytes)}" : "")@(transfer.MaxTotalBytes > 0 ? $", total limit {Size(transfer.MaxTotalBytes)}" : "")
+                                            </li>
+                                        }
+                                    </ul>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @if (view.Disk.Count > 0)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="rescan-quota" @onclick="RescanQuota"><i class="bi bi-arrow-repeat"></i> Rescan quota</button>
+                                        }
+                                        @if (view.Transfer is not null)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reset-transfer" @onclick="ResetTransferAsync"><i class="bi bi-arrow-counterclockwise"></i> Reset transfer counters</button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </QuotaEditor>
+                        <ValidationMessage For="() => form.Quotas" />
 
                         <fieldset class="border rounded p-3 mb-3">
                             <legend class="float-none w-auto px-2 fs-6 mb-0">Password</legend>
@@ -576,6 +621,14 @@
                                         @(effective.AllowedIps.Count == 0 ? "any" : string.Join(", ", effective.AllowedIps))
                                         <span class="badge text-bg-light border ms-1 origin">@effective.AllowedIpsOrigin</span>
                                     </li>
+                                    <li class="list-group-item" id="effective-quotas">
+                                        <span class="fw-semibold">Disk quota:</span> @(effective.DiskQuota?.ToString() ?? "unlimited")
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.DiskQuotaOrigin</span>
+                                        <span class="fw-semibold ms-2">Transfer quota:</span> @(effective.TransferQuota?.ToString() ?? "unlimited")
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.TransferQuotaOrigin</span>
+                                        <span class="fw-semibold ms-2">Bandwidth:</span> @(effective.Bandwidth?.ToString() ?? "unlimited")
+                                        <span class="badge text-bg-light border ms-1 origin">@effective.BandwidthOrigin</span>
+                                    </li>
                                 </ul>
                             </div>
                         }
@@ -643,6 +696,7 @@
     private DateTime? appPasswordExpiry;
     private string appPasswordError;
     private string newAppPassword;
+    private SshServerModule.Quotas.UserQuotaView quotaView;
 
     private IQueryable<User> FilteredUsers =>
         users.Where(u => string.IsNullOrWhiteSpace(search)
@@ -670,17 +724,60 @@
     {
         ResetKeyInput();
         form = UserForm.New();
+        quotaView = null;
         hadGroups = false;
         ClearProblems();
     }
 
-    private void Edit(User user)
+    private async Task Edit(User user)
     {
         ResetKeyInput();
         var stored = SettingsRepository.GetUser(user.Username);
         form = stored is null ? null : UserForm.From(stored, StorageService);
         AfterFormLoaded();
         ClearProblems();
+        await LoadQuotaAsync();
+    }
+
+    /// <summary>The quota usage of the open user (issue #62).</summary>
+    private async Task LoadQuotaAsync() =>
+        quotaView = form is null || form.IsNew ? null : await QuotaService.GetAsync(form.Username, System.Threading.CancellationToken.None);
+
+    private async Task RescanQuota()
+    {
+        if (form is null)
+            return;
+        if (QuotaService.RequestScan(form.Username))
+            Toasts.ShowSuccess($"A scan of the quota usage of {form.Username} was started. Its result is shown when you open the user again.");
+        else
+            Toasts.ShowError($"The user {form.Username} does not exist any more.");
+        await LoadQuotaAsync();
+    }
+
+    private async Task ResetTransferAsync()
+    {
+        if (form is null)
+            return;
+        if (await QuotaService.ResetTransferAsync(form.Username, System.Threading.CancellationToken.None))
+            Toasts.ShowSuccess($"The transfer counters of {form.Username} were reset.");
+        else
+            Toasts.ShowError($"The user {form.Username} does not exist any more.");
+        await LoadQuotaAsync();
+    }
+
+    /// <summary>A byte count for people: "512 bytes", "1.5 MiB".</summary>
+    private static string Size(long bytes)
+    {
+        bytes = Math.Max(0, bytes);
+        string[] units = ["bytes", "KiB", "MiB", "GiB", "TiB"];
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{bytes} bytes" : value.ToString("0.##", CultureInfo.InvariantCulture) + " " + units[unit];
     }
 
     private void CloseForm() => form = null;
@@ -856,6 +953,7 @@
         LoadUsers();
         form = UserForm.From(SettingsRepository.GetUser(username), StorageService);
         AfterFormLoaded();
+        await LoadQuotaAsync();
     }
 
     private void AskDelete(string username)

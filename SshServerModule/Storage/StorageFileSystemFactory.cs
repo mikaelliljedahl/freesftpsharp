@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 using SshServer.Interfaces;
 using SshServer.Interfaces.Connections;
 using SshServer.Interfaces.Events;
+using SshServer.Interfaces.Quotas;
 using SshServer.Interfaces.Users;
 using SshServer.Interfaces.Storage;
 using SshServerModule.Connections;
 using SshServerModule.Events;
+using SshServerModule.Quotas;
 
 namespace SshServerModule.Storage
 {
@@ -19,8 +21,14 @@ namespace SshServerModule.Storage
     /// (<see cref="IStorageProviderRegistry"/>) from its decoded options (<see cref="StorageOptionsCodec"/>), wrapped in the
     /// storage decorators. The decorator chain is built here and only here, innermost first:
     /// <list type="number">
+    /// <item><see cref="DiskQuotaFileSystem"/> around each storage with a disk quota (#62): the own storage of the user
+    /// and each virtual folder is one quota scope. Left out for a storage without a quota.</item>
     /// <item><see cref="MountedFileSystem"/>: routes the paths of the virtual folders to their storage (#56); left out
     /// for a user without virtual folders. Every rule below sees the virtual paths of the user.</item>
+    /// <item><see cref="TransferQuotaFileSystem"/> and <see cref="BandwidthFileSystem"/>: the transfer quota and the
+    /// bandwidth of the session (#62), over every storage of the user; each left out without its limit, and both for an
+    /// operation of the server itself (<see cref="ClientContext.SkipPermissions"/>). Inside the
+    /// permissions, so a refused operation is not counted.</item>
     /// <item><see cref="PermissionFileSystem"/>: the effective per-path permissions and path filters (#59, with the
     /// groups #61); left out for a user who may do everything, and for an operation of the server itself
     /// (<see cref="ClientContext.SkipPermissions"/>, the actions of the event rules).</item>
@@ -40,13 +48,17 @@ namespace SshServerModule.Storage
         private readonly IConnectionRegistry? _connections;
         private readonly IEventBus? _events;
         private readonly TimeProvider _time;
+        private readonly QuotaDecorators? _quotas;
 
         /// <param name="connections">The open connections (AddSshServerConnections). Null: no connection tracking.</param>
         /// <param name="events">The event bus (AddSshServerEvents). Null: no events.</param>
         /// <param name="time">The clock of the events. Null: the system clock.</param>
+        /// <param name="quotas">The quota decorators (AddSshServerStorage). Null: no quotas and no bandwidth limits.</param>
         public StorageFileSystemFactory(IStorageProviderRegistry registry, IUserStorageResolver resolver, StorageOptionsCodec codec,
-            IEffectiveUserSettingsService settings, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null)
+            IEffectiveUserSettingsService settings, IConnectionRegistry? connections = null, IEventBus? events = null, TimeProvider? time = null,
+            QuotaDecorators? quotas = null)
         {
+            _quotas = quotas;
             _registry = registry;
             _resolver = resolver;
             _codec = codec;
@@ -59,7 +71,11 @@ namespace SshServerModule.Storage
         public async ValueTask<IFileSystem> CreateAsync(User user, ClientContext client, CancellationToken ct)
         {
             var storage = _resolver.Resolve(user);
+            var settings = _settings.Resolve(user);
+            var quotas = EffectiveQuotas.From(settings);
             var fileSystem = await CreateStorageAsync(storage.Root, ct);
+            if (_quotas != null)
+                fileSystem = await _quotas.WrapStorageAsync(fileSystem, QuotaScope.ForUser(user.Username), quotas.Disk, ct);
             if (storage.Mounts.Count > 0)
             {
                 var mounts = new List<MountedFileSystem.Mount>();
@@ -67,7 +83,10 @@ namespace SshServerModule.Storage
                 {
                     try
                     {
-                        mounts.Add(new MountedFileSystem.Mount(mount.Path, await CreateStorageAsync(mount.Storage, ct)));
+                        var mounted = await CreateStorageAsync(mount.Storage, ct);
+                        if (_quotas != null)
+                            mounted = await _quotas.WrapStorageAsync(mounted, QuotaScope.ForFolder(mount.FolderId), quotas.ForMount(mount.Path), ct);
+                        mounts.Add(new MountedFileSystem.Mount(mount.Path, mounted));
                     }
                     catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or FileSystemException)
                     {
@@ -76,8 +95,11 @@ namespace SshServerModule.Storage
                 }
                 fileSystem = new MountedFileSystem(fileSystem, mounts);
             }
+            // An operation of the server itself (an event rule action) is not a transfer of the client: no transfer quota or bandwidth.
+            if (_quotas != null && !client.SkipPermissions)
+                fileSystem = await _quotas.WrapSessionAsync(fileSystem, user, quotas, client, ct);
             if (!client.SkipPermissions)
-                fileSystem = PermissionFileSystem.Wrap(fileSystem, _settings.Resolve(user).Permissions);
+                fileSystem = PermissionFileSystem.Wrap(fileSystem, settings.Permissions);
             if (_events != null)
                 fileSystem = new EventingFileSystem(fileSystem, _events, user, client, storage.Root.Provider, _time);
             if (_connections != null && client.ConnectionId is { } connectionId)
